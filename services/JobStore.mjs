@@ -1,9 +1,21 @@
-import { mkdir, open, readFile, readdir, rm, stat, writeFile, rename } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { isProjectId } from "../lib/project-id.mjs";
 import { getStorageRoot } from "../lib/storage-paths.mjs";
 
-const JOB_TYPE = "TRANSCRIBE_VIDEO";
+const JOB_PREFIX = {
+  TRANSCRIBE_VIDEO: "transcribe",
+  ANALYZE_VIDEO: "analyze",
+};
 
 export class JobStore {
   constructor(options = {}) {
@@ -11,27 +23,48 @@ export class JobStore {
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60 * 1000;
   }
 
-  async enqueueTranscription(projectId) {
+  async enqueueTranscription(projectId, options = {}) {
+    return this.enqueue("TRANSCRIBE_VIDEO", projectId, {
+      payload: options.payload || {},
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
+  async enqueueAnalysis(projectId, payload = {}, options = {}) {
+    return this.enqueue("ANALYZE_VIDEO", projectId, {
+      payload,
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
+  async enqueue(type, projectId, options = {}) {
     assertProjectId(projectId);
+    assertJobType(type);
     await this.#ensureDirectory();
 
-    const id = transcriptionJobId(projectId);
+    const id = jobId(type, projectId);
     const existing = await this.get(id);
+    const restartCompleted = options.restartCompleted === true;
 
-    if (
-      existing &&
-      ["QUEUED", "PROCESSING", "COMPLETED"].includes(existing.status)
-    ) {
+    if (existing && ["QUEUED", "PROCESSING"].includes(existing.status)) {
+      return existing;
+    }
+
+    if (existing?.status === "COMPLETED" && !restartCompleted) {
       return existing;
     }
 
     const now = new Date().toISOString();
     const job = {
       id,
-      type: JOB_TYPE,
+      type,
       projectId,
+      payload: sanitizePayload(options.payload),
       status: "QUEUED",
-      attempts: existing?.status === "FAILED" ? 0 : (existing?.attempts ?? 0),
+      attempts:
+        existing?.status === "FAILED" || restartCompleted
+          ? 0
+          : (existing?.attempts ?? 0),
       maxAttempts: existing?.maxAttempts ?? this.maxAttempts,
       error: null,
       createdAt: existing?.createdAt ?? now,
@@ -55,13 +88,21 @@ export class JobStore {
   }
 
   async getTranscriptionJob(projectId) {
-    assertProjectId(projectId);
-    return this.get(transcriptionJobId(projectId));
+    return this.get(jobId("TRANSCRIBE_VIDEO", projectId));
   }
 
-  async claimNext() {
+  async getAnalysisJob(projectId) {
+    return this.get(jobId("ANALYZE_VIDEO", projectId));
+  }
+
+  async claimNext(allowedTypes = null) {
     await this.#recoverStaleLocks();
     await this.#ensureDirectory();
+
+    const allowed =
+      Array.isArray(allowedTypes) && allowedTypes.length > 0
+        ? new Set(allowedTypes)
+        : null;
 
     const names = await readdir(this.#jobsDir());
     const now = Date.now();
@@ -73,6 +114,7 @@ export class JobStore {
       if (
         !job ||
         job.status !== "QUEUED" ||
+        (allowed && !allowed.has(job.type)) ||
         Date.parse(job.nextAttemptAt || job.createdAt) > now
       ) {
         continue;
@@ -82,7 +124,11 @@ export class JobStore {
       if (!locked) continue;
 
       const fresh = await this.get(id);
-      if (!fresh || fresh.status !== "QUEUED") {
+      if (
+        !fresh ||
+        fresh.status !== "QUEUED" ||
+        (allowed && !allowed.has(fresh.type))
+      ) {
         await this.release(id);
         continue;
       }
@@ -220,15 +266,38 @@ export class JobStore {
 }
 
 export function transcriptionJobId(projectId) {
+  return jobId("TRANSCRIBE_VIDEO", projectId);
+}
+
+export function analysisJobId(projectId) {
+  return jobId("ANALYZE_VIDEO", projectId);
+}
+
+function jobId(type, projectId) {
   assertProjectId(projectId);
-  return `transcribe-${projectId}`;
+  assertJobType(type);
+  return `${JOB_PREFIX[type]}-${projectId}`;
+}
+
+function assertJobType(type) {
+  if (!Object.hasOwn(JOB_PREFIX, type)) {
+    throw new Error("Unsupported job type.");
+  }
 }
 
 function safeJobId(value) {
-  if (!/^transcribe-[0-9a-f-]+$/i.test(String(value))) {
+  const match = /^(transcribe|analyze)-([0-9a-f-]+)$/i.exec(String(value));
+  if (!match || !isProjectId(match[2])) {
     throw new Error("Invalid job id.");
   }
   return String(value);
+}
+
+function sanitizePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {};
+  }
+  return JSON.parse(JSON.stringify(payload));
 }
 
 function assertProjectId(projectId) {
