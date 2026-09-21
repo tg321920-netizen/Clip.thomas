@@ -3,6 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
+import { getStorageRoot } from "@/services/StorageService";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function GET(
     );
   }
 
-  const uploadDir = path.join(process.cwd(), "storage", "uploads", projectId);
+  const uploadDir = path.join(getStorageRoot(), "uploads", projectId);
 
   let sourceName: string;
   try {
@@ -44,53 +45,74 @@ export async function GET(
         { status: 404 },
       );
     }
-    throw error;
+
+    console.error("Source lookup failed", error);
+    return NextResponse.json(
+      { error: "No se pudo acceder al video fuente." },
+      { status: 500 },
+    );
   }
 
   const filePath = path.join(uploadDir, sourceName);
-  const fileStat = await stat(filePath);
-  const mimeType = mimeFor(sourceName);
-  const range = request.headers.get("range");
 
-  if (!range) {
-    const stream = createReadStream(filePath);
+  try {
+    const fileStat = await stat(filePath);
+    const mimeType = mimeFor(sourceName);
+    const range = request.headers.get("range");
+
+    if (!range) {
+      const stream = createReadStream(filePath);
+      return new Response(Readable.toWeb(stream) as ReadableStream, {
+        status: 200,
+        headers: {
+          "Content-Type": mimeType,
+          "Content-Length": String(fileStat.size),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
+    const parsed = parseRange(range, fileStat.size);
+    if (!parsed) {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          "Content-Range": `bytes */${fileStat.size}`,
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    const { start, end } = parsed;
+    const stream = createReadStream(filePath, { start, end });
+
     return new Response(Readable.toWeb(stream) as ReadableStream, {
-      status: 200,
+      status: 206,
       headers: {
         "Content-Type": mimeType,
-        "Content-Length": String(fileStat.size),
+        "Content-Length": String(end - start + 1),
+        "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, max-age=0, must-revalidate",
         "X-Content-Type-Options": "nosniff",
       },
     });
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") {
+      return NextResponse.json(
+        { error: "Video fuente no encontrado." },
+        { status: 404 },
+      );
+    }
+
+    console.error("Source streaming failed", error);
+    return NextResponse.json(
+      { error: "No se pudo reproducir el video fuente." },
+      { status: 500 },
+    );
   }
-
-  const parsed = parseRange(range, fileStat.size);
-  if (!parsed) {
-    return new Response(null, {
-      status: 416,
-      headers: {
-        "Content-Range": `bytes */${fileStat.size}`,
-        "Accept-Ranges": "bytes",
-      },
-    });
-  }
-
-  const { start, end } = parsed;
-  const stream = createReadStream(filePath, { start, end });
-
-  return new Response(Readable.toWeb(stream) as ReadableStream, {
-    status: 206,
-    headers: {
-      "Content-Type": mimeType,
-      "Content-Length": String(end - start + 1),
-      "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "private, max-age=0, must-revalidate",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
 }
 
 function parseRange(
