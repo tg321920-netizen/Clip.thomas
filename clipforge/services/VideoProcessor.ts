@@ -26,6 +26,8 @@ export class VideoProcessingError extends Error {
     public readonly code:
       | "FFPROBE_NOT_FOUND"
       | "FFPROBE_FAILED"
+      | "FFMPEG_NOT_FOUND"
+      | "FFMPEG_FAILED"
       | "INVALID_MEDIA",
   ) {
     super(message);
@@ -49,11 +51,7 @@ export class VideoProcessor {
         filePath,
       ]);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
+      if (isMissingBinary(error)) {
         throw new VideoProcessingError(
           "FFprobe no está instalado o FFPROBE_PATH no apunta a un binario válido.",
           "FFPROBE_NOT_FOUND",
@@ -104,6 +102,44 @@ export class VideoProcessor {
         reduceRatio(video.width, video.height),
     };
   }
+
+  async createPoster(
+    inputPath: string,
+    outputPath: string,
+    seekSeconds: number,
+  ): Promise<void> {
+    const executable = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
+    const safeSeek = Math.max(0, Number.isFinite(seekSeconds) ? seekSeconds : 0);
+
+    try {
+      await runProcess(executable, [
+        "-v",
+        "error",
+        "-y",
+        "-ss",
+        safeSeek.toFixed(3),
+        "-i",
+        inputPath,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        outputPath,
+      ]);
+    } catch (error) {
+      if (isMissingBinary(error)) {
+        throw new VideoProcessingError(
+          "FFmpeg no está instalado o FFMPEG_PATH no apunta a un binario válido.",
+          "FFMPEG_NOT_FOUND",
+        );
+      }
+
+      throw new VideoProcessingError(
+        error instanceof Error ? error.message : "FFmpeg no pudo generar la miniatura.",
+        "FFMPEG_FAILED",
+      );
+    }
+  }
 }
 
 function runProcess(command: string, args: string[]): Promise<string> {
@@ -133,9 +169,17 @@ function runProcess(command: string, args: string[]): Promise<string> {
         return;
       }
 
-      reject(new Error(stderr.trim() || `FFprobe terminó con código ${code ?? "?"}.`));
+      reject(new Error(stderr.trim() || `Proceso multimedia terminó con código ${code ?? "?"}.`));
     });
   });
+}
+
+function isMissingBinary(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 function parseRate(rate?: string): number {
