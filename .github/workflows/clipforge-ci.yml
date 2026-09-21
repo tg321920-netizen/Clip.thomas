@@ -1,0 +1,45 @@
+name: ClipForge CI
+
+on:
+  push:
+    branches: [main, "chatgpt/**"]
+    paths:
+      - "clipforge/**"
+      - ".github/workflows/clipforge-ci.yml"
+  pull_request:
+    paths:
+      - "clipforge/**"
+      - ".github/workflows/clipforge-ci.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clipforge
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clipforge/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
