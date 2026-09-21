@@ -34,7 +34,7 @@ export function UploadPanel() {
     setProgress(null);
 
     if (!validation.ok) {
-      setError(validation.error);
+      setError(validation.error ?? "El archivo no es válido.");
       setState("error");
       return;
     }
