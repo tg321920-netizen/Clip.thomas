@@ -10,6 +10,7 @@ export type ProbeMetadata = {
 
 export type UploadedVideo = ProbeMetadata & {
   projectId: string;
+  videoId?: string;
   originalName: string;
   storedName: string;
   sizeBytes: number;

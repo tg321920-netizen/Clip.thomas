@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
     "verify": "npm run lint && npm run typecheck && npm test",
-    "phase1:e2e": "node scripts/phase1-e2e.mjs"
+    "phase1:e2e": "node scripts/phase1-e2e.mjs",
+    "worker:transcription": "node scripts/transcription-worker.mjs",
+    "worker:transcription:once": "node scripts/transcription-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",

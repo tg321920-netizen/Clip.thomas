@@ -49,6 +49,7 @@ export async function POST(request: Request) {
   }
 
   const projectId = randomUUID();
+  const videoId = randomUUID();
   const storedName = `source.${validation.extension}`;
   const storageRoot = getStorageRoot();
   const uploadDir = path.join(storageRoot, "uploads", projectId);
@@ -139,6 +140,7 @@ export async function POST(request: Request) {
 
     const video: UploadedVideo = {
       projectId,
+      videoId,
       originalName,
       storedName,
       sizeBytes: bytesWritten,

@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getStorageRoot as resolveStorageRoot } from "@/lib/storage-paths.mjs";
 
 export type StorageStatus = {
   writable: boolean;
@@ -8,8 +9,7 @@ export type StorageStatus = {
 };
 
 export function getStorageRoot(): string {
-  const configured = process.env.CLIPFORGE_STORAGE_DIR?.trim();
-  return configured ? path.resolve(configured) : path.join(process.cwd(), "storage");
+  return resolveStorageRoot();
 }
 
 export async function getStorageStatus(): Promise<StorageStatus> {

@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
+import type { TranscriptRecord } from "@/types/transcription";
 
 export type ProjectRecord = {
   id: string;
@@ -9,6 +10,7 @@ export type ProjectRecord = {
   source: UploadedVideo & {
     relativePath: string;
   };
+  transcript?: TranscriptRecord;
 };
 
 export class ProjectStore {

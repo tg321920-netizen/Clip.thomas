@@ -43,3 +43,16 @@ npm run phase1:e2e
 El script `build` también ejecuta lint, typecheck y tests antes de compilar Next.js.
 
 Consulta `PROJECT_PLAN.md` para las fases y `AGENTS.md` para las reglas que deben seguir los agentes de programación.
+
+
+## Transcripción asíncrona
+
+La primera capa de transcripción está diseñada para no mantener una petición HTTP abierta.
+
+- `POST /api/projects/{projectId}/transcription` encola el trabajo.
+- `GET /api/projects/{projectId}/transcription` devuelve transcript/job.
+- `npm run worker:transcription` ejecuta el worker.
+- El provider actual usa Whisper CLI local.
+- Si ya existe una transcripción COMPLETED para el mismo source, se reutiliza.
+
+El worker necesita FFmpeg y Whisper instalados en su entorno. Consulta `.env.example`, `docs/AUTOPILOT_ARCHITECTURE.md` y `CLIPFORGE_AUTOPILOT_PROGRESS.md`.
