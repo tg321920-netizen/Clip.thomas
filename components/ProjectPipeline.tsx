@@ -81,7 +81,11 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   );
 
   useEffect(() => {
-    void loadState();
+    const timer = window.setTimeout(() => {
+      void loadState();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [loadState]);
 
   const processing = useMemo(
