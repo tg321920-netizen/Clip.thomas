@@ -120,6 +120,7 @@ jobs:
           ) {
             throw new Error("Missing real media metadata");
           }
+          fs.writeFileSync("/tmp/project-id.txt", video.projectId);
           fs.writeFileSync("/tmp/poster-url.txt", video.posterUrl);
           fs.writeFileSync("/tmp/source-url.txt", video.sourceUrl);
           console.log("Phase 1 upload passed", {
@@ -162,6 +163,30 @@ jobs:
           grep -qi "^Accept-Ranges: bytes" /tmp/source-headers.txt
           test "$(stat -c%s /tmp/source-range.bin)" -gt 0
           test "$(stat -c%s /tmp/source-range.bin)" -le 1024
+
+      - name: Verify persisted project listing
+        run: |
+          PROJECT_ID="$(cat /tmp/project-id.txt)"
+          curl --fail-with-body --silent --show-error \
+            http://127.0.0.1:3000/api/projects \
+            -o /tmp/projects.json
+
+          PROJECT_ID="$PROJECT_ID" node - <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync("/tmp/projects.json", "utf8"));
+          const id = process.env.PROJECT_ID;
+          if (!Array.isArray(payload.projects)) {
+            throw new Error("Projects payload is not an array");
+          }
+          const found = payload.projects.find((project) => project.id === id);
+          if (!found) {
+            throw new Error("Uploaded project was not persisted");
+          }
+          if (!found.source?.sourceUrl || !found.source?.posterUrl) {
+            throw new Error("Persisted project is missing media URLs");
+          }
+          console.log("Project persistence verified", { id });
+          NODE
 
       - name: Show server log on failure
         if: failure()
