@@ -8,6 +8,7 @@ import {
   validateUploadDescriptor,
 } from "@/lib/upload-policy.mjs";
 import { ProjectStore } from "@/services/ProjectStore";
+import { getStorageRoot } from "@/services/StorageService";
 import {
   VideoProcessingError,
   VideoProcessor,
@@ -49,19 +50,41 @@ export async function POST(request: Request) {
 
   const projectId = randomUUID();
   const storedName = `source.${validation.extension}`;
-  const uploadDir = path.join(
-    process.cwd(),
-    "storage",
-    "uploads",
-    projectId,
-  );
+  const storageRoot = getStorageRoot();
+  const uploadDir = path.join(storageRoot, "uploads", projectId);
   const filePath = path.join(uploadDir, storedName);
   const posterPath = path.join(uploadDir, "poster.jpg");
 
-  await mkdir(uploadDir, { recursive: true });
+  try {
+    await mkdir(uploadDir, { recursive: true });
+  } catch (error) {
+    console.error("Storage directory creation failed", error);
+    return NextResponse.json(
+      {
+        error:
+          "El almacenamiento de video no está disponible en este entorno. Usa un worker con almacenamiento escribible.",
+        code: "STORAGE_UNAVAILABLE",
+      },
+      { status: 503 },
+    );
+  }
 
   let bytesWritten = 0;
-  const file = await open(filePath, "wx");
+  let file;
+
+  try {
+    file = await open(filePath, "wx");
+  } catch (error) {
+    console.error("Upload file creation failed", error);
+    await rm(uploadDir, { recursive: true, force: true }).catch(() => undefined);
+    return NextResponse.json(
+      {
+        error: "No se pudo crear el archivo de video en el almacenamiento.",
+        code: "STORAGE_UNAVAILABLE",
+      },
+      { status: 503 },
+    );
+  }
 
   try {
     const reader = request.body.getReader();
@@ -129,12 +152,7 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
       source: {
         ...video,
-        relativePath: path.posix.join(
-          "storage",
-          "uploads",
-          projectId,
-          storedName,
-        ),
+        relativePath: path.posix.join("uploads", projectId, storedName),
       },
     });
 
