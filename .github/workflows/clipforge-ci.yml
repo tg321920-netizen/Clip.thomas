@@ -83,10 +83,15 @@ jobs:
           node - <<'NODE'
           const fs = require("node:fs");
           const payload = JSON.parse(fs.readFileSync("/tmp/media-status.json", "utf8"));
-          if (!payload.ready || !payload.tools?.ffmpeg?.available || !payload.tools?.ffprobe?.available) {
-            throw new Error("FFmpeg/FFprobe readiness check failed");
+          if (
+            !payload.ready ||
+            !payload.tools?.ffmpeg?.available ||
+            !payload.tools?.ffprobe?.available ||
+            !payload.storage?.writable
+          ) {
+            throw new Error("Media environment readiness check failed");
           }
-          console.log("Media tools ready");
+          console.log("Media environment ready");
           NODE
 
       - name: Functional Phase 1 upload test
