@@ -111,11 +111,17 @@ jobs:
           if (video.durationSeconds < 1.8 || video.durationSeconds > 2.2) {
             throw new Error(`Unexpected duration: ${video.durationSeconds}`);
           }
-          if (!video.codec || !video.projectId || !video.aspectRatio || !video.posterUrl) {
+          if (
+            !video.codec ||
+            !video.projectId ||
+            !video.aspectRatio ||
+            !video.posterUrl ||
+            !video.sourceUrl
+          ) {
             throw new Error("Missing real media metadata");
           }
-          fs.writeFileSync("/tmp/project-id.txt", video.projectId);
           fs.writeFileSync("/tmp/poster-url.txt", video.posterUrl);
+          fs.writeFileSync("/tmp/source-url.txt", video.sourceUrl);
           console.log("Phase 1 upload passed", {
             duration: video.durationSeconds,
             resolution: `${video.width}x${video.height}`,
@@ -142,6 +148,20 @@ jobs:
           }
           console.log("Real FFmpeg poster verified", { bytes: data.length });
           NODE
+
+      - name: Verify source video range streaming
+        run: |
+          SOURCE_URL="$(cat /tmp/source-url.txt)"
+          curl --fail-with-body --silent --show-error \
+            -H "Range: bytes=0-1023" \
+            -D /tmp/source-headers.txt \
+            "http://127.0.0.1:3000$SOURCE_URL" \
+            -o /tmp/source-range.bin
+
+          grep -qi "^HTTP/.* 206" /tmp/source-headers.txt
+          grep -qi "^Accept-Ranges: bytes" /tmp/source-headers.txt
+          test "$(stat -c%s /tmp/source-range.bin)" -gt 0
+          test "$(stat -c%s /tmp/source-range.bin)" -le 1024
 
       - name: Show server log on failure
         if: failure()
