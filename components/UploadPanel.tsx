@@ -6,7 +6,7 @@ import {
   MAX_UPLOAD_BYTES,
   validateUploadDescriptor,
 } from "@/lib/upload-policy.mjs";
-import type { UploadedVideo } from "@/types/video";
+import type { UploadedVideo } from "@/types/video";\nimport { ProjectPipeline } from "@/components/ProjectPipeline";
 
 type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
@@ -286,6 +286,8 @@ export function UploadPanel() {
             <p className="mt-4 break-all text-[11px] text-zinc-500">
               Proyecto: {result.projectId}
             </p>
+
+            <ProjectPipeline projectId={result.projectId} />
           </div>
         </div>
       )}
