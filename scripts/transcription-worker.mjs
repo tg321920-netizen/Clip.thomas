@@ -6,14 +6,13 @@ const pollMs = Number(process.env.CLIPFORGE_WORKER_POLL_MS || 2000);
 const store = new JobStore();
 
 let stopping = false;
-
 process.on("SIGTERM", () => { stopping = true; });
 process.on("SIGINT", () => { stopping = true; });
 
 console.log("ClipForge transcription worker started.");
 
 while (!stopping) {
-  const job = await store.claimNext();
+  const job = await store.claimNext(["TRANSCRIBE_VIDEO"]);
 
   if (!job) {
     if (once) break;
@@ -29,11 +28,7 @@ while (!stopping) {
   });
 
   try {
-    if (job.type !== "TRANSCRIBE_VIDEO") {
-      throw new Error(`Unsupported job type: ${job.type}`);
-    }
-
-    const result = await transcribeProject(job.projectId);
+    const result = await transcribeProject(job.projectId, job.payload || {});
     await store.complete(job);
 
     console.log("Transcription completed", {
@@ -43,7 +38,6 @@ while (!stopping) {
     });
   } catch (error) {
     const failed = await store.fail(job, error);
-
     console.error("Transcription job failed", {
       projectId: job.projectId,
       status: failed.status,
