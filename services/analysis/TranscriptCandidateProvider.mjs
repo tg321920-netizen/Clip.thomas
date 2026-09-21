@@ -213,12 +213,10 @@ function boundedNumber(value, min, max, fallback) {
 }
 
 function omitInternal(candidate) {
-  const {
-    targetDistance: _targetDistance,
-    segmentStartIndex: _segmentStartIndex,
-    segmentEndIndex: _segmentEndIndex,
-    ...publicCandidate
-  } = candidate;
+  const publicCandidate = { ...candidate };
+  delete publicCandidate.targetDistance;
+  delete publicCandidate.segmentStartIndex;
+  delete publicCandidate.segmentEndIndex;
   return publicCandidate;
 }
 
