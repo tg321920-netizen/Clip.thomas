@@ -1,12 +1,8 @@
 # ClipForge Multi
 
-Repositorio principal de **ClipForge Multi**, una aplicación para convertir videos largos en clips verticales reales para TikTok, YouTube Shorts y Facebook Reels.
+Aplicación para convertir videos largos en clips verticales reales para TikTok, YouTube Shorts y Facebook Reels.
 
-La aplicación está en:
-
-```text
-clipforge/
-```
+La aplicación Next.js vive **directamente en la raíz del repositorio** para que GitHub y Vercel construyan exactamente el mismo código.
 
 ## Principio del proyecto
 
@@ -14,16 +10,33 @@ No se aceptan funciones simuladas. Upload, análisis, metadatos, transcripción,
 
 ## Estado
 
-La Fase 1 está en cierre:
+**Fase 1 en cierre:**
 
-- subida de video por streaming
-- validación MP4/MOV/WebM
-- FFprobe real
-- FFmpeg real para miniatura
-- reproducción del archivo fuente con HTTP Range
-- persistencia local configurable
-- historial de proyectos
-- comprobación de FFmpeg, FFprobe y almacenamiento
-- pruebas unitarias y flujo de prueba funcional preparado
+- subida de video por streaming;
+- validación MP4/MOV/WebM en cliente y servidor;
+- FFprobe real;
+- FFmpeg real para miniatura;
+- reproducción del archivo fuente con HTTP Range;
+- almacenamiento configurable;
+- historial local de proyectos;
+- comprobación de FFmpeg, FFprobe y storage;
+- tests de políticas de upload, rangos HTTP y protección contra path traversal;
+- prueba funcional preparada con un video generado realmente por FFmpeg.
 
-Consulta `clipforge/README.md` y `clipforge/PROJECT_PLAN.md` para la documentación técnica y las fases.
+## Ejecutar
+
+```bash
+npm ci
+npm run dev
+```
+
+## Validar
+
+```bash
+npm run verify
+npm run build
+```
+
+El script `build` también ejecuta lint, typecheck y tests antes de compilar Next.js.
+
+Consulta `PROJECT_PLAN.md` para las fases y `AGENTS.md` para las reglas que deben seguir los agentes de programación.
