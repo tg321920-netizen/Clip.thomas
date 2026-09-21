@@ -3,6 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
+import { parseByteRange } from "@/lib/http-range.mjs";
 import { getStorageRoot } from "@/services/StorageService";
 
 export const runtime = "nodejs";
@@ -74,7 +75,7 @@ export async function GET(
       });
     }
 
-    const parsed = parseRange(range, fileStat.size);
+    const parsed = parseByteRange(range, fileStat.size);
     if (!parsed) {
       return new Response(null, {
         status: 416,
@@ -113,44 +114,6 @@ export async function GET(
       { status: 500 },
     );
   }
-}
-
-function parseRange(
-  header: string,
-  size: number,
-): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match) return null;
-
-  const startText = match[1];
-  const endText = match[2];
-
-  if (!startText && !endText) return null;
-
-  if (!startText) {
-    const suffixLength = Number(endText);
-    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return null;
-    const length = Math.min(suffixLength, size);
-    return { start: size - length, end: size - 1 };
-  }
-
-  const start = Number(startText);
-  const requestedEnd = endText ? Number(endText) : size - 1;
-
-  if (
-    !Number.isInteger(start) ||
-    !Number.isInteger(requestedEnd) ||
-    start < 0 ||
-    start >= size ||
-    requestedEnd < start
-  ) {
-    return null;
-  }
-
-  return {
-    start,
-    end: Math.min(requestedEnd, size - 1),
-  };
 }
 
 function mimeFor(filename: string): string {
