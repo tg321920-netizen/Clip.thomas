@@ -2,15 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ContentAnalysisRecord } from "@/types/analysis";
+import type { ClipRecord } from "@/types/clip";
 import type { TranscriptRecord } from "@/types/transcription";
 
 type JobRecord = {
   id: string;
-  type: "TRANSCRIBE_VIDEO" | "ANALYZE_VIDEO";
+  type: "TRANSCRIBE_VIDEO" | "ANALYZE_VIDEO" | "RENDER_CLIP";
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
   attempts: number;
+  progress?: number;
   error: string | null;
   nextAttemptAt?: string | null;
+};
+
+type ClipWithJob = ClipRecord & {
+  job: JobRecord | null;
 };
 
 type TranscriptionPayload = {
@@ -27,6 +33,13 @@ type AnalysisPayload = {
   error?: string;
 };
 
+type ClipsPayload = {
+  clips?: ClipWithJob[];
+  clip?: ClipRecord;
+  job?: JobRecord | null;
+  error?: string;
+};
+
 export function ProjectPipeline({ projectId }: { projectId: string }) {
   const [transcript, setTranscript] = useState<TranscriptRecord | null>(null);
   const [transcriptionJob, setTranscriptionJob] = useState<JobRecord | null>(
@@ -34,22 +47,25 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   );
   const [analysis, setAnalysis] = useState<ContentAnalysisRecord | null>(null);
   const [analysisJob, setAnalysisJob] = useState<JobRecord | null>(null);
-  const [loadingAction, setLoadingAction] = useState<
-    "transcription" | "analysis" | null
-  >(null);
+  const [clips, setClips] = useState<ClipWithJob[]>([]);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadState = useCallback(
     async (silent = false) => {
       try {
-        const [transcriptionResponse, analysisResponse] = await Promise.all([
-          fetch(`/api/projects/${projectId}/transcription`, {
-            cache: "no-store",
-          }),
-          fetch(`/api/projects/${projectId}/analysis`, {
-            cache: "no-store",
-          }),
-        ]);
+        const [transcriptionResponse, analysisResponse, clipsResponse] =
+          await Promise.all([
+            fetch(`/api/projects/${projectId}/transcription`, {
+              cache: "no-store",
+            }),
+            fetch(`/api/projects/${projectId}/analysis`, {
+              cache: "no-store",
+            }),
+            fetch(`/api/projects/${projectId}/clips`, {
+              cache: "no-store",
+            }),
+          ]);
 
         if (!transcriptionResponse.ok) {
           throw new Error("No se pudo consultar la transcripción.");
@@ -57,15 +73,20 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         if (!analysisResponse.ok) {
           throw new Error("No se pudo consultar el análisis.");
         }
+        if (!clipsResponse.ok) {
+          throw new Error("No se pudieron consultar los clips.");
+        }
 
         const transcriptionData =
           (await transcriptionResponse.json()) as TranscriptionPayload;
         const analysisData = (await analysisResponse.json()) as AnalysisPayload;
+        const clipsData = (await clipsResponse.json()) as ClipsPayload;
 
         setTranscript(transcriptionData.transcript);
         setTranscriptionJob(transcriptionData.job);
         setAnalysis(analysisData.analysis);
         setAnalysisJob(analysisData.job);
+        setClips(clipsData.clips ?? []);
         if (!silent) setError(null);
       } catch (loadError) {
         if (!silent) {
@@ -93,8 +114,12 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
       transcriptionJob?.status === "QUEUED" ||
       transcriptionJob?.status === "PROCESSING" ||
       analysisJob?.status === "QUEUED" ||
-      analysisJob?.status === "PROCESSING",
-    [analysisJob?.status, transcriptionJob?.status],
+      analysisJob?.status === "PROCESSING" ||
+      clips.some(
+        (clip) =>
+          clip.job?.status === "QUEUED" || clip.job?.status === "PROCESSING",
+      ),
+    [analysisJob?.status, clips, transcriptionJob?.status],
   );
 
   useEffect(() => {
@@ -165,6 +190,41 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         actionError instanceof Error
           ? actionError.message
           : "No se pudo iniciar el análisis.",
+      );
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function queueClip(candidateId: string) {
+    const action = `clip:${candidateId}`;
+    setLoadingAction(action);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/clips`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          candidateId,
+          framingMode: "FILL",
+          quality: "BALANCED",
+        }),
+      });
+      const payload = (await response.json()) as ClipsPayload;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo preparar el clip.");
+      }
+
+      await loadState(true);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "No se pudo preparar el clip.",
       );
     } finally {
       setLoadingAction(null);
@@ -276,41 +336,110 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
             </div>
 
             <div className="mt-3 space-y-3">
-              {analysis.candidates.slice(0, 5).map((candidate) => (
-                <article
-                  key={candidate.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.035] p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h5 className="text-sm font-medium text-zinc-200">
-                        {candidate.title}
-                      </h5>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {formatTime(candidate.startTime)} –{" "}
-                        {formatTime(candidate.endTime)} ·{" "}
-                        {Math.round(candidate.duration)} s
-                      </p>
-                    </div>
-                    <div className="shrink-0 rounded-xl bg-violet-500/15 px-3 py-2 text-center">
-                      <div className="text-lg font-semibold text-violet-300">
-                        {candidate.viralScore}
-                      </div>
-                      <div className="text-[10px] uppercase tracking-wide text-violet-400/70">
-                        ViralScore
-                      </div>
-                    </div>
-                  </div>
+              {analysis.candidates.slice(0, 5).map((candidate) => {
+                const clip = clips.find(
+                  (entry) => entry.candidateId === candidate.id,
+                );
+                const clipBusy =
+                  clip?.job?.status === "QUEUED" ||
+                  clip?.job?.status === "PROCESSING";
+                const clipProgress = Math.max(
+                  0,
+                  Math.min(100, Number(clip?.job?.progress || 0)),
+                );
 
-                  <p className="mt-3 text-xs leading-5 text-zinc-400">
-                    <span className="font-medium text-zinc-300">Hook:</span>{" "}
-                    {candidate.hook}
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-zinc-500">
-                    {candidate.reasons[0] || candidate.reason}
-                  </p>
-                </article>
-              ))}
+                return (
+                  <article
+                    key={candidate.id}
+                    className="rounded-xl border border-white/10 bg-white/[0.035] p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h5 className="text-sm font-medium text-zinc-200">
+                          {candidate.title}
+                        </h5>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {formatTime(candidate.startTime)} –{" "}
+                          {formatTime(candidate.endTime)} ·{" "}
+                          {Math.round(candidate.duration)} s
+                        </p>
+                      </div>
+                      <div className="shrink-0 rounded-xl bg-violet-500/15 px-3 py-2 text-center">
+                        <div className="text-lg font-semibold text-violet-300">
+                          {candidate.viralScore}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-violet-400/70">
+                          ViralScore
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs leading-5 text-zinc-400">
+                      <span className="font-medium text-zinc-300">Hook:</span>{" "}
+                      {candidate.hook}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      {candidate.reasons[0] || candidate.reason}
+                    </p>
+
+                    {clip?.status === "READY" && clip.render ? (
+                      <div className="mt-3">
+                        <video
+                          controls
+                          preload="metadata"
+                          src={clip.render.sourceUrl}
+                          className="mx-auto max-h-[420px] w-full rounded-xl bg-black object-contain"
+                        >
+                          Tu navegador no puede reproducir este clip.
+                        </video>
+                        <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-400">
+                          <span>Clip 1080×1920 listo</span>
+                          <span>{clip.edit.quality}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {clipBusy && (
+                          <div className="mt-3">
+                            <div className="mb-1 flex justify-between text-[11px] text-zinc-500">
+                              <span>
+                                {clip?.job?.status === "QUEUED"
+                                  ? "Esperando worker de render…"
+                                  : "Renderizando clip real…"}
+                              </span>
+                              <span>{Math.round(clipProgress)}%</span>
+                            </div>
+                            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                              <div
+                                className="h-full bg-violet-500 transition-[width]"
+                                style={{ width: `${clipProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => void queueClip(candidate.id)}
+                          disabled={
+                            loadingAction !== null ||
+                            clipBusy
+                          }
+                          className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {loadingAction === `clip:${candidate.id}`
+                            ? "Encolando render…"
+                            : clip?.status === "FAILED"
+                              ? "Reintentar clip 9:16"
+                              : clipBusy
+                                ? "Procesando…"
+                                : "Crear clip 9:16"}
+                        </button>
+                      </>
+                    )}
+                  </article>
+                );
+              })}
             </div>
 
             <p className="mt-3 text-[11px] leading-5 text-zinc-600">
