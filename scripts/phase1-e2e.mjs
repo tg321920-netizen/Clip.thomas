@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import {
   mkdtemp,
   readFile,
@@ -20,18 +21,22 @@ let server;
 try {
   await generateSampleVideo(mediaPath);
 
-  server = spawn(
-    process.platform === "win32" ? "npm.cmd" : "npm",
-    ["run", "start"],
-    {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        CLIPFORGE_STORAGE_DIR: storagePath,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
+  const nextBin = path.join(
+    process.cwd(),
+    "node_modules",
+    "next",
+    "dist",
+    "bin",
+    "next",
   );
+
+  server = spawn(process.execPath, [nextBin, "start", "-p", String(port)], {
+    env: {
+      ...process.env,
+      CLIPFORGE_STORAGE_DIR: storagePath,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   let serverLog = "";
   server.stdout.setEncoding("utf8");
@@ -151,10 +156,24 @@ try {
     aspectRatio: video.aspectRatio,
   });
 } finally {
-  if (server && !server.killed) {
-    server.kill("SIGTERM");
-  }
+  await stopServer(server);
   await rm(tempRoot, { recursive: true, force: true });
+}
+
+async function stopServer(child) {
+  if (!child || child.exitCode !== null) return;
+
+  child.kill("SIGTERM");
+
+  await Promise.race([
+    once(child, "exit"),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]);
+
+  if (child.exitCode === null) {
+    child.kill("SIGKILL");
+    await once(child, "exit").catch(() => undefined);
+  }
 }
 
 async function generateSampleVideo(target) {
