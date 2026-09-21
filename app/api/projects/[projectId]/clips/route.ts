@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { ClipRecord } from "@/types/clip";
 import { isProjectId } from "@/lib/project-id.mjs";
 import { JobStore } from "@/services/JobStore.mjs";
 import {
@@ -34,7 +35,7 @@ export async function GET(
   }
 
   const withJobs = await Promise.all(
-    clips.map(async (clip) => ({
+    clips.map(async (clip: ClipRecord) => ({
       ...clip,
       job: await jobs.getRenderJob(projectId, clip.id),
     })),
