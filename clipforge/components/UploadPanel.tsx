@@ -1,0 +1,249 @@
+"use client";
+
+import { useRef, useState } from "react";
+import type { DragEvent } from "react";
+import type { UploadedVideo } from "@/types/video";
+
+type UploadState = "idle" | "uploading" | "done" | "error";
+
+export function UploadPanel() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [state, setState] = useState<UploadState>("idle");
+  const [progress, setProgress] = useState<number | null>(null);
+  const [result, setResult] = useState<UploadedVideo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function chooseFile(nextFile: File | undefined) {
+    if (!nextFile) return;
+    setFile(nextFile);
+    setResult(null);
+    setError(null);
+    setProgress(null);
+    setState("idle");
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    chooseFile(event.dataTransfer.files[0]);
+  }
+
+  function upload() {
+    if (!file || state === "uploading") return;
+
+    setState("uploading");
+    setError(null);
+    setResult(null);
+    setProgress(0);
+
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+    xhr.open("POST", "/api/videos/upload");
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream",
+    );
+    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+    xhr.setRequestHeader("X-File-Size", String(file.size));
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) {
+        setProgress(null);
+        return;
+      }
+      setProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+
+    xhr.onload = () => {
+      xhrRef.current = null;
+      const payload = parsePayload(xhr.responseText);
+
+      if (xhr.status >= 200 && xhr.status < 300 && payload.video) {
+        setProgress(100);
+        setResult(payload.video);
+        setState("done");
+        return;
+      }
+
+      setError(payload.error || `La subida falló (HTTP ${xhr.status}).`);
+      setState("error");
+    };
+
+    xhr.onerror = () => {
+      xhrRef.current = null;
+      setError("No se pudo conectar con el servidor.");
+      setState("error");
+    };
+
+    xhr.onabort = () => {
+      xhrRef.current = null;
+      setError("Subida cancelada.");
+      setState("error");
+    };
+
+    xhr.send(file);
+  }
+
+  function cancel() {
+    xhrRef.current?.abort();
+  }
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30 sm:p-6">
+      <div
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={`rounded-2xl border border-dashed p-6 text-center transition sm:p-8 ${
+          dragging
+            ? "border-violet-400 bg-violet-500/10"
+            : "border-white/15 bg-black/20"
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+          onChange={(event) => chooseFile(event.target.files?.[0])}
+        />
+
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/15 text-2xl text-violet-300">
+          ↑
+        </div>
+        <h2 className="mt-4 text-lg font-medium">Sube tu video</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-500">
+          MP4, MOV o WebM · máximo 1 GB en esta fase
+        </p>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={state === "uploading"}
+          className="mt-5 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Elegir archivo
+        </button>
+      </div>
+
+      {file && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-zinc-200">{file.name}</p>
+              <p className="mt-1 text-xs text-zinc-500">{formatBytes(file.size)}</p>
+            </div>
+            <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-wide text-zinc-400">
+              {extensionOf(file.name)}
+            </span>
+          </div>
+
+          {state === "uploading" && (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
+                <span>{progress === null ? "Subiendo…" : "Subida real"}</span>
+                <span>{progress === null ? "—" : `${progress}%`}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                {progress !== null && (
+                  <div
+                    className="h-full rounded-full bg-violet-500 transition-[width]"
+                    style={{ width: `${progress}%` }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 flex gap-2">
+            {state !== "uploading" ? (
+              <button
+                type="button"
+                onClick={upload}
+                className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+              >
+                Analizar video real
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={cancel}
+                className="flex-1 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm font-medium text-red-300"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-200">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium text-emerald-200">FFprobe completado</h3>
+            <span className="text-xs text-emerald-400">REAL</span>
+          </div>
+          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
+            <Metric label="Resolución" value={`${result.width}×${result.height}`} />
+            <Metric label="FPS" value={String(result.fps)} />
+            <Metric label="Códec" value={result.codec.toUpperCase()} />
+            <Metric label="Aspecto" value={result.aspectRatio} />
+            <Metric label="Contenedor" value={result.container.toUpperCase()} />
+          </dl>
+          <p className="mt-4 break-all text-[11px] text-zinc-500">
+            Proyecto: {result.projectId}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-black/20 p-3">
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dd className="mt-1 font-medium text-zinc-200">{value}</dd>
+    </div>
+  );
+}
+
+function parsePayload(value: string): {
+  error?: string;
+  video?: UploadedVideo;
+} {
+  try {
+    return JSON.parse(value) as { error?: string; video?: UploadedVideo };
+  } catch {
+    return {};
+  }
+}
+
+function extensionOf(name: string): string {
+  return name.split(".").pop()?.toUpperCase() || "VIDEO";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const remaining = total % 60;
+  return `${minutes}:${remaining.toString().padStart(2, "0")}`;
+}
