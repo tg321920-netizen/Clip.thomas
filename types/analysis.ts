@@ -23,6 +23,12 @@ export type ClipCandidate = {
   reasons: string[];
   confidence: "LOW" | "MEDIUM" | "HIGH";
   disclaimer: string;
+  aiAssessment?: {
+    provider: string;
+    model: string;
+    relevanceScore: number;
+    reason: string;
+  };
 };
 
 export type ContentAnalysisRecord = {
