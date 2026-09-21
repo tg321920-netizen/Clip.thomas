@@ -65,3 +65,16 @@ Al introducir una base de datos, estas entidades podrán migrarse sin cambiar el
 ## Próxima decisión de infraestructura
 
 Antes de Channels/Publishing/multiusuario será necesario escoger persistencia durable y autenticación. Esa decisión debe hacerse después de estabilizar el pipeline de video/transcripción, no antes.
+
+
+## Content Analyzer — baseline funcional
+
+La primera implementación de análisis no finge disponer de un modelo externo.
+
+`TranscriptCandidateProvider` genera ventanas sobre límites reales de `TranscriptSegment`, con duración configurable y sin cortar dentro de un segmento. `ViralScoreService` calcula señales separadas para hook, interés semántico, emoción, comprensión independiente y duración.
+
+La señal `audioEnergy` permanece en `null` hasta existir un `AudioAnalyzer`. El ViralScore se normaliza usando únicamente pesos de señales disponibles y siempre conserva un disclaimer de que no garantiza viralidad.
+
+`ContentAnalysisService` acepta un provider por inyección. Esto permite añadir posteriormente un provider LLM sin mezclar llamadas de IA con UI ni reemplazar el baseline local.
+
+La petición HTTP de análisis solo encola `ANALYZE_VIDEO`; `analysis-worker.mjs` ejecuta el trabajo fuera del request.
