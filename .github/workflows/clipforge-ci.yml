@@ -29,8 +29,13 @@ jobs:
           cache: npm
           cache-dependency-path: clipforge/package-lock.json
 
-      - name: Install
+      - name: Install dependencies
         run: npm ci
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Lint
         run: npm run lint
@@ -38,8 +43,60 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Tests
+      - name: Unit tests
         run: npm test
 
       - name: Build
         run: npm run build
+
+      - name: Generate a real sample video
+        run: |
+          ffmpeg -y             -f lavfi -i testsrc2=size=640x360:rate=30             -f lavfi -i sine=frequency=1000:sample_rate=44100             -t 2             -c:v libx264 -pix_fmt yuv420p             -c:a aac             /tmp/clipforge-phase1.mp4
+
+      - name: Start production server
+        run: |
+          npm run start > /tmp/clipforge-server.log 2>&1 &
+          echo $! > /tmp/clipforge-server.pid
+
+      - name: Wait for server
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/clipforge-server.log
+          exit 1
+
+      - name: Functional Phase 1 upload test
+        run: |
+          SIZE="$(stat -c%s /tmp/clipforge-phase1.mp4)"
+          curl --fail-with-body --silent --show-error             -X POST http://127.0.0.1:3000/api/videos/upload             -H "Content-Type: video/mp4"             -H "X-File-Name: clipforge-phase1.mp4"             -H "X-File-Size: $SIZE"             --data-binary @/tmp/clipforge-phase1.mp4             -o /tmp/clipforge-response.json
+
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync("/tmp/clipforge-response.json", "utf8"));
+          const video = payload.video;
+          if (!video) throw new Error("Missing video payload");
+          if (video.width !== 640 || video.height !== 360) {
+            throw new Error(`Unexpected resolution: ${video.width}x${video.height}`);
+          }
+          if (video.durationSeconds < 1.8 || video.durationSeconds > 2.2) {
+            throw new Error(`Unexpected duration: ${video.durationSeconds}`);
+          }
+          if (!video.codec || !video.projectId || !video.aspectRatio) {
+            throw new Error("Missing real FFprobe metadata");
+          }
+          console.log("Phase 1 functional upload passed", {
+            duration: video.durationSeconds,
+            resolution: `${video.width}x${video.height}`,
+            fps: video.fps,
+            codec: video.codec,
+            aspectRatio: video.aspectRatio,
+          });
+          NODE
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/clipforge-server.log || true
