@@ -6,7 +6,8 @@ import {
   MAX_UPLOAD_BYTES,
   validateUploadDescriptor,
 } from "@/lib/upload-policy.mjs";
-import type { UploadedVideo } from "@/types/video";\nimport { ProjectPipeline } from "@/components/ProjectPipeline";
+import type { UploadedVideo } from "@/types/video";
+import { ProjectPipeline } from "@/components/ProjectPipeline";
 
 type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
