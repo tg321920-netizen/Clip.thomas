@@ -120,6 +120,7 @@ export async function POST(request: Request) {
       storedName,
       sizeBytes: bytesWritten,
       posterUrl: `/api/projects/${projectId}/poster`,
+      sourceUrl: `/api/projects/${projectId}/source`,
       ...technical,
     };
 
