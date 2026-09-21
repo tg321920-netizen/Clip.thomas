@@ -32,6 +32,7 @@ while (!stopping) {
     if (!clip) throw new Error("Clip not found.");
 
     let lastPersistedProgress = Number(job.progress || 0);
+    let progressWrites = Promise.resolve();
 
     const result = await renderClip(
       job.projectId,
@@ -42,10 +43,14 @@ while (!stopping) {
           progress - lastPersistedProgress >= 5
         ) {
           lastPersistedProgress = progress;
-          void store.updateProgress(job.id, progress);
+          progressWrites = progressWrites.then(() =>
+            store.updateProgress(job.id, progress),
+          );
         }
       },
     );
+
+    await progressWrites;
 
     await store.complete({
       ...job,
