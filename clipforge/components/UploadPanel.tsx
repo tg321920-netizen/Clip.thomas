@@ -65,6 +65,7 @@ export function UploadPanel() {
         setProgress(100);
         setResult(payload.video);
         setState("done");
+        window.dispatchEvent(new Event("clipforge:project-created"));
         return;
       }
 
