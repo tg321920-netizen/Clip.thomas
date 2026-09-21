@@ -12,7 +12,9 @@
     "verify": "npm run lint && npm run typecheck && npm test",
     "phase1:e2e": "node scripts/phase1-e2e.mjs",
     "worker:transcription": "node scripts/transcription-worker.mjs",
-    "worker:transcription:once": "node scripts/transcription-worker.mjs --once"
+    "worker:transcription:once": "node scripts/transcription-worker.mjs --once",
+    "worker:analysis": "node scripts/analysis-worker.mjs",
+    "worker:analysis:once": "node scripts/analysis-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",
