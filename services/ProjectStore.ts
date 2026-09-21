@@ -4,6 +4,7 @@ import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
 import type { TranscriptRecord } from "@/types/transcription";
 import type { ContentAnalysisRecord } from "@/types/analysis";
+import type { ClipRecord } from "@/types/clip";
 
 export type ProjectRecord = {
   id: string;
@@ -13,6 +14,7 @@ export type ProjectRecord = {
   };
   transcript?: TranscriptRecord;
   analysis?: ContentAnalysisRecord;
+  clips?: ClipRecord[];
 };
 
 export class ProjectStore {
