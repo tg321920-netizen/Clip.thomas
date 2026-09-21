@@ -19,10 +19,16 @@
 
 ## EN PROGRESO
 
-- Preparación incremental de la siguiente fase: AI Content Analyzer.
+- Validación de Content Analyzer + candidatos + ViralScore explicable.
 
 ## COMPLETADO RECIENTE
 
+- ContentAnalysisService separado de UI: implementado.
+- TranscriptCandidateProvider con ventanas sobre TranscriptSegment: implementado.
+- ViralScore 0–100 con componentes y razones: implementado.
+- audioEnergy permanece null hasta existir AudioAnalyzer; no se inventa señal.
+- Job ANALYZE_VIDEO y worker independiente: implementados.
+- API de análisis idempotente: implementada.
 - lint: OK.
 - typecheck: OK.
 - tests unitarios: OK.
@@ -38,8 +44,6 @@
 
 ## PENDIENTE
 
-- AI Content Analyzer.
-- Candidate/ViralScore.
 - Clip Engine.
 - Subtítulos editables.
 - AutoEditService.
@@ -66,9 +70,7 @@
 
 ## SIGUIENTE PASO
 
-1. Implementar AI Content Analyzer como servicio/provider separado.
-2. Generar candidatos solo desde TranscriptSegment y límites configurables.
-3. Guardar razones y señales del ViralScore sin presentar la puntuación como garantía.
-4. Añadir provider de IA configurable sin inventar credenciales.
-5. Probar el analizador con provider de prueba y, cuando exista una credencial/runtime autorizado, validar una llamada real.
-6. No iniciar Clip Engine hasta estabilizar esta fase.
+1. Ejecutar lint, typecheck, tests y build con Content Analyzer.
+2. Confirmar persistencia e idempotencia de candidatos.
+3. Añadir una capa opcional de proveedor LLM sin inventar credenciales; el baseline heurístico debe seguir funcionando sin ella.
+4. Cuando esta fase quede estable, iniciar Clip Engine con recorte real FFmpeg y originales intactos.
