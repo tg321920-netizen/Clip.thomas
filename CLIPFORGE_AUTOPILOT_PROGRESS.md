@@ -19,9 +19,16 @@
 
 ## EN PROGRESO
 
-- Validación de Content Analyzer + candidatos + ViralScore explicable.
+- Validación de Clip Engine: recorte real, render vertical 1080×1920, jobs y reproducción del clip.
 
 ## COMPLETADO RECIENTE
+
+- ClipService para convertir candidatos reales en clips persistidos: implementado.
+- RenderService FFmpeg 9:16 con FILL/FIT y calidades FAST/BALANCED/HIGH: implementado.
+- RENDER_CLIP con worker separado y progreso derivado de FFmpeg: implementado.
+- Streaming HTTP Range de clips renderizados: implementado.
+- UI para crear y previsualizar clips desde candidatos: implementada.
+- Prueba E2E de render vertical y preservación del original: preparada.
 
 - ContentAnalysisService separado de UI: implementado.
 - TranscriptCandidateProvider con ventanas sobre TranscriptSegment: implementado.
@@ -44,7 +51,6 @@
 
 ## PENDIENTE
 
-- Clip Engine.
 - Subtítulos editables.
 - AutoEditService.
 - Channels y ChannelStrategy.
@@ -70,7 +76,7 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con Content Analyzer.
-2. Confirmar persistencia e idempotencia de candidatos.
-3. Añadir una capa opcional de proveedor LLM sin inventar credenciales; el baseline heurístico debe seguir funcionando sin ella.
-4. Cuando esta fase quede estable, iniciar Clip Engine con recorte real FFmpeg y originales intactos.
+1. Ejecutar lint, typecheck, tests y build con Clip Engine.
+2. Ejecutar render E2E real y confirmar 1080×1920, duración, audio, progreso e integridad del original.
+3. Corregir cualquier fallo antes de avanzar.
+4. Solo con Clip Engine verificado, iniciar subtítulos editables y estilos CLEAN/VIRAL/KARAOKE.
