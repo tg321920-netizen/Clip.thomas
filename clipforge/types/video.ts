@@ -14,4 +14,5 @@ export type UploadedVideo = ProbeMetadata & {
   storedName: string;
   sizeBytes: number;
   posterUrl: string;
+  sourceUrl: string;
 };
