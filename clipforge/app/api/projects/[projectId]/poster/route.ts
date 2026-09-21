@@ -1,13 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { isProjectId } from "@/lib/project-id.mjs";
 import { getStorageRoot } from "@/services/StorageService";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const PROJECT_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(
   _request: Request,
@@ -15,7 +13,7 @@ export async function GET(
 ) {
   const { projectId } = await context.params;
 
-  if (!PROJECT_ID_PATTERN.test(projectId)) {
+  if (!isProjectId(projectId)) {
     return NextResponse.json(
       { error: "Identificador de proyecto inválido." },
       { status: 400 },
