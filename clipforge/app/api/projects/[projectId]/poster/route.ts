@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { getStorageRoot } from "@/services/StorageService";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +23,7 @@ export async function GET(
   }
 
   const posterPath = path.join(
-    process.cwd(),
-    "storage",
+    getStorageRoot(),
     "uploads",
     projectId,
     "poster.jpg",
