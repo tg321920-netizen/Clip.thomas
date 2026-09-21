@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { UploadedVideo } from "@/types/video";
@@ -192,15 +191,16 @@ export function UploadPanel() {
 
       {result && (
         <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07]">
-          <div className="relative aspect-video w-full bg-black">
-            <Image
-              src={result.posterUrl}
-              alt={`Miniatura real de ${result.originalName}`}
-              fill
-              unoptimized
-              sizes="(max-width: 1024px) 100vw, 42vw"
-              className="object-contain"
-            />
+          <div className="aspect-video w-full bg-black">
+            <video
+              controls
+              preload="metadata"
+              poster={result.posterUrl}
+              src={result.sourceUrl}
+              className="h-full w-full object-contain"
+            >
+              Tu navegador no puede reproducir este video.
+            </video>
           </div>
 
           <div className="p-4">
@@ -210,6 +210,9 @@ export function UploadPanel() {
               </h3>
               <span className="text-xs text-emerald-400">REAL</span>
             </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              El reproductor usa el archivo que acabas de subir, no una demo.
+            </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
               <Metric label="Resolución" value={`${result.width}×${result.height}`} />
