@@ -1,4 +1,5 @@
 import { MediaEnvironmentStatus } from "@/components/MediaEnvironmentStatus";
+import { RecentProjects } from "@/components/RecentProjects";
 import { UploadPanel } from "@/components/UploadPanel";
 
 export default function Home() {
@@ -49,6 +50,8 @@ export default function Home() {
 
           <UploadPanel />
         </section>
+
+        <RecentProjects />
 
         <footer className="border-t border-white/10 pt-5 text-xs text-zinc-600">
           Sin análisis falso, sin progreso simulado y sin clips inventados.
