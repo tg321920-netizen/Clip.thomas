@@ -78,3 +78,38 @@ La señal `audioEnergy` permanece en `null` hasta existir un `AudioAnalyzer`. El
 `ContentAnalysisService` acepta un provider por inyección. Esto permite añadir posteriormente un provider LLM sin mezclar llamadas de IA con UI ni reemplazar el baseline local.
 
 La petición HTTP de análisis solo encola `ANALYZE_VIDEO`; `analysis-worker.mjs` ejecuta el trabajo fuera del request.
+
+
+## Clip Engine — render vertical real
+
+`ClipService` transforma un candidato persistido en un `ClipRecord` no destructivo. El video fuente nunca se sobrescribe.
+
+`RenderService` ejecuta FFmpeg con argumentos separados y `shell: false`. El primer perfil de salida es MP4 H.264 + AAC, `yuv420p`, `faststart` y resolución 1080×1920.
+
+Encuadres iniciales:
+
+- `FILL`: escala conservando proporción y recorta al centro hasta llenar 9:16.
+- `FIT`: conserva el cuadro completo y añade padding negro hasta 9:16.
+
+Calidades iniciales:
+
+- `FAST`: preset ultrafast, CRF 28.
+- `BALANCED`: preset medium, CRF 23.
+- `HIGH`: preset slow, CRF 20.
+
+El render no se ejecuta dentro de una petición HTTP. La API crea o reutiliza el clip y encola `RENDER_CLIP`. `render-worker.mjs` reclama el trabajo, persiste progreso real de FFmpeg y marca el clip READY o FAILED.
+
+Los archivos se guardan en:
+
+`storage/clips/{projectId}/{clipId}/render.mp4`
+
+y se sirven mediante una ruta de streaming con soporte HTTP Range.
+
+La prueba de render debe verificar:
+
+1. salida MP4 real;
+2. resolución 1080×1920 con ffprobe;
+3. duración esperada;
+4. archivo no vacío;
+5. fuente original sin modificaciones;
+6. reutilización del render READY.
