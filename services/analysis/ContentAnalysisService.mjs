@@ -3,10 +3,8 @@ import {
   loadProjectFile,
   replaceProjectFile,
 } from "../../lib/project-files.mjs";
-import {
-  TranscriptCandidateProvider,
-  normalizeAnalysisOptions,
-} from "./TranscriptCandidateProvider.mjs";
+import { normalizeAnalysisOptions } from "./TranscriptCandidateProvider.mjs";
+import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
 
 export async function analyzeProject(projectId, options = {}) {
   const project = await loadProjectFile(projectId);
@@ -31,7 +29,13 @@ export async function analyzeProject(projectId, options = {}) {
   }
 
   const config = normalizeAnalysisOptions(options);
-  const provider = options.provider || new TranscriptCandidateProvider(config);
+  const provider =
+    options.provider ||
+    createContentAnalysisProvider({
+      ...config,
+      providerName: options.providerName,
+      model: options.model,
+    });
   const startedAt = new Date().toISOString();
 
   project.analysis = {
