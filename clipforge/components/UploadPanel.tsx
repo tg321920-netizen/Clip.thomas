@@ -49,12 +49,38 @@ export function UploadPanel() {
     chooseFile(event.dataTransfer.files[0]);
   }
 
-  function upload() {
-    if (!file || state === "uploading" || error) return;
+  async function upload() {
+    if (!file || state === "checking" || state === "uploading" || error) return;
 
-    setState("uploading");
+    setState("checking");
     setError(null);
     setResult(null);
+    setProgress(null);
+
+    try {
+      const readinessResponse = await fetch("/api/system/media-status", {
+        cache: "no-store",
+      });
+      const readiness = (await readinessResponse.json()) as {
+        ready?: boolean;
+        message?: string;
+      };
+
+      if (!readiness.ready) {
+        setError(
+          readiness.message ||
+            "Este entorno todavía no está listo para procesar video.",
+        );
+        setState("error");
+        return;
+      }
+    } catch {
+      setError("No se pudo verificar el motor de procesamiento.");
+      setState("error");
+      return;
+    }
+
+    setState("uploading");
     setProgress(0);
 
     const xhr = new XMLHttpRequest();
@@ -110,6 +136,8 @@ export function UploadPanel() {
     xhrRef.current?.abort();
   }
 
+  const busy = state === "checking" || state === "uploading";
+
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30 sm:p-6">
       <div
@@ -144,7 +172,7 @@ export function UploadPanel() {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={state === "checking" || state === "uploading"}
+          disabled={busy}
           className="mt-5 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Elegir archivo
@@ -163,7 +191,13 @@ export function UploadPanel() {
             </span>
           </div>
 
-          {state === "checking" && (\n            <p className="mt-4 text-xs text-violet-300">\n              Verificando FFmpeg, FFprobe y almacenamiento…\n            </p>\n          )}\n\n          {state === "uploading" && (
+          {state === "checking" && (
+            <p className="mt-4 text-xs text-violet-300">
+              Verificando FFmpeg, FFprobe y almacenamiento…
+            </p>
+          )}
+
+          {state === "uploading" && (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
                 <span>{progress === null ? "Subiendo…" : "Subida real"}</span>
@@ -181,7 +215,7 @@ export function UploadPanel() {
           )}
 
           <div className="mt-4 flex gap-2">
-            {state !== "checking" && state !== "uploading" ? (
+            {!busy ? (
               <button
                 type="button"
                 onClick={() => void upload()}
@@ -190,13 +224,21 @@ export function UploadPanel() {
               >
                 Analizar video real
               </button>
-            ) : (
+            ) : state === "uploading" ? (
               <button
                 type="button"
                 onClick={cancel}
                 className="flex-1 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm font-medium text-red-300"
               >
                 Cancelar
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="flex-1 rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-2.5 text-sm font-medium text-violet-200 opacity-70"
+              >
+                Verificando entorno…
               </button>
             )}
           </div>
