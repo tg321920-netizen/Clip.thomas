@@ -2,6 +2,10 @@
 
 import { useRef, useState } from "react";
 import type { DragEvent } from "react";
+import {
+  MAX_UPLOAD_BYTES,
+  validateUploadDescriptor,
+} from "@/lib/upload-policy.mjs";
 import type { UploadedVideo } from "@/types/video";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
@@ -18,10 +22,24 @@ export function UploadPanel() {
 
   function chooseFile(nextFile: File | undefined) {
     if (!nextFile) return;
+
+    const validation = validateUploadDescriptor({
+      filename: nextFile.name,
+      mimeType: nextFile.type || "application/octet-stream",
+      size: nextFile.size,
+    });
+
     setFile(nextFile);
     setResult(null);
-    setError(null);
     setProgress(null);
+
+    if (!validation.ok) {
+      setError(validation.error);
+      setState("error");
+      return;
+    }
+
+    setError(null);
     setState("idle");
   }
 
@@ -32,7 +50,7 @@ export function UploadPanel() {
   }
 
   function upload() {
-    if (!file || state === "uploading") return;
+    if (!file || state === "uploading" || error) return;
 
     setState("uploading");
     setError(null);
@@ -121,7 +139,7 @@ export function UploadPanel() {
         </div>
         <h2 className="mt-4 text-lg font-medium">Sube tu video</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">
-          MP4, MOV o WebM · máximo 1 GB en esta fase
+          MP4, MOV o WebM · máximo {formatBytes(MAX_UPLOAD_BYTES)}
         </p>
         <button
           type="button"
@@ -167,7 +185,8 @@ export function UploadPanel() {
               <button
                 type="button"
                 onClick={upload}
-                className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+                disabled={Boolean(error)}
+                className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Analizar video real
               </button>
@@ -258,7 +277,10 @@ function extensionOf(name: string): string {
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 function formatDuration(seconds: number): string {
