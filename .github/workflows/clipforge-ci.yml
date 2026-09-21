@@ -4,19 +4,34 @@ on:
   push:
     branches: [main, "chatgpt/**"]
     paths:
-      - "clipforge/**"
+      - "app/**"
+      - "components/**"
+      - "services/**"
+      - "lib/**"
+      - "types/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "next.config.ts"
+      - "postcss.config.mjs"
+      - "eslint.config.mjs"
       - ".github/workflows/clipforge-ci.yml"
   pull_request:
     paths:
-      - "clipforge/**"
+      - "app/**"
+      - "components/**"
+      - "services/**"
+      - "lib/**"
+      - "types/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/clipforge-ci.yml"
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: clipforge
 
     steps:
       - name: Checkout
@@ -27,7 +42,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: clipforge/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -37,17 +52,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests
-        run: npm test
+      - name: Verify code
+        run: npm run verify
 
       - name: Build
-        run: npm run build
+        run: npx next build
 
       - name: Generate a real sample video
         run: |
@@ -143,9 +152,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             "http://127.0.0.1:3000$POSTER_URL" \
             -o /tmp/clipforge-poster.jpg
-
           test "$(stat -c%s /tmp/clipforge-poster.jpg)" -gt 100
-
           node - <<'NODE'
           const fs = require("node:fs");
           const data = fs.readFileSync("/tmp/clipforge-poster.jpg");
@@ -163,7 +170,6 @@ jobs:
             -D /tmp/source-headers.txt \
             "http://127.0.0.1:3000$SOURCE_URL" \
             -o /tmp/source-range.bin
-
           grep -qi "^HTTP/.* 206" /tmp/source-headers.txt
           grep -qi "^Accept-Ranges: bytes" /tmp/source-headers.txt
           test "$(stat -c%s /tmp/source-range.bin)" -gt 0
@@ -189,6 +195,9 @@ jobs:
           }
           if (!found.source?.sourceUrl || !found.source?.posterUrl) {
             throw new Error("Persisted project is missing media URLs");
+          }
+          if ("relativePath" in found.source) {
+            throw new Error("Internal storage path leaked through API");
           }
           console.log("Project persistence verified", { id });
           NODE
