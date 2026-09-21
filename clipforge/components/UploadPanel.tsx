@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { UploadedVideo } from "@/types/video";
@@ -190,22 +191,37 @@ export function UploadPanel() {
       )}
 
       {result && (
-        <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium text-emerald-200">FFprobe completado</h3>
-            <span className="text-xs text-emerald-400">REAL</span>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07]">
+          <div className="relative aspect-video w-full bg-black">
+            <Image
+              src={result.posterUrl}
+              alt={`Miniatura real de ${result.originalName}`}
+              fill
+              unoptimized
+              sizes="(max-width: 1024px) 100vw, 42vw"
+              className="object-contain"
+            />
           </div>
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
-            <Metric label="Resolución" value={`${result.width}×${result.height}`} />
-            <Metric label="FPS" value={String(result.fps)} />
-            <Metric label="Códec" value={result.codec.toUpperCase()} />
-            <Metric label="Aspecto" value={result.aspectRatio} />
-            <Metric label="Contenedor" value={result.container.toUpperCase()} />
-          </dl>
-          <p className="mt-4 break-all text-[11px] text-zinc-500">
-            Proyecto: {result.projectId}
-          </p>
+
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-emerald-200">
+                FFprobe + FFmpeg completados
+              </h3>
+              <span className="text-xs text-emerald-400">REAL</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
+              <Metric label="Resolución" value={`${result.width}×${result.height}`} />
+              <Metric label="FPS" value={String(result.fps)} />
+              <Metric label="Códec" value={result.codec.toUpperCase()} />
+              <Metric label="Aspecto" value={result.aspectRatio} />
+              <Metric label="Contenedor" value={result.container.toUpperCase()} />
+            </dl>
+            <p className="mt-4 break-all text-[11px] text-zinc-500">
+              Proyecto: {result.projectId}
+            </p>
+          </div>
         </div>
       )}
     </div>
