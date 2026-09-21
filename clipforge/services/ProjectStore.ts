@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { UploadedVideo } from "@/types/video";
 
@@ -12,7 +12,7 @@ export type ProjectRecord = {
 
 export class ProjectStore {
   async save(record: ProjectRecord): Promise<void> {
-    const projectsDir = path.join(process.cwd(), "storage", "projects");
+    const projectsDir = getProjectsDir();
     await mkdir(projectsDir, { recursive: true });
 
     const target = path.join(projectsDir, `${record.id}.json`);
@@ -20,5 +20,53 @@ export class ProjectStore {
       encoding: "utf8",
       flag: "wx",
     });
+  }
+
+  async list(limit = 20): Promise<ProjectRecord[]> {
+    const projectsDir = getProjectsDir();
+    await mkdir(projectsDir, { recursive: true });
+
+    const entries = await readdir(projectsDir, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => entry.name);
+
+    const records = await Promise.all(
+      files.map(async (filename) => {
+        try {
+          const raw = await readFile(path.join(projectsDir, filename), "utf8");
+          return parseProject(raw);
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return records
+      .filter((record): record is ProjectRecord => record !== null)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, Math.max(1, Math.min(limit, 100)));
+  }
+}
+
+function getProjectsDir(): string {
+  return path.join(process.cwd(), "storage", "projects");
+}
+
+function parseProject(raw: string): ProjectRecord | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<ProjectRecord>;
+    if (
+      typeof parsed.id !== "string" ||
+      typeof parsed.createdAt !== "string" ||
+      !parsed.source ||
+      typeof parsed.source.projectId !== "string" ||
+      typeof parsed.source.originalName !== "string"
+    ) {
+      return null;
+    }
+    return parsed as ProjectRecord;
+  } catch {
+    return null;
   }
 }
