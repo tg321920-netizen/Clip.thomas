@@ -16,22 +16,31 @@ export function RecentProjects() {
   useEffect(() => {
     let active = true;
 
-    fetch("/api/projects", { cache: "no-store" })
-      .then(async (response) => {
+    const load = async () => {
+      try {
+        const response = await fetch("/api/projects", { cache: "no-store" });
         if (!response.ok) throw new Error("projects");
-        return (await response.json()) as { projects?: ProjectRecord[] };
-      })
-      .then((payload) => {
+        const payload = (await response.json()) as { projects?: ProjectRecord[] };
         if (!active) return;
         setProjects(payload.projects ?? []);
-        setLoaded(true);
-      })
-      .catch(() => {
+      } catch {
+        // The upload experience remains usable even if history cannot load.
+      } finally {
         if (active) setLoaded(true);
-      });
+      }
+    };
+
+    void load();
+
+    const refresh = () => {
+      void load();
+    };
+
+    window.addEventListener("clipforge:project-created", refresh);
 
     return () => {
       active = false;
+      window.removeEventListener("clipforge:project-created", refresh);
     };
   }, []);
 
