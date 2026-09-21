@@ -8,7 +8,7 @@ import {
 } from "@/lib/upload-policy.mjs";
 import type { UploadedVideo } from "@/types/video";
 
-type UploadState = "idle" | "uploading" | "done" | "error";
+type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
 export function UploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -144,7 +144,7 @@ export function UploadPanel() {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={state === "uploading"}
+          disabled={state === "checking" || state === "uploading"}
           className="mt-5 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Elegir archivo
@@ -163,7 +163,7 @@ export function UploadPanel() {
             </span>
           </div>
 
-          {state === "uploading" && (
+          {state === "checking" && (\n            <p className="mt-4 text-xs text-violet-300">\n              Verificando FFmpeg, FFprobe y almacenamiento…\n            </p>\n          )}\n\n          {state === "uploading" && (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
                 <span>{progress === null ? "Subiendo…" : "Subida real"}</span>
@@ -181,10 +181,10 @@ export function UploadPanel() {
           )}
 
           <div className="mt-4 flex gap-2">
-            {state !== "uploading" ? (
+            {state !== "checking" && state !== "uploading" ? (
               <button
                 type="button"
-                onClick={upload}
+                onClick={() => void upload()}
                 disabled={Boolean(error)}
                 className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
