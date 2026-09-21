@@ -31,7 +31,7 @@ export class JobStore {
       type: JOB_TYPE,
       projectId,
       status: "QUEUED",
-      attempts: existing?.attempts ?? 0,
+      attempts: existing?.status === "FAILED" ? 0 : (existing?.attempts ?? 0),
       maxAttempts: existing?.maxAttempts ?? this.maxAttempts,
       error: null,
       createdAt: existing?.createdAt ?? now,

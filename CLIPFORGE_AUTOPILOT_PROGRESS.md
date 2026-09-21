@@ -19,8 +19,15 @@
 
 ## EN PROGRESO
 
-- Verificación real end-to-end de Whisper sobre un video con voz.
-- Confirmación de lint/typecheck/build después del módulo de transcripción.
+- Verificación real end-to-end de Whisper sobre un video con voz mediante GitHub Actions.
+
+## COMPLETADO RECIENTE
+
+- lint: OK.
+- typecheck: OK.
+- tests unitarios: OK.
+- build Next.js: OK.
+- Fase 1 end-to-end (upload + FFprobe + FFmpeg + playback + persistencia): OK.
 
 ## PENDIENTE
 

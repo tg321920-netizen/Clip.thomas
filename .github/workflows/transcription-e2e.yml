@@ -1,0 +1,53 @@
+name: ClipForge Whisper E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/transcription/**"
+      - "services/JobStore.mjs"
+      - "lib/transcript-normalizer.mjs"
+      - "lib/project-files.mjs"
+      - "lib/storage-paths.mjs"
+      - "scripts/transcription-worker.mjs"
+      - "scripts/transcription-e2e.mjs"
+      - ".github/workflows/transcription-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  whisper-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install media and speech tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+
+      - name: Install Whisper CLI
+        run: python -m pip install openai-whisper
+
+      - name: Run real Whisper transcription
+        env:
+          WHISPER_MODEL: tiny
+          WHISPER_LANGUAGE: es
+        run: node scripts/transcription-e2e.mjs
