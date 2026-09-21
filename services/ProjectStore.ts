@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
-import type { TranscriptRecord } from "@/types/transcription";
+import type { TranscriptRecord } from "@/types/transcription";\nimport type { ContentAnalysisRecord } from "@/types/analysis";
 
 export type ProjectRecord = {
   id: string;
