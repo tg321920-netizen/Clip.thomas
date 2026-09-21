@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
 
 export type ProjectRecord = {
@@ -50,7 +51,7 @@ export class ProjectStore {
 }
 
 function getProjectsDir(): string {
-  return path.join(process.cwd(), "storage", "projects");
+  return path.join(getStorageRoot(), "projects");
 }
 
 function parseProject(raw: string): ProjectRecord | null {
