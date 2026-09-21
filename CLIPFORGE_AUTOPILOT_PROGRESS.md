@@ -19,6 +19,8 @@
 
 ## EN PROGRESO
 
+- Validación CI del módulo de transcripción en rama de prueba.
+
 - Verificación real end-to-end de Whisper sobre un video con voz.
 - Confirmación de lint/typecheck/build después del módulo de transcripción.
 
