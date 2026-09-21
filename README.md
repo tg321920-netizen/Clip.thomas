@@ -21,7 +21,7 @@ No se aceptan funciones simuladas. Upload, análisis, metadatos, transcripción,
 - historial local de proyectos;
 - comprobación de FFmpeg, FFprobe y storage;
 - tests de políticas de upload, rangos HTTP y protección contra path traversal;
-- prueba funcional preparada con un video generado realmente por FFmpeg.
+- prueba funcional de extremo a extremo preparada con un video generado realmente por FFmpeg.
 
 ## Ejecutar
 
@@ -35,7 +35,10 @@ npm run dev
 ```bash
 npm run verify
 npm run build
+npm run phase1:e2e
 ```
+
+`npm run phase1:e2e` genera un video real de prueba, levanta la aplicación, lo sube, valida metadatos de FFprobe, miniatura de FFmpeg, reproducción por HTTP Range y persistencia del proyecto. GitHub Actions usa exactamente este mismo script para evitar pruebas duplicadas o simuladas.
 
 El script `build` también ejecuta lint, typecheck y tests antes de compilar Next.js.
 
