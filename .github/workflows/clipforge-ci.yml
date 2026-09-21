@@ -51,7 +51,13 @@ jobs:
 
       - name: Generate a real sample video
         run: |
-          ffmpeg -y             -f lavfi -i testsrc2=size=640x360:rate=30             -f lavfi -i sine=frequency=1000:sample_rate=44100             -t 2             -c:v libx264 -pix_fmt yuv420p             -c:a aac             /tmp/clipforge-phase1.mp4
+          ffmpeg -y \
+            -f lavfi -i testsrc2=size=640x360:rate=30 \
+            -f lavfi -i sine=frequency=1000:sample_rate=44100 \
+            -t 2 \
+            -c:v libx264 -pix_fmt yuv420p \
+            -c:a aac \
+            /tmp/clipforge-phase1.mp4
 
       - name: Start production server
         run: |
@@ -69,10 +75,30 @@ jobs:
           cat /tmp/clipforge-server.log
           exit 1
 
+      - name: Verify real media tools
+        run: |
+          curl --fail-with-body --silent --show-error \
+            http://127.0.0.1:3000/api/system/media-status \
+            -o /tmp/media-status.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync("/tmp/media-status.json", "utf8"));
+          if (!payload.ready || !payload.tools?.ffmpeg?.available || !payload.tools?.ffprobe?.available) {
+            throw new Error("FFmpeg/FFprobe readiness check failed");
+          }
+          console.log("Media tools ready");
+          NODE
+
       - name: Functional Phase 1 upload test
         run: |
           SIZE="$(stat -c%s /tmp/clipforge-phase1.mp4)"
-          curl --fail-with-body --silent --show-error             -X POST http://127.0.0.1:3000/api/videos/upload             -H "Content-Type: video/mp4"             -H "X-File-Name: clipforge-phase1.mp4"             -H "X-File-Size: $SIZE"             --data-binary @/tmp/clipforge-phase1.mp4             -o /tmp/clipforge-response.json
+          curl --fail-with-body --silent --show-error \
+            -X POST http://127.0.0.1:3000/api/videos/upload \
+            -H "Content-Type: video/mp4" \
+            -H "X-File-Name: clipforge-phase1.mp4" \
+            -H "X-File-Size: $SIZE" \
+            --data-binary @/tmp/clipforge-phase1.mp4 \
+            -o /tmp/clipforge-response.json
 
           node - <<'NODE'
           const fs = require("node:fs");
