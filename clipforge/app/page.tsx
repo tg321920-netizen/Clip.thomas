@@ -1,3 +1,4 @@
+import { MediaEnvironmentStatus } from "@/components/MediaEnvironmentStatus";
 import { UploadPanel } from "@/components/UploadPanel";
 
 export default function Home() {
@@ -42,6 +43,8 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            <MediaEnvironmentStatus />
           </div>
 
           <UploadPanel />
