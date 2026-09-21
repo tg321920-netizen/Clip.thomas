@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     projectId,
   );
   const filePath = path.join(uploadDir, storedName);
+  const posterPath = path.join(uploadDir, "poster.jpg");
 
   await mkdir(uploadDir, { recursive: true });
 
@@ -110,12 +111,15 @@ export async function POST(request: Request) {
 
   try {
     const technical = await videoProcessor.probe(filePath);
+    const posterSeek = Math.min(1, technical.durationSeconds / 2);
+    await videoProcessor.createPoster(filePath, posterPath, posterSeek);
 
     const video: UploadedVideo = {
       projectId,
       originalName,
       storedName,
       sizeBytes: bytesWritten,
+      posterUrl: `/api/projects/${projectId}/poster`,
       ...technical,
     };
 
@@ -138,7 +142,10 @@ export async function POST(request: Request) {
     await rm(uploadDir, { recursive: true, force: true });
 
     if (error instanceof VideoProcessingError) {
-      const status = error.code === "FFPROBE_NOT_FOUND" ? 503 : 422;
+      const status =
+        error.code === "FFPROBE_NOT_FOUND" || error.code === "FFMPEG_NOT_FOUND"
+          ? 503
+          : 422;
       return NextResponse.json(
         {
           error: error.message,
