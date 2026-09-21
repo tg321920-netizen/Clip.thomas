@@ -19,7 +19,7 @@
 
 ## EN PROGRESO
 
-- Verificación real end-to-end de Whisper sobre un video con voz mediante GitHub Actions.
+- Preparación incremental de la siguiente fase: AI Content Analyzer.
 
 ## COMPLETADO RECIENTE
 
@@ -28,6 +28,13 @@
 - tests unitarios: OK.
 - build Next.js: OK.
 - Fase 1 end-to-end (upload + FFprobe + FFmpeg + playback + persistencia): OK.
+- Whisper CLI instalado y ejecutado realmente en GitHub Actions: OK.
+- Video con voz sintética procesado de extremo a extremo: OK.
+- Audio extraído con FFmpeg: OK.
+- Transcript persistido: OK.
+- TranscriptSegment con startTime/endTime/text: OK.
+- Job TRANSCRIBE_VIDEO completado: OK.
+- Reutilización/idempotencia de una transcripción vigente: OK.
 
 ## PENDIENTE
 
@@ -53,17 +60,15 @@
 
 - El repositorio no tiene actualmente base de datos ni autenticación.
 - Vercel no es el worker de video/Whisper definitivo.
-- La prueba Whisper real requiere un runtime/worker con Whisper CLI instalado.
-- El último estado observado de Vercel estaba afectado por build-rate-limit.
+- El runtime de producción todavía necesita un worker persistente con FFmpeg + Whisper instalado.
+- El repositorio todavía no tiene credencial/proveedor de IA configurado para ejecutar el AI Content Analyzer contra un modelo externo.
+- Vercel no debe usarse como worker pesado definitivo.
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck y tests.
-2. Ejecutar build.
-3. En un worker con FFmpeg + Whisper CLI, encolar TRANSCRIBE_VIDEO y verificar:
-   - audio extraído;
-   - transcript persistido;
-   - segmentos startTime/endTime/text;
-   - idempotencia al repetir;
-   - retry ante fallo.
-4. Solo después iniciar AI Content Analyzer.
+1. Implementar AI Content Analyzer como servicio/provider separado.
+2. Generar candidatos solo desde TranscriptSegment y límites configurables.
+3. Guardar razones y señales del ViralScore sin presentar la puntuación como garantía.
+4. Añadir provider de IA configurable sin inventar credenciales.
+5. Probar el analizador con provider de prueba y, cuando exista una credencial/runtime autorizado, validar una llamada real.
+6. No iniciar Clip Engine hasta estabilizar esta fase.
