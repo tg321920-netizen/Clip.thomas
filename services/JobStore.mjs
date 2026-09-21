@@ -15,6 +15,7 @@ import { getStorageRoot } from "../lib/storage-paths.mjs";
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
   ANALYZE_VIDEO: "analyze",
+  RENDER_CLIP: "render",
 };
 
 export class JobStore {
@@ -37,12 +38,29 @@ export class JobStore {
     });
   }
 
+  async enqueueRender(projectId, clipId, payload = {}, options = {}) {
+    return this.enqueue("RENDER_CLIP", projectId, {
+      entityId: clipId,
+      payload: {
+        ...sanitizePayload(payload),
+        clipId,
+      },
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
   async enqueue(type, projectId, options = {}) {
     assertProjectId(projectId);
     assertJobType(type);
+
+    const entityId = options.entityId || null;
+    if (type === "RENDER_CLIP") {
+      assertProjectId(entityId);
+    }
+
     await this.#ensureDirectory();
 
-    const id = jobId(type, projectId);
+    const id = jobId(type, projectId, entityId);
     const existing = await this.get(id);
     const restartCompleted = options.restartCompleted === true;
 
@@ -59,8 +77,10 @@ export class JobStore {
       id,
       type,
       projectId,
+      entityId,
       payload: sanitizePayload(options.payload),
       status: "QUEUED",
+      progress: 0,
       attempts:
         existing?.status === "FAILED" || restartCompleted
           ? 0
@@ -93,6 +113,10 @@ export class JobStore {
 
   async getAnalysisJob(projectId) {
     return this.get(jobId("ANALYZE_VIDEO", projectId));
+  }
+
+  async getRenderJob(projectId, clipId) {
+    return this.get(jobId("RENDER_CLIP", projectId, clipId));
   }
 
   async claimNext(allowedTypes = null) {
@@ -136,6 +160,7 @@ export class JobStore {
       const updated = {
         ...fresh,
         status: "PROCESSING",
+        progress: Number(fresh.progress || 0),
         attempts: Number(fresh.attempts || 0) + 1,
         startedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -149,10 +174,26 @@ export class JobStore {
     return null;
   }
 
+  async updateProgress(id, progress) {
+    const job = await this.get(id);
+    if (!job || job.status !== "PROCESSING") return job;
+
+    const normalized = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+    const updated = {
+      ...job,
+      progress: normalized,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.#write(updated);
+    return updated;
+  }
+
   async complete(job) {
     const completed = {
       ...job,
       status: "COMPLETED",
+      progress: 100,
       updatedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       error: null,
@@ -273,9 +314,19 @@ export function analysisJobId(projectId) {
   return jobId("ANALYZE_VIDEO", projectId);
 }
 
-function jobId(type, projectId) {
+export function renderJobId(projectId, clipId) {
+  return jobId("RENDER_CLIP", projectId, clipId);
+}
+
+function jobId(type, projectId, entityId = null) {
   assertProjectId(projectId);
   assertJobType(type);
+
+  if (type === "RENDER_CLIP") {
+    assertProjectId(entityId);
+    return `${JOB_PREFIX[type]}-${projectId}-${entityId}`;
+  }
+
   return `${JOB_PREFIX[type]}-${projectId}`;
 }
 
@@ -286,11 +337,29 @@ function assertJobType(type) {
 }
 
 function safeJobId(value) {
-  const match = /^(transcribe|analyze)-([0-9a-f-]+)$/i.exec(String(value));
-  if (!match || !isProjectId(match[2])) {
-    throw new Error("Invalid job id.");
+  const text = String(value);
+
+  for (const prefix of ["transcribe", "analyze"]) {
+    const marker = `${prefix}-`;
+    if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) {
+      return text;
+    }
   }
-  return String(value);
+
+  const renderMarker = "render-";
+  if (text.startsWith(renderMarker)) {
+    const rest = text.slice(renderMarker.length);
+    if (
+      rest.length === 73 &&
+      rest[36] === "-" &&
+      isProjectId(rest.slice(0, 36)) &&
+      isProjectId(rest.slice(37))
+    ) {
+      return text;
+    }
+  }
+
+  throw new Error("Invalid job id.");
 }
 
 function sanitizePayload(payload) {
