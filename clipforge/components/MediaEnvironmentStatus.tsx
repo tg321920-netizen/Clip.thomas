@@ -9,6 +9,9 @@ type MediaStatusPayload = {
     ffmpeg: { available: boolean; version?: string };
     ffprobe: { available: boolean; version?: string };
   };
+  storage: {
+    writable: boolean;
+  };
 };
 
 export function MediaEnvironmentStatus() {
@@ -35,7 +38,7 @@ export function MediaEnvironmentStatus() {
   if (!status && !failed) {
     return (
       <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-500">
-        Verificando FFmpeg y FFprobe…
+        Verificando FFmpeg, FFprobe y almacenamiento…
       </div>
     );
   }
@@ -73,15 +76,16 @@ export function MediaEnvironmentStatus() {
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <Tool name="FFmpeg" available={status.tools.ffmpeg.available} />
         <Tool name="FFprobe" available={status.tools.ffprobe.available} />
+        <Tool name="Storage" available={status.storage.writable} />
       </div>
 
       {!status.ready && (
         <p className="mt-3 text-xs leading-5 text-amber-200/70">
-          La interfaz puede cargar, pero el análisis real de video necesita un
-          entorno o worker con FFmpeg y FFprobe instalados.
+          La interfaz puede cargar, pero el procesamiento real requiere FFmpeg,
+          FFprobe y almacenamiento escribible en el mismo entorno o worker.
         </p>
       )}
     </div>
