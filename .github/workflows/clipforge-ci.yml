@@ -11,6 +11,8 @@ on:
       - "types/**"
       - "tests/**"
       - "scripts/**"
+      - "services/clip/**"
+      - "types/clip.ts"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -62,3 +64,6 @@ jobs:
 
       - name: Phase 1 end-to-end
         run: npm run phase1:e2e
+
+      - name: Clip render end-to-end
+        run: npm run render:e2e
