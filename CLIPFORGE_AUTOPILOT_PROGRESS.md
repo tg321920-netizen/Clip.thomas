@@ -19,7 +19,7 @@
 
 ## EN PROGRESO
 
-- Validación de AutoEditService, provider local/OpenAI opcional y worker AUTO_EDIT.
+- Inicio de Channels y ChannelStrategy con persistencia local reemplazable.
 
 ## COMPLETADO RECIENTE
 
@@ -31,6 +31,7 @@
 - Job AUTO_EDIT, worker independiente y encadenado a RENDER_CLIP: implementados.
 - API GET/POST de Auto Edit: implementada.
 - UI para iniciar y seguir Auto Edit: implementada.
+- Auto Edit verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - SubtitleService con cues derivados de TranscriptSegment/word timestamps: implementado.
 - Edición de texto y tiempos con validación: implementada.
 - Estilos CLEAN/VIRAL/KARAOKE en ASS: implementados.
@@ -91,7 +92,8 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con Auto Edit.
-2. Verificar idempotencia y que no se repitan llamadas de IA para el mismo análisis.
-3. Confirmar que AUTO_EDIT encola RENDER_CLIP sin duplicar clips.
-4. Corregir cualquier fallo antes de avanzar a Channels y ChannelStrategy.
+1. Implementar Channel y ChannelStrategy sin acoplarlos a UI.
+2. Mantener TikTok, YouTube y Facebook como plataformas iniciales extensibles.
+3. Añadir límites diarios, timezone, publishingEnabled y estrategia editorial.
+4. Usar una capa de repositorio reemplazable; la persistencia local seguirá siendo temporal hasta introducir DB/auth.
+5. Validar tests/build antes de iniciar Autopilot.
