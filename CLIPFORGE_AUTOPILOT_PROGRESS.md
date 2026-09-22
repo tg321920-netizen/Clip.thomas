@@ -19,7 +19,7 @@
 
 ## EN PROGRESO
 
-- Validación de Clip Engine: recorte real, render vertical 1080×1920, jobs y reproducción del clip.
+- Inicio de la fase de subtítulos editables y estilos.
 
 ## COMPLETADO RECIENTE
 
@@ -28,7 +28,8 @@
 - RENDER_CLIP con worker separado y progreso derivado de FFmpeg: implementado.
 - Streaming HTTP Range de clips renderizados: implementado.
 - UI para crear y previsualizar clips desde candidatos: implementada.
-- Prueba E2E de render vertical y preservación del original: preparada.
+- Prueba E2E de render vertical y preservación del original: OK.
+- Clip Engine verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 
 - ContentAnalysisService separado de UI: implementado.
 - TranscriptCandidateProvider con ventanas sobre TranscriptSegment: implementado.
@@ -76,7 +77,8 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con Clip Engine.
-2. Ejecutar render E2E real y confirmar 1080×1920, duración, audio, progreso e integridad del original.
-3. Corregir cualquier fallo antes de avanzar.
-4. Solo con Clip Engine verificado, iniciar subtítulos editables y estilos CLEAN/VIRAL/KARAOKE.
+1. Generar pistas de subtítulos desde TranscriptSegment y timestamps de palabras cuando existan.
+2. Permitir edición de texto y tiempos, activación/desactivación y estilos CLEAN/VIRAL/KARAOKE.
+3. Quemar subtítulos en FFmpeg mediante ASS sin alterar el original.
+4. Invalidar y volver a renderizar el clip cuando cambien los subtítulos.
+5. Probar lint, typecheck, tests, build y render E2E antes de avanzar a Auto Edit.
