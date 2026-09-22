@@ -19,7 +19,7 @@
 
 ## EN PROGRESO
 
-- Validación de subtítulos editables, estilos CLEAN/VIRAL/KARAOKE y render ASS.
+- Inicio de AutoEditService y capa de providers de edición automática.
 
 ## COMPLETADO RECIENTE
 
@@ -30,6 +30,7 @@
 - Render FFmpeg con subtítulos quemados sin tocar el original: implementado.
 - UI de generación/edición/guardado y rerender: implementada.
 - API GET/POST/PATCH de subtítulos por clip: implementada.
+- Fase de subtítulos verificada con lint, typecheck, tests, build, Phase 1 E2E y render E2E con ASS/KARAOKE: OK.
 - ClipService para convertir candidatos reales en clips persistidos: implementado.
 - RenderService FFmpeg 9:16 con FILL/FIT y calidades FAST/BALANCED/HIGH: implementado.
 - RENDER_CLIP con worker separado y progreso derivado de FFmpeg: implementado.
@@ -83,7 +84,8 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con subtítulos.
-2. Ejecutar render E2E real con ASS/KARAOKE y verificar que el original no cambia.
-3. Corregir cualquier fallo antes de avanzar.
-4. Solo con subtítulos verificados, iniciar AutoEditService.
+1. Implementar AutoEditService separado de UI.
+2. Añadir provider baseline local y provider OpenAI opcional sin inventar credenciales.
+3. Seleccionar candidato, preparar hook/título/descripción/hashtags/texto en pantalla y destino.
+4. Preparar clip, subtítulos y render mediante jobs.
+5. Validar lint, typecheck, tests y build antes de avanzar a Channels.
