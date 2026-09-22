@@ -44,6 +44,32 @@ export async function prepareAutoEdit(projectId, options = {}) {
 
   const existing = findCurrentAutoEditClip(project, sourceKey);
   if (existing) {
+    if (
+      options.generateSubtitles !== false &&
+      project?.transcript?.status === "COMPLETED" &&
+      !existing.subtitles
+    ) {
+      await generateSubtitleTrack(projectId, existing.id, {
+        style: existing.autoEdit?.subtitleStyle || existing.edit?.subtitleStyle,
+        enabled: true,
+      });
+
+      const refreshed = await loadProjectFile(projectId);
+      const refreshedClip = refreshed?.clips?.find(
+        (entry) => entry.id === existing.id,
+      );
+
+      if (!refreshedClip) {
+        throw new Error("Auto Edit clip could not be reloaded after subtitles.");
+      }
+
+      return {
+        clip: refreshedClip,
+        plan: refreshedClip.autoEdit,
+        reused: true,
+      };
+    }
+
     return {
       clip: existing,
       plan: existing.autoEdit,
