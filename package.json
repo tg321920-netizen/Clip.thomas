@@ -17,7 +17,9 @@
     "worker:analysis:once": "node scripts/analysis-worker.mjs --once",
     "worker:render": "node scripts/render-worker.mjs",
     "worker:render:once": "node scripts/render-worker.mjs --once",
-    "render:e2e": "node scripts/render-e2e.mjs"
+    "render:e2e": "node scripts/render-e2e.mjs",
+    "worker:autoedit": "node scripts/autoedit-worker.mjs",
+    "worker:autoedit:once": "node scripts/autoedit-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",
