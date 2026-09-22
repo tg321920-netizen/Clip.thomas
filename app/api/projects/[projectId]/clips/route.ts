@@ -91,7 +91,7 @@ export async function POST(
       projectId,
       result.clip.id,
       { clipId: result.clip.id },
-      { restartCompleted: result.clip.status === "FAILED" },
+      { restartCompleted: true },
     );
 
     return NextResponse.json(
