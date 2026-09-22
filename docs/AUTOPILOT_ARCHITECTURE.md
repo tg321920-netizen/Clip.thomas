@@ -113,3 +113,20 @@ La prueba de render debe verificar:
 4. archivo no vacío;
 5. fuente original sin modificaciones;
 6. reutilización del render READY.
+
+
+## Subtítulos editables
+
+`SubtitleService` crea una pista de subtítulos clip-local a partir de la transcripción ya persistida. Si Whisper entregó timestamps por palabra, los conserva y agrupa en cues cortos. Si solo existen segmentos, divide el texto proporcionalmente sin inventar palabras ni tiempos externos al segmento.
+
+Cada cue guarda `startTime`, `endTime`, `text` y opcionalmente palabras. Los tiempos son relativos al inicio del clip, lo que permite editar texto y timing sin modificar el video fuente.
+
+Estilos iniciales:
+
+- `CLEAN`: texto legible y discreto.
+- `VIRAL`: tipografía más grande y contorno fuerte.
+- `KARAOKE`: usa tags ASS `\\k` cuando existen timestamps por palabra; si una edición manual invalida esos timestamps, el cue se renderiza como texto normal en vez de fingir sincronización.
+
+Los subtítulos se escriben en ASS dentro del directorio interno del clip y FFmpeg los quema después del encuadre 9:16. Cambiar texto, timing, estilo o estado enabled invalida el render previo y obliga a producir un nuevo MP4, manteniendo el original intacto.
+
+La UI permite generar, activar/desactivar, escoger estilo y editar texto/inicio/final. Al guardar, se encola un nuevo `RENDER_CLIP`.
