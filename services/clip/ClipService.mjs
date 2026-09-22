@@ -25,7 +25,6 @@ export async function createClipFromCandidate(
   const existing = project.clips.find(
     (clip) =>
       clip.candidateId === candidateId &&
-      clip.status !== "FAILED" &&
       clip.edit?.framingMode === normalizeFraming(options.framingMode) &&
       clip.edit?.quality === normalizeQuality(options.quality),
   );
