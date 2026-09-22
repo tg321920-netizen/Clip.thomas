@@ -1,8 +1,8 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
-import path from "node:path";
 import { NextResponse } from "next/server";
+import type { ClipRecord } from "@/types/clip";
 import { parseByteRange } from "@/lib/http-range.mjs";
 import { isProjectId } from "@/lib/project-id.mjs";
 import {
@@ -37,7 +37,7 @@ export async function GET(
   }
 
   const clip = Array.isArray(project.clips)
-    ? project.clips.find((entry) => entry.id === clipId)
+    ? project.clips.find((entry: ClipRecord) => entry.id === clipId)
     : null;
 
   if (!clip?.render?.relativePath || clip.status !== "READY") {
