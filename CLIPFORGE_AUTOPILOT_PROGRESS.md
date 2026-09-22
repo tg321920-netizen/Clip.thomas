@@ -19,10 +19,17 @@
 
 ## EN PROGRESO
 
-- Inicio de la fase de subtítulos editables y estilos.
+- Validación de subtítulos editables, estilos CLEAN/VIRAL/KARAOKE y render ASS.
 
 ## COMPLETADO RECIENTE
 
+- SubtitleService con cues derivados de TranscriptSegment/word timestamps: implementado.
+- Edición de texto y tiempos con validación: implementada.
+- Estilos CLEAN/VIRAL/KARAOKE en ASS: implementados.
+- Activación/desactivación de subtítulos: implementada.
+- Render FFmpeg con subtítulos quemados sin tocar el original: implementado.
+- UI de generación/edición/guardado y rerender: implementada.
+- API GET/POST/PATCH de subtítulos por clip: implementada.
 - ClipService para convertir candidatos reales en clips persistidos: implementado.
 - RenderService FFmpeg 9:16 con FILL/FIT y calidades FAST/BALANCED/HIGH: implementado.
 - RENDER_CLIP con worker separado y progreso derivado de FFmpeg: implementado.
@@ -52,7 +59,6 @@
 
 ## PENDIENTE
 
-- Subtítulos editables.
 - AutoEditService.
 - Channels y ChannelStrategy.
 - Autopilot.
@@ -77,8 +83,7 @@
 
 ## SIGUIENTE PASO
 
-1. Generar pistas de subtítulos desde TranscriptSegment y timestamps de palabras cuando existan.
-2. Permitir edición de texto y tiempos, activación/desactivación y estilos CLEAN/VIRAL/KARAOKE.
-3. Quemar subtítulos en FFmpeg mediante ASS sin alterar el original.
-4. Invalidar y volver a renderizar el clip cuando cambien los subtítulos.
-5. Probar lint, typecheck, tests, build y render E2E antes de avanzar a Auto Edit.
+1. Ejecutar lint, typecheck, tests y build con subtítulos.
+2. Ejecutar render E2E real con ASS/KARAOKE y verificar que el original no cambia.
+3. Corregir cualquier fallo antes de avanzar.
+4. Solo con subtítulos verificados, iniciar AutoEditService.
