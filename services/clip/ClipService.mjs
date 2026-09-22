@@ -45,8 +45,10 @@ export async function createClipFromCandidate(
     edit: {
       framingMode: normalizeFraming(options.framingMode),
       subtitlesEnabled: false,
+      subtitleStyle: "CLEAN",
       quality: normalizeQuality(options.quality),
     },
+    subtitles: null,
     render: null,
     createdAt: now,
     updatedAt: now,

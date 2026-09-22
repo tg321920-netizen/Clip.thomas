@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ContentAnalysisRecord } from "@/types/analysis";
 import type { ClipRecord } from "@/types/clip";
 import type { TranscriptRecord } from "@/types/transcription";
+import { ClipSubtitleEditor } from "@/components/ClipSubtitleEditor";
 
 type JobRecord = {
   id: string;
@@ -393,9 +394,19 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                           Tu navegador no puede reproducir este clip.
                         </video>
                         <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-400">
-                          <span>Clip 1080×1920 listo</span>
+                          <span>
+                            Clip 1080×1920 listo
+                            {clip.render.subtitlesBurned ? " · subtítulos incluidos" : ""}
+                          </span>
                           <span>{clip.edit.quality}</span>
                         </div>
+
+                        <ClipSubtitleEditor
+                          key={`${clip.id}:${clip.updatedAt}`}
+                          projectId={projectId}
+                          clip={clip}
+                          onRenderNeeded={() => queueClip(candidate.id)}
+                        />
                       </div>
                     ) : (
                       <>

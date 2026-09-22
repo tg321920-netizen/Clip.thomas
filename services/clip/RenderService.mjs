@@ -1,7 +1,8 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
+import { buildAssDocument } from "../subtitles/SubtitleService.mjs";
 
 const QUALITY = {
   FAST: { preset: "ultrafast", crf: "28" },
@@ -37,7 +38,20 @@ export class RenderService {
     }
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
-    const filter = buildVideoFilter(clip?.edit?.framingMode || "FILL");
+    let filter = buildVideoFilter(clip?.edit?.framingMode || "FILL");
+    let subtitlesBurned = false;
+
+    if (
+      clip?.edit?.subtitlesEnabled &&
+      clip?.subtitles?.enabled &&
+      Array.isArray(clip?.subtitles?.cues) &&
+      clip.subtitles.cues.length > 0
+    ) {
+      const assPath = path.join(outputDir, "subtitles.ass");
+      await writeFile(assPath, buildAssDocument(clip.subtitles), "utf8");
+      filter = `${filter},ass='${escapeFilterPath(assPath)}'`;
+      subtitlesBurned = true;
+    }
 
     const args = [
       "-v",
@@ -104,6 +118,7 @@ export class RenderService {
       codec: probe.codec,
       container: probe.container,
       sizeBytes: outputStat.size,
+      subtitlesBurned,
     };
   }
 }
@@ -257,4 +272,15 @@ function runProcess(command, args) {
       else reject(new Error(stderr.trim() || `Process failed with code ${code ?? "?"}.`));
     });
   });
+}
+
+
+function escapeFilterPath(filePath) {
+  return String(filePath)
+    .replaceAll("\\", "\\\\")
+    .replaceAll(":", "\\:")
+    .replaceAll("'", "\\'")
+    .replaceAll(",", "\\,")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
 }
