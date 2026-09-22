@@ -8,7 +8,7 @@ import { ClipSubtitleEditor } from "@/components/ClipSubtitleEditor";
 
 type JobRecord = {
   id: string;
-  type: "TRANSCRIBE_VIDEO" | "ANALYZE_VIDEO" | "RENDER_CLIP";
+  type: "TRANSCRIBE_VIDEO" | "ANALYZE_VIDEO" | "AUTO_EDIT" | "RENDER_CLIP";
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
   attempts: number;
   progress?: number;
@@ -41,6 +41,13 @@ type ClipsPayload = {
   error?: string;
 };
 
+type AutoEditPayload = {
+  autoEdit?: ClipRecord["autoEdit"];
+  clip?: ClipRecord | null;
+  job?: JobRecord | null;
+  error?: string;
+};
+
 export function ProjectPipeline({ projectId }: { projectId: string }) {
   const [transcript, setTranscript] = useState<TranscriptRecord | null>(null);
   const [transcriptionJob, setTranscriptionJob] = useState<JobRecord | null>(
@@ -48,6 +55,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   );
   const [analysis, setAnalysis] = useState<ContentAnalysisRecord | null>(null);
   const [analysisJob, setAnalysisJob] = useState<JobRecord | null>(null);
+  const [autoEditJob, setAutoEditJob] = useState<JobRecord | null>(null);
   const [clips, setClips] = useState<ClipWithJob[]>([]);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +63,12 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   const loadState = useCallback(
     async (silent = false) => {
       try {
-        const [transcriptionResponse, analysisResponse, clipsResponse] =
-          await Promise.all([
+        const [
+          transcriptionResponse,
+          analysisResponse,
+          clipsResponse,
+          autoEditResponse,
+        ] = await Promise.all([
             fetch(`/api/projects/${projectId}/transcription`, {
               cache: "no-store",
             }),
@@ -64,6 +76,9 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
               cache: "no-store",
             }),
             fetch(`/api/projects/${projectId}/clips`, {
+              cache: "no-store",
+            }),
+            fetch(`/api/projects/${projectId}/auto-edit`, {
               cache: "no-store",
             }),
           ]);
@@ -77,16 +92,21 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         if (!clipsResponse.ok) {
           throw new Error("No se pudieron consultar los clips.");
         }
+        if (!autoEditResponse.ok) {
+          throw new Error("No se pudo consultar Auto Edit.");
+        }
 
         const transcriptionData =
           (await transcriptionResponse.json()) as TranscriptionPayload;
         const analysisData = (await analysisResponse.json()) as AnalysisPayload;
         const clipsData = (await clipsResponse.json()) as ClipsPayload;
+        const autoEditData = (await autoEditResponse.json()) as AutoEditPayload;
 
         setTranscript(transcriptionData.transcript);
         setTranscriptionJob(transcriptionData.job);
         setAnalysis(analysisData.analysis);
         setAnalysisJob(analysisData.job);
+        setAutoEditJob(autoEditData.job ?? null);
         setClips(clipsData.clips ?? []);
         if (!silent) setError(null);
       } catch (loadError) {
@@ -116,11 +136,13 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
       transcriptionJob?.status === "PROCESSING" ||
       analysisJob?.status === "QUEUED" ||
       analysisJob?.status === "PROCESSING" ||
+      autoEditJob?.status === "QUEUED" ||
+      autoEditJob?.status === "PROCESSING" ||
       clips.some(
         (clip) =>
           clip.job?.status === "QUEUED" || clip.job?.status === "PROCESSING",
       ),
-    [analysisJob?.status, clips, transcriptionJob?.status],
+    [analysisJob?.status, autoEditJob?.status, clips, transcriptionJob?.status],
   );
 
   useEffect(() => {
@@ -191,6 +213,36 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         actionError instanceof Error
           ? actionError.message
           : "No se pudo iniciar el análisis.",
+      );
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function queueAutoEdit() {
+    setLoadingAction("autoedit");
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/auto-edit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const payload = (await response.json()) as AutoEditPayload;
+
+      if (!response.ok || !payload.job) {
+        throw new Error(payload.error || "No se pudo iniciar Auto Edit.");
+      }
+
+      setAutoEditJob(payload.job);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "No se pudo iniciar Auto Edit.",
       );
     } finally {
       setLoadingAction(null);
@@ -451,6 +503,44 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                   </article>
                 );
               })}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-violet-400/20 bg-violet-400/[0.07] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-violet-200">
+                    Auto Edit
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-zinc-500">
+                    Selecciona un candidato, prepara hook, metadata,
+                    subtítulos y encola el render.
+                  </p>
+                </div>
+                <StatusBadge status={autoEditJob?.status || "PENDING"} />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void queueAutoEdit()}
+                disabled={
+                  loadingAction !== null ||
+                  autoEditJob?.status === "QUEUED" ||
+                  autoEditJob?.status === "PROCESSING"
+                }
+                className="mt-3 w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {loadingAction === "autoedit"
+                  ? "Encolando Auto Edit…"
+                  : autoEditJob?.status === "QUEUED"
+                    ? "Esperando worker…"
+                    : autoEditJob?.status === "PROCESSING"
+                      ? `Auto Edit ${Math.round(autoEditJob.progress || 0)}%`
+                      : autoEditJob?.status === "COMPLETED"
+                        ? "Auto Edit listo · ejecutar de nuevo"
+                        : autoEditJob?.status === "FAILED"
+                          ? "Reintentar Auto Edit"
+                          : "Preparar mejor clip automáticamente"}
+              </button>
             </div>
 
             <p className="mt-3 text-[11px] leading-5 text-zinc-600">

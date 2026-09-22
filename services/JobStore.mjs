@@ -15,6 +15,7 @@ import { getStorageRoot } from "../lib/storage-paths.mjs";
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
   ANALYZE_VIDEO: "analyze",
+  AUTO_EDIT: "autoedit",
   RENDER_CLIP: "render",
 };
 
@@ -33,6 +34,13 @@ export class JobStore {
 
   async enqueueAnalysis(projectId, payload = {}, options = {}) {
     return this.enqueue("ANALYZE_VIDEO", projectId, {
+      payload,
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
+  async enqueueAutoEdit(projectId, payload = {}, options = {}) {
+    return this.enqueue("AUTO_EDIT", projectId, {
       payload,
       restartCompleted: options.restartCompleted ?? false,
     });
@@ -113,6 +121,10 @@ export class JobStore {
 
   async getAnalysisJob(projectId) {
     return this.get(jobId("ANALYZE_VIDEO", projectId));
+  }
+
+  async getAutoEditJob(projectId) {
+    return this.get(jobId("AUTO_EDIT", projectId));
   }
 
   async getRenderJob(projectId, clipId) {
@@ -314,6 +326,10 @@ export function analysisJobId(projectId) {
   return jobId("ANALYZE_VIDEO", projectId);
 }
 
+export function autoEditJobId(projectId) {
+  return jobId("AUTO_EDIT", projectId);
+}
+
 export function renderJobId(projectId, clipId) {
   return jobId("RENDER_CLIP", projectId, clipId);
 }
@@ -339,7 +355,7 @@ function assertJobType(type) {
 function safeJobId(value) {
   const text = String(value);
 
-  for (const prefix of ["transcribe", "analyze"]) {
+  for (const prefix of ["transcribe", "analyze", "autoedit"]) {
     const marker = `${prefix}-`;
     if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) {
       return text;

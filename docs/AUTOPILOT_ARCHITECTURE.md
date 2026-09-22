@@ -130,3 +130,19 @@ Estilos iniciales:
 Los subtítulos se escriben en ASS dentro del directorio interno del clip y FFmpeg los quema después del encuadre 9:16. Cambiar texto, timing, estilo o estado enabled invalida el render previo y obliga a producir un nuevo MP4, manteniendo el original intacto.
 
 La UI permite generar, activar/desactivar, escoger estilo y editar texto/inicio/final. Al guardar, se encola un nuevo `RENDER_CLIP`.
+
+
+## Auto Edit
+
+`AutoEditService` vive fuera de la UI y trabaja sobre candidatos ya persistidos. Su responsabilidad es seleccionar un candidato válido, limitar cualquier ajuste de inicio/final a los límites reales de ese candidato y preparar metadata/editorial antes del render.
+
+Providers iniciales:
+
+- `HeuristicAutoEditProvider`: funciona sin API externa y usa ViralScore, transcript y timestamps disponibles.
+- `OpenAIAutoEditProvider`: opcional, usa Responses API con salida JSON estructurada. Solo puede escoger IDs de candidatos suministrados; el servicio vuelve a validar ID y tiempos antes de persistir.
+
+El plan persistido en `clip.autoEdit` incluye provider/modelo, candidateId, start/end, título, hook, descripción, hashtags, texto en pantalla, plataformas recomendadas, estilo de subtítulos, framing y calidad.
+
+La idempotencia se basa en analysis/transcript/provider/model/candidato solicitado. Un Auto Edit vigente se reutiliza para evitar llamadas repetidas de IA. Si faltan subtítulos en un resultado reutilizado, se regeneran antes de continuar.
+
+`AUTO_EDIT` es un job independiente. `autoedit-worker.mjs` prepara el clip, genera subtítulos y luego encola `RENDER_CLIP`; no mantiene una petición HTTP abierta.

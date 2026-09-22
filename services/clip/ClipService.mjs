@@ -49,6 +49,7 @@ export async function createClipFromCandidate(
       quality: normalizeQuality(options.quality),
     },
     subtitles: null,
+    autoEdit: null,
     render: null,
     createdAt: now,
     updatedAt: now,

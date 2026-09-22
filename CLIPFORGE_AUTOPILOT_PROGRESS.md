@@ -19,10 +19,18 @@
 
 ## EN PROGRESO
 
-- Inicio de AutoEditService y capa de providers de edición automática.
+- Validación de AutoEditService, provider local/OpenAI opcional y worker AUTO_EDIT.
 
 ## COMPLETADO RECIENTE
 
+- AutoEditService separado de UI: implementado.
+- HeuristicAutoEditProvider local sin coste externo: implementado.
+- OpenAIAutoEditProvider opcional con Responses API estructurada: implementado.
+- Selección de candidato, timing validado, hook, título, descripción, hashtags y texto en pantalla: implementados.
+- Recomendación multicanal y estilo de subtítulos: implementados.
+- Job AUTO_EDIT, worker independiente y encadenado a RENDER_CLIP: implementados.
+- API GET/POST de Auto Edit: implementada.
+- UI para iniciar y seguir Auto Edit: implementada.
 - SubtitleService con cues derivados de TranscriptSegment/word timestamps: implementado.
 - Edición de texto y tiempos con validación: implementada.
 - Estilos CLEAN/VIRAL/KARAOKE en ASS: implementados.
@@ -60,7 +68,6 @@
 
 ## PENDIENTE
 
-- AutoEditService.
 - Channels y ChannelStrategy.
 - Autopilot.
 - Cola de jobs generalizada.
@@ -84,8 +91,7 @@
 
 ## SIGUIENTE PASO
 
-1. Implementar AutoEditService separado de UI.
-2. Añadir provider baseline local y provider OpenAI opcional sin inventar credenciales.
-3. Seleccionar candidato, preparar hook/título/descripción/hashtags/texto en pantalla y destino.
-4. Preparar clip, subtítulos y render mediante jobs.
-5. Validar lint, typecheck, tests y build antes de avanzar a Channels.
+1. Ejecutar lint, typecheck, tests y build con Auto Edit.
+2. Verificar idempotencia y que no se repitan llamadas de IA para el mismo análisis.
+3. Confirmar que AUTO_EDIT encola RENDER_CLIP sin duplicar clips.
+4. Corregir cualquier fallo antes de avanzar a Channels y ChannelStrategy.

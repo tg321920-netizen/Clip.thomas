@@ -25,6 +25,27 @@ export type SubtitleTrack = {
   updatedAt: string;
 };
 
+export type AutoEditPlan = {
+  provider: string;
+  model: string | null;
+  sourceKey: string;
+  candidateId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  title: string;
+  hook: string;
+  description: string;
+  hashtags: string[];
+  onScreenText: string;
+  recommendedPlatforms: Array<"TIKTOK" | "YOUTUBE" | "FACEBOOK">;
+  subtitleStyle: SubtitleStyle;
+  framingMode: ClipFramingMode;
+  quality: ClipRenderQuality;
+  reason: string;
+  createdAt: string;
+};
+
 export type ClipRecord = {
   id: string;
   projectId: string;
@@ -45,6 +66,7 @@ export type ClipRecord = {
     quality: ClipRenderQuality;
   };
   subtitles: SubtitleTrack | null;
+  autoEdit: AutoEditPlan | null;
   render: {
     relativePath: string;
     sourceUrl: string;
