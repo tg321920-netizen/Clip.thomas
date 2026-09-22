@@ -173,6 +173,34 @@ try {
   const second = await renderClip(projectId, created.clip.id);
   assert(second.reused === true, "Ready render should be reused");
 
+  const storedAfterRender = JSON.parse(
+    await readFile(path.join(projectsDir, `${projectId}.json`), "utf8"),
+  );
+  const storedClip = storedAfterRender.clips.find(
+    (clip) => clip.id === created.clip.id,
+  );
+  storedClip.status = "FAILED";
+  storedClip.error = "synthetic transient failure";
+  await writeFile(
+    path.join(projectsDir, `${projectId}.json`),
+    JSON.stringify(storedAfterRender, null, 2),
+    "utf8",
+  );
+
+  const retryCandidate = await createClipFromCandidate(
+    projectId,
+    "candidate-0001",
+    {
+      framingMode: "FILL",
+      quality: "FAST",
+    },
+  );
+  assert(retryCandidate.reused === true, "Failed clip should be reused for retry");
+  assert(
+    retryCandidate.clip.id === created.clip.id,
+    "Retry must not create a duplicate clip record",
+  );
+
   console.log("Clip render E2E PASSED", {
     clipId: created.clip.id,
     resolution: `${probe.width}x${probe.height}`,
