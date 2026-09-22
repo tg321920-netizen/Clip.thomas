@@ -15,6 +15,7 @@ import {
   renderClip,
 } from "../services/clip/ClipService.mjs";
 import { resolveStoragePath } from "../lib/storage-paths.mjs";
+import { generateSubtitleTrack } from "../services/subtitles/SubtitleService.mjs";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-render-"));
 const storage = path.join(root, "storage");
@@ -78,6 +79,41 @@ try {
       sourceUrl: "",
       relativePath: path.posix.join("uploads", projectId, "source.mp4"),
     },
+    transcript: {
+      id: "transcript-render-e2e",
+      projectId,
+      videoId: "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b",
+      status: "COMPLETED",
+      provider: "whisper-cli",
+      model: "tiny",
+      language: "es",
+      text: "Hola mundo esta es una prueba real de subtitulos.",
+      segments: [
+        {
+          id: "segment-000001",
+          startTime: 0.5,
+          endTime: 3,
+          text: "Hola mundo esta es una prueba real de subtitulos.",
+          words: [
+            { startTime: 0.5, endTime: 0.85, text: "Hola" },
+            { startTime: 0.85, endTime: 1.2, text: "mundo" },
+            { startTime: 1.2, endTime: 1.5, text: "esta" },
+            { startTime: 1.5, endTime: 1.8, text: "es" },
+            { startTime: 1.8, endTime: 2.05, text: "una" },
+            { startTime: 2.05, endTime: 2.35, text: "prueba" },
+            { startTime: 2.35, endTime: 2.6, text: "real" },
+            { startTime: 2.6, endTime: 2.8, text: "de" },
+            { startTime: 2.8, endTime: 3, text: "subtitulos." },
+          ],
+        },
+      ],
+      sourceKey: "render-e2e",
+      audioRelativePath: "transcripts/render-e2e/audio.wav",
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      error: null,
+    },
     analysis: {
       id: "analysis-1",
       projectId,
@@ -140,6 +176,19 @@ try {
 
   assert(created.reused === false, "First clip creation must be new");
 
+  const subtitles = await generateSubtitleTrack(
+    projectId,
+    created.clip.id,
+    {
+      style: "KARAOKE",
+      enabled: true,
+    },
+  );
+
+  assert(subtitles.enabled === true, "Subtitles were not enabled");
+  assert(subtitles.style === "KARAOKE", "Subtitle style was not persisted");
+  assert(subtitles.cues.length > 0, "No subtitle cues were generated");
+
   const progress = [];
   const rendered = await renderClip(
     projectId,
@@ -154,11 +203,26 @@ try {
     rendered.clip.render?.sourceUrl?.includes(created.clip.id),
     "Rendered clip URL is missing clip id",
   );
+  assert(
+    rendered.clip.render?.subtitlesBurned === true,
+    "Rendered clip did not burn subtitles",
+  );
   assert(progress.some((value) => value === 100), "Render did not report 100%");
 
   const renderedPath = resolveStoragePath(rendered.clip.render.relativePath);
   const renderedStat = await stat(renderedPath);
   assert(renderedStat.size > 0, "Rendered MP4 is empty");
+
+  const assPath = path.join(
+    storage,
+    "clips",
+    projectId,
+    created.clip.id,
+    "subtitles.ass",
+  );
+  const assText = await readFile(assPath, "utf8");
+  assert(/Dialogue: 0/.test(assText), "ASS subtitle file has no dialogue");
+  assert(/\\k/.test(assText), "Karaoke ASS tags were not generated");
 
   const probe = await ffprobe(renderedPath);
   assert(probe.width === 1080 && probe.height === 1920, "ffprobe resolution mismatch");
