@@ -37,6 +37,21 @@ test("speech windows are rebased to clip-local time and nearby speech is merged"
   assert.equal(windows[0].focusY, 0.44);
 });
 
+test("speech outside the selected clip is ignored", () => {
+  const windows = buildSpeechWindows(
+    {
+      segments: [
+        { startTime: 0, endTime: 5, text: "Fuera." },
+        { startTime: 31, endTime: 35, text: "También fuera." },
+      ],
+    },
+    clip,
+    { paddingBeforeMs: 0, paddingAfterMs: 0 },
+  );
+
+  assert.deepEqual(windows, []);
+});
+
 test("auto reframe options clamp unsafe zoom and timing values", () => {
   const config = normalizeAutoReframeOptions({
     zoom: 9,
