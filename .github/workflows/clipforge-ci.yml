@@ -2,7 +2,7 @@ name: ClipForge CI
 
 on:
   push:
-    branches: [main, "chatgpt/**"]
+    branches: [main, "chatgpt/**", "work/**"]
     paths:
       - "app/**"
       - "components/**"
@@ -12,7 +12,9 @@ on:
       - "tests/**"
       - "scripts/**"
       - "services/clip/**"
+      - "services/news/**"
       - "types/clip.ts"
+      - "types/news.ts"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -51,10 +53,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install FFmpeg
+      - name: Install media tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg espeak-ng
 
       - name: Verify code
         run: npm run verify
@@ -70,3 +72,6 @@ jobs:
 
       - name: Auto Focus end-to-end
         run: npm run reframe:e2e
+
+      - name: News Mode end-to-end
+        run: npm run news:e2e
