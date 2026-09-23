@@ -17,6 +17,7 @@ const JOB_PREFIX = {
   ANALYZE_VIDEO: "analyze",
   AUTO_EDIT: "autoedit",
   RENDER_CLIP: "render",
+  PUBLISH_POST: "publish",
 };
 
 export class JobStore {
@@ -57,12 +58,23 @@ export class JobStore {
     });
   }
 
+  async enqueuePublish(projectId, publicationId, payload = {}, options = {}) {
+    return this.enqueue("PUBLISH_POST", projectId, {
+      entityId: publicationId,
+      payload: {
+        ...sanitizePayload(payload),
+        publicationId,
+      },
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
   async enqueue(type, projectId, options = {}) {
     assertProjectId(projectId);
     assertJobType(type);
 
     const entityId = options.entityId || null;
-    if (type === "RENDER_CLIP") {
+    if (["RENDER_CLIP", "PUBLISH_POST"].includes(type)) {
       assertProjectId(entityId);
     }
 
@@ -131,6 +143,10 @@ export class JobStore {
     return this.get(jobId("RENDER_CLIP", projectId, clipId));
   }
 
+  async getPublishJob(projectId, publicationId) {
+    return this.get(jobId("PUBLISH_POST", projectId, publicationId));
+  }
+
   async claimNext(allowedTypes = null) {
     await this.#recoverStaleLocks();
     await this.#ensureDirectory();
@@ -190,7 +206,10 @@ export class JobStore {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return job;
 
-    const normalized = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+    const normalized = Math.max(
+      0,
+      Math.min(100, Math.round(Number(progress) || 0)),
+    );
     const updated = {
       ...job,
       progress: normalized,
@@ -216,10 +235,10 @@ export class JobStore {
     return completed;
   }
 
-  async fail(job, error) {
+  async fail(job, error, options = {}) {
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
-    const terminal = attempts >= maxAttempts;
+    const terminal = options.retryable === false || attempts >= maxAttempts;
     const now = Date.now();
     const delayMs = Math.min(
       5 * 60 * 1000,
@@ -334,11 +353,15 @@ export function renderJobId(projectId, clipId) {
   return jobId("RENDER_CLIP", projectId, clipId);
 }
 
+export function publishJobId(projectId, publicationId) {
+  return jobId("PUBLISH_POST", projectId, publicationId);
+}
+
 function jobId(type, projectId, entityId = null) {
   assertProjectId(projectId);
   assertJobType(type);
 
-  if (type === "RENDER_CLIP") {
+  if (["RENDER_CLIP", "PUBLISH_POST"].includes(type)) {
     assertProjectId(entityId);
     return `${JOB_PREFIX[type]}-${projectId}-${entityId}`;
   }
@@ -362,16 +385,18 @@ function safeJobId(value) {
     }
   }
 
-  const renderMarker = "render-";
-  if (text.startsWith(renderMarker)) {
-    const rest = text.slice(renderMarker.length);
-    if (
-      rest.length === 73 &&
-      rest[36] === "-" &&
-      isProjectId(rest.slice(0, 36)) &&
-      isProjectId(rest.slice(37))
-    ) {
-      return text;
+  for (const prefix of ["render", "publish"]) {
+    const marker = `${prefix}-`;
+    if (text.startsWith(marker)) {
+      const rest = text.slice(marker.length);
+      if (
+        rest.length === 73 &&
+        rest[36] === "-" &&
+        isProjectId(rest.slice(0, 36)) &&
+        isProjectId(rest.slice(37))
+      ) {
+        return text;
+      }
     }
   }
 
