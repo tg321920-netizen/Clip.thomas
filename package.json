@@ -25,7 +25,9 @@
     "worker:autopilot:once": "node scripts/autopilot-worker.mjs --once",
     "worker:news": "node scripts/news-worker.mjs",
     "worker:news:once": "node scripts/news-worker.mjs --once",
-    "news:e2e": "node scripts/news-e2e.mjs"
+    "news:e2e": "node scripts/news-e2e.mjs",
+    "worker:publishing": "node scripts/publishing-worker.mjs",
+    "worker:publishing:once": "node scripts/publishing-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",
