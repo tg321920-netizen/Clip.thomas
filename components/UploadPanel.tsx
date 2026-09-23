@@ -8,6 +8,7 @@ import {
 } from "@/lib/upload-policy.mjs";
 import type { UploadedVideo } from "@/types/video";
 import { ProjectPipeline } from "@/components/ProjectPipeline";
+import { NewsModePanel } from "@/components/NewsModePanel";
 
 type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
@@ -289,6 +290,9 @@ export function UploadPanel() {
             </p>
 
             <ProjectPipeline projectId={result.projectId} />
+            <div className="mt-4">
+              <NewsModePanel projectId={result.projectId} enabled />
+            </div>
           </div>
         </div>
       )}
