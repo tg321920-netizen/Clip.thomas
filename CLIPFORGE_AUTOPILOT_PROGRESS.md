@@ -19,10 +19,18 @@
 
 ## EN PROGRESO
 
-- Inicio de AutopilotConfig y orquestación segura con approvalRequired=true.
+- Validación de AutopilotConfig, orquestación por proyecto y worker de ciclos.
 
 ## COMPLETADO RECIENTE
 
+- AutopilotConfig persistido con modo MANUAL/AUTOPILOT: implementado.
+- approvalRequired=true por defecto: implementado.
+- Configuración de postsPerDay, plataformas, horarios, analytics y learning: implementada.
+- AutopilotService encola solo la siguiente dependencia faltante: implementado.
+- Recuperación de artefactos faltantes aunque un job anterior figure COMPLETED: implementada.
+- Worker Autopilot separado de HTTP: implementado.
+- API de configuración y avance manual por proyecto: implementadas.
+- Selección de canales elegibles respeta plataforma, estado, publishingEnabled y dailyLimit: implementada.
 - Channels + ChannelStrategy verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - ChannelRecord para TikTok, YouTube y Facebook: implementado.
 - ChannelStrategy por canal: implementado.
@@ -77,7 +85,7 @@
 
 ## PENDIENTE
 
-- Autopilot.
+- Autopilot: validación final de esta fase.
 - Cola de jobs generalizada/durable.
 - Scheduler.
 - Publishing providers oficiales.
@@ -100,8 +108,8 @@
 
 ## SIGUIENTE PASO
 
-1. Implementar AutopilotConfig y orquestación por proyecto.
-2. Mantener approvalRequired=true por defecto.
-3. Encolar únicamente la siguiente dependencia real que falte: transcripción, análisis, Auto Edit o render.
-4. Después implementar Publication + Scheduler sobre canales configurables.
-5. Mantener publishing real desactivado hasta que existan OAuth y APIs oficiales autorizadas.
+1. Ejecutar lint, typecheck, tests y build con Autopilot core.
+2. Corregir cualquier fallo antes de avanzar.
+3. Implementar Publication + Scheduler con idempotencia y approvalRequired.
+4. Añadir providers oficiales detrás de una interfaz común sin inventar credenciales.
+5. Mantener publicación real desactivada hasta existir OAuth/scopes autorizados.
