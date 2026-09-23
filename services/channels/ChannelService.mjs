@@ -22,8 +22,16 @@ export class ChannelService {
     const name = cleanRequired(input.name, "Channel name", 100);
     const timezone = normalizeTimezone(input.timezone || "UTC");
     const dailyLimit = boundedInteger(input.dailyLimit, 0, 50, 3);
+    const status = normalizeStatus(input.status || "DISCONNECTED");
+    const publishingEnabled = Boolean(input.publishingEnabled);
     const now = new Date().toISOString();
     const id = randomUUID();
+
+    if (publishingEnabled && status !== "CONNECTED") {
+      throw new Error(
+        "Publishing cannot be enabled until the channel is CONNECTED.",
+      );
+    }
 
     const record = {
       id,
@@ -31,8 +39,8 @@ export class ChannelService {
       platform,
       name,
       externalAccountId: cleanOptional(input.externalAccountId, 180),
-      status: normalizeStatus(input.status || "DISCONNECTED"),
-      publishingEnabled: Boolean(input.publishingEnabled),
+      status,
+      publishingEnabled,
       dailyLimit,
       timezone,
       strategy: normalizeStrategy(id, input.strategy || {}, dailyLimit, now),
