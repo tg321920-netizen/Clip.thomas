@@ -18,6 +18,7 @@
     "worker:render": "node scripts/render-worker.mjs",
     "worker:render:once": "node scripts/render-worker.mjs --once",
     "render:e2e": "node scripts/render-e2e.mjs",
+    "reframe:e2e": "node scripts/auto-reframe-e2e.mjs",
     "worker:autoedit": "node scripts/autoedit-worker.mjs",
     "worker:autoedit:once": "node scripts/autoedit-worker.mjs --once",
     "worker:autopilot": "node scripts/autopilot-worker.mjs",
