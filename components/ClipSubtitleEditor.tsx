@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ClipAutoFocusControl } from "@/components/ClipAutoFocusControl";
 import type {
   ClipRecord,
   SubtitleCue,
@@ -129,147 +130,163 @@ export function ClipSubtitleEditor({
 
   if (!track) {
     return (
+      <>
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-zinc-300">Subtítulos</p>
+              <p className="mt-1 text-[11px] leading-5 text-zinc-600">
+                Se generan desde los timestamps reales de Whisper.
+              </p>
+            </div>
+            <select
+              value={style}
+              onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
+              disabled={busy !== null}
+              className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
+            >
+              <option value="CLEAN">CLEAN</option>
+              <option value="VIRAL">VIRAL</option>
+              <option value="KARAOKE">KARAOKE</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={busy !== null}
+            className="mt-3 w-full rounded-lg border border-violet-400/20 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/15 disabled:opacity-40"
+          >
+            {busy === "generate"
+              ? "Generando…"
+              : "Generar subtítulos y volver a renderizar"}
+          </button>
+
+          {error && (
+            <p className="mt-2 text-xs leading-5 text-red-300">{error}</p>
+          )}
+        </div>
+
+        <ClipAutoFocusControl
+          projectId={projectId}
+          clip={clip}
+          onChanged={onRenderNeeded}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
       <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-medium text-zinc-300">Subtítulos</p>
-            <p className="mt-1 text-[11px] leading-5 text-zinc-600">
-              Se generan desde los timestamps reales de Whisper.
+            <p className="text-xs font-medium text-zinc-300">Subtítulos editables</p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              {track.cues.length} bloques · cambios no destructivos
             </p>
           </div>
-          <select
-            value={style}
-            onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
-            disabled={busy !== null}
-            className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
-          >
-            <option value="CLEAN">CLEAN</option>
-            <option value="VIRAL">VIRAL</option>
-            <option value="KARAOKE">KARAOKE</option>
-          </select>
+
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.target.checked)}
+                disabled={busy !== null}
+              />
+              Activos
+            </label>
+
+            <select
+              value={style}
+              onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
+              disabled={busy !== null}
+              className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
+            >
+              <option value="CLEAN">CLEAN</option>
+              <option value="VIRAL">VIRAL</option>
+              <option value="KARAOKE">KARAOKE</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3 max-h-64 space-y-2 overflow-auto pr-1">
+          {track.cues.map((cue) => (
+            <div
+              key={cue.id}
+              className="rounded-lg border border-white/10 bg-white/[0.035] p-2"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-600">
+                  Inicio
+                  <input
+                    type="number"
+                    min={0}
+                    max={clip.duration}
+                    step={0.05}
+                    value={cue.startTime}
+                    onChange={(event) =>
+                      updateCue(cue.id, {
+                        startTime: Number(event.target.value),
+                      })
+                    }
+                    className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
+                  />
+                </label>
+
+                <label className="text-[10px] uppercase tracking-wide text-zinc-600">
+                  Fin
+                  <input
+                    type="number"
+                    min={0}
+                    max={clip.duration}
+                    step={0.05}
+                    value={cue.endTime}
+                    onChange={(event) =>
+                      updateCue(cue.id, {
+                        endTime: Number(event.target.value),
+                      })
+                    }
+                    className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
+                  />
+                </label>
+              </div>
+
+              <textarea
+                value={cue.text}
+                onChange={(event) =>
+                  updateCue(cue.id, { text: event.target.value })
+                }
+                rows={2}
+                maxLength={300}
+                className="mt-2 w-full resize-y rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-xs leading-5 text-zinc-300"
+              />
+            </div>
+          ))}
         </div>
 
         <button
           type="button"
-          onClick={() => void generate()}
+          onClick={() => void save()}
           disabled={busy !== null}
-          className="mt-3 w-full rounded-lg border border-violet-400/20 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/15 disabled:opacity-40"
+          className="mt-3 w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:opacity-40"
         >
-          {busy === "generate"
-            ? "Generando…"
-            : "Generar subtítulos y volver a renderizar"}
+          {busy === "save"
+            ? "Guardando…"
+            : "Guardar y volver a renderizar"}
         </button>
 
         {error && (
           <p className="mt-2 text-xs leading-5 text-red-300">{error}</p>
         )}
       </div>
-    );
-  }
 
-  return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium text-zinc-300">Subtítulos editables</p>
-          <p className="mt-1 text-[11px] text-zinc-600">
-            {track.cues.length} bloques · cambios no destructivos
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(event) => setEnabled(event.target.checked)}
-              disabled={busy !== null}
-            />
-            Activos
-          </label>
-
-          <select
-            value={style}
-            onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
-            disabled={busy !== null}
-            className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
-          >
-            <option value="CLEAN">CLEAN</option>
-            <option value="VIRAL">VIRAL</option>
-            <option value="KARAOKE">KARAOKE</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="mt-3 max-h-64 space-y-2 overflow-auto pr-1">
-        {track.cues.map((cue) => (
-          <div
-            key={cue.id}
-            className="rounded-lg border border-white/10 bg-white/[0.035] p-2"
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-[10px] uppercase tracking-wide text-zinc-600">
-                Inicio
-                <input
-                  type="number"
-                  min={0}
-                  max={clip.duration}
-                  step={0.05}
-                  value={cue.startTime}
-                  onChange={(event) =>
-                    updateCue(cue.id, {
-                      startTime: Number(event.target.value),
-                    })
-                  }
-                  className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
-                />
-              </label>
-
-              <label className="text-[10px] uppercase tracking-wide text-zinc-600">
-                Fin
-                <input
-                  type="number"
-                  min={0}
-                  max={clip.duration}
-                  step={0.05}
-                  value={cue.endTime}
-                  onChange={(event) =>
-                    updateCue(cue.id, {
-                      endTime: Number(event.target.value),
-                    })
-                  }
-                  className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
-                />
-              </label>
-            </div>
-
-            <textarea
-              value={cue.text}
-              onChange={(event) =>
-                updateCue(cue.id, { text: event.target.value })
-              }
-              rows={2}
-              maxLength={300}
-              className="mt-2 w-full resize-y rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-xs leading-5 text-zinc-300"
-            />
-          </div>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={busy !== null}
-        className="mt-3 w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:opacity-40"
-      >
-        {busy === "save"
-          ? "Guardando…"
-          : "Guardar y volver a renderizar"}
-      </button>
-
-      {error && (
-        <p className="mt-2 text-xs leading-5 text-red-300">{error}</p>
-      )}
-    </div>
+      <ClipAutoFocusControl
+        projectId={projectId}
+        clip={clip}
+        onChanged={onRenderNeeded}
+      />
+    </>
   );
 }
