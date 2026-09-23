@@ -25,6 +25,31 @@ export type SubtitleTrack = {
   updatedAt: string;
 };
 
+export type AutoReframeWindow = {
+  startTime: number;
+  endTime: number;
+  focusX: number;
+  focusY: number;
+};
+
+export type AutoReframePlan = {
+  enabled: boolean;
+  mode: "SPEECH_ZOOM";
+  basis: "TRANSCRIPT_SPEECH_ACTIVITY";
+  speakerAware: false;
+  subjectMode: "CENTERED_SUBJECT";
+  zoom: number;
+  attackMs: number;
+  releaseMs: number;
+  mergeGapMs: number;
+  paddingBeforeMs: number;
+  paddingAfterMs: number;
+  sourceTranscriptId: string;
+  windows: AutoReframeWindow[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AutoEditPlan = {
   provider: string;
   model: string | null;
@@ -64,9 +89,11 @@ export type ClipRecord = {
     subtitlesEnabled: boolean;
     subtitleStyle: SubtitleStyle;
     quality: ClipRenderQuality;
+    autoReframeEnabled?: boolean;
   };
   subtitles: SubtitleTrack | null;
   autoEdit: AutoEditPlan | null;
+  autoReframe: AutoReframePlan | null;
   render: {
     relativePath: string;
     sourceUrl: string;
@@ -76,6 +103,7 @@ export type ClipRecord = {
     container: string;
     sizeBytes: number;
     subtitlesBurned?: boolean;
+    autoReframeApplied?: boolean;
   } | null;
   createdAt: string;
   updatedAt: string;
