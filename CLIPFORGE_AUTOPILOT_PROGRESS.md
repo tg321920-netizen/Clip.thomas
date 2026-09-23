@@ -19,10 +19,11 @@
 
 ## EN PROGRESO
 
-- Validación de AutopilotConfig, orquestación por proyecto y worker de ciclos.
+- Inicio de Publication + Scheduler con approvalRequired e idempotencia.
 
 ## COMPLETADO RECIENTE
 
+- Autopilot core verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - AutopilotConfig persistido con modo MANUAL/AUTOPILOT: implementado.
 - approvalRequired=true por defecto: implementado.
 - Configuración de postsPerDay, plataformas, horarios, analytics y learning: implementada.
@@ -85,11 +86,10 @@
 
 ## PENDIENTE
 
-- Autopilot: validación final de esta fase.
-- Cola de jobs generalizada/durable.
 - Scheduler.
 - Publishing providers oficiales.
 - Publication.
+- Cola de jobs generalizada/durable.
 - Analytics.
 - PerformanceAnalyzer.
 - Dashboard /autopilot.
@@ -108,8 +108,8 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con Autopilot core.
-2. Corregir cualquier fallo antes de avanzar.
-3. Implementar Publication + Scheduler con idempotencia y approvalRequired.
-4. Añadir providers oficiales detrás de una interfaz común sin inventar credenciales.
+1. Implementar Publication y su repositorio reemplazable.
+2. Implementar Scheduler con timezone, límites diarios, horarios preferidos y approvalRequired.
+3. Integrar Autopilot para crear publicaciones idempotentes cuando un clip quede READY.
+4. Validar tests/build antes de implementar providers oficiales.
 5. Mantener publicación real desactivada hasta existir OAuth/scopes autorizados.
