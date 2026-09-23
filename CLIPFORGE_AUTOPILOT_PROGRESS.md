@@ -19,10 +19,11 @@
 
 ## EN PROGRESO
 
-- Validación de Channels y ChannelStrategy antes de iniciar Autopilot.
+- Inicio de AutopilotConfig y orquestación segura con approvalRequired=true.
 
 ## COMPLETADO RECIENTE
 
+- Channels + ChannelStrategy verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - ChannelRecord para TikTok, YouTube y Facebook: implementado.
 - ChannelStrategy por canal: implementado.
 - Configuración de timezone, dailyLimit, publishingEnabled y estado: implementada.
@@ -99,8 +100,8 @@
 
 ## SIGUIENTE PASO
 
-1. Ejecutar lint, typecheck, tests y build con Channels/ChannelStrategy.
-2. Corregir cualquier fallo antes de avanzar.
-3. Implementar AutopilotConfig y orquestación con approvalRequired=true por defecto.
+1. Implementar AutopilotConfig y orquestación por proyecto.
+2. Mantener approvalRequired=true por defecto.
+3. Encolar únicamente la siguiente dependencia real que falte: transcripción, análisis, Auto Edit o render.
 4. Después implementar Publication + Scheduler sobre canales configurables.
 5. Mantener publishing real desactivado hasta que existan OAuth y APIs oficiales autorizadas.
