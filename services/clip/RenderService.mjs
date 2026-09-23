@@ -2,6 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
+import { buildSpeechZoomFilter } from "../reframe/AutoReframeService.mjs";
 import { buildAssDocument } from "../subtitles/SubtitleService.mjs";
 
 const QUALITY = {
@@ -40,6 +41,22 @@ export class RenderService {
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
     let filter = buildVideoFilter(clip?.edit?.framingMode || "FILL");
     let subtitlesBurned = false;
+    let autoReframeApplied = false;
+
+    if (
+      clip?.edit?.autoReframeEnabled &&
+      clip?.autoReframe?.enabled
+    ) {
+      const reframeFilter = buildSpeechZoomFilter(
+        clip.autoReframe,
+        project?.source?.fps,
+      );
+
+      if (reframeFilter) {
+        filter = `${filter},${reframeFilter}`;
+        autoReframeApplied = true;
+      }
+    }
 
     if (
       clip?.edit?.subtitlesEnabled &&
@@ -119,6 +136,7 @@ export class RenderService {
       container: probe.container,
       sizeBytes: outputStat.size,
       subtitlesBurned,
+      autoReframeApplied,
     };
   }
 }
@@ -172,7 +190,12 @@ function runFfmpeg(command, args, duration, onProgress) {
         if (key === "out_time") {
           const seconds = parseFfmpegTime(value);
           if (Number.isFinite(seconds)) {
-            onProgress(Math.min(99, Math.max(0, Math.round((seconds / duration) * 100))));
+            onProgress(
+              Math.min(
+                99,
+                Math.max(0, Math.round((seconds / duration) * 100)),
+              ),
+            );
           }
         }
 
@@ -269,11 +292,16 @@ function runProcess(command, args) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `Process failed with code ${code ?? "?"}.`));
+      else {
+        reject(
+          new Error(
+            stderr.trim() || `Process failed with code ${code ?? "?"}.`,
+          ),
+        );
+      }
     });
   });
 }
-
 
 function escapeFilterPath(filePath) {
   return String(filePath)
