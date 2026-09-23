@@ -64,8 +64,7 @@ Al introducir una base de datos, estas entidades podrán migrarse sin cambiar el
 
 ## Próxima decisión de infraestructura
 
-Antes de Channels/Publishing/multiusuario será necesario escoger persistencia durable y autenticación. Esa decisión debe hacerse después de estabilizar el pipeline de video/transcripción, no antes.
-
+Antes de Publishing/multiusuario será necesario escoger persistencia durable y autenticación. La implementación local actual mantiene interfaces separadas para poder migrar sin reescribir la lógica de negocio.
 
 ## Content Analyzer — baseline funcional
 
@@ -78,7 +77,6 @@ La señal `audioEnergy` permanece en `null` hasta existir un `AudioAnalyzer`. El
 `ContentAnalysisService` acepta un provider por inyección. Esto permite añadir posteriormente un provider LLM sin mezclar llamadas de IA con UI ni reemplazar el baseline local.
 
 La petición HTTP de análisis solo encola `ANALYZE_VIDEO`; `analysis-worker.mjs` ejecuta el trabajo fuera del request.
-
 
 ## Clip Engine — render vertical real
 
@@ -105,15 +103,7 @@ Los archivos se guardan en:
 
 y se sirven mediante una ruta de streaming con soporte HTTP Range.
 
-La prueba de render debe verificar:
-
-1. salida MP4 real;
-2. resolución 1080×1920 con ffprobe;
-3. duración esperada;
-4. archivo no vacío;
-5. fuente original sin modificaciones;
-6. reutilización del render READY.
-
+La prueba de render verifica salida MP4 real, resolución 1080×1920, duración, archivo no vacío, fuente original intacta y reutilización de renders READY.
 
 ## Subtítulos editables
 
@@ -129,9 +119,6 @@ Estilos iniciales:
 
 Los subtítulos se escriben en ASS dentro del directorio interno del clip y FFmpeg los quema después del encuadre 9:16. Cambiar texto, timing, estilo o estado enabled invalida el render previo y obliga a producir un nuevo MP4, manteniendo el original intacto.
 
-La UI permite generar, activar/desactivar, escoger estilo y editar texto/inicio/final. Al guardar, se encola un nuevo `RENDER_CLIP`.
-
-
 ## Auto Edit
 
 `AutoEditService` vive fuera de la UI y trabaja sobre candidatos ya persistidos. Su responsabilidad es seleccionar un candidato válido, limitar cualquier ajuste de inicio/final a los límites reales de ese candidato y preparar metadata/editorial antes del render.
@@ -146,3 +133,26 @@ El plan persistido en `clip.autoEdit` incluye provider/modelo, candidateId, star
 La idempotencia se basa en analysis/transcript/provider/model/candidato solicitado. Un Auto Edit vigente se reutiliza para evitar llamadas repetidas de IA. Si faltan subtítulos en un resultado reutilizado, se regeneran antes de continuar.
 
 `AUTO_EDIT` es un job independiente. `autoedit-worker.mjs` prepara el clip, genera subtítulos y luego encola `RENDER_CLIP`; no mantiene una petición HTTP abierta.
+
+## Channels y estrategia editorial
+
+`ChannelService` introduce la configuración multicanal sin mezclar OAuth ni publicación todavía. Las plataformas iniciales son `TIKTOK`, `YOUTUBE` y `FACEBOOK` y el enum puede extenderse después.
+
+Cada `ChannelRecord` guarda:
+
+- `id`;
+- `userId` (actualmente `null` en modo local porque no existe autenticación real);
+- `platform`;
+- `name`;
+- `externalAccountId` opcional;
+- `status` (`DISCONNECTED`, `CONNECTED`, `PAUSED`, `ERROR`);
+- `publishingEnabled`;
+- `dailyLimit`;
+- `timezone` IANA validada;
+- `createdAt`/`updatedAt`.
+
+`ChannelStrategy` pertenece a un canal y mantiene instrucciones editoriales independientes: nombre, descripción, `systemPrompt`, duración preferida, límite diario, temas preferidos y temas a evitar.
+
+La persistencia actual vive en `storage/channels/{channelId}.json` detrás de `ChannelRepository`. Esa capa es deliberadamente reemplazable por una base de datos más adelante.
+
+No se guardan access tokens, refresh tokens, API keys ni secretos dentro de ChannelRecord. `publishingEnabled` solo puede activarse cuando el canal está marcado `CONNECTED`; la conexión OAuth real se implementará en los publishing providers oficiales.
