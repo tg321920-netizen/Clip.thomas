@@ -3,6 +3,8 @@ import { ChannelService } from "../channels/ChannelService.mjs";
 import { JobStore } from "../JobStore.mjs";
 import { loadProjectFile } from "../../lib/project-files.mjs";
 import { markClipQueued } from "../clip/ClipService.mjs";
+import { PublicationService } from "../publications/PublicationService.mjs";
+import { SchedulerService } from "../scheduler/SchedulerService.mjs";
 
 const PLATFORMS = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
 const MODES = new Set(["MANUAL", "AUTOPILOT"]);
@@ -12,6 +14,15 @@ export class AutopilotService {
     this.repository = options.repository || new AutopilotRepository();
     this.jobs = options.jobs || new JobStore();
     this.channels = options.channels || new ChannelService();
+    this.publications =
+      options.publications ||
+      new PublicationService({ channels: this.channels });
+    this.scheduler =
+      options.scheduler ||
+      new SchedulerService({
+        publications: this.publications,
+        channels: this.channels,
+      });
   }
 
   async getConfig() {
@@ -150,13 +161,53 @@ export class AutopilotService {
 
     const eligibleChannels = await this.getEligibleChannels(config);
 
+    if (eligibleChannels.length === 0) {
+      return {
+        projectId,
+        state: "READY_FOR_PUBLICATION",
+        queuedJob: null,
+        clipId: autoEditClip.id,
+        eligibleChannelIds: [],
+        publicationIds: [],
+        approvalRequired: config.approvalRequired,
+      };
+    }
+
+    const publications = [];
+    const scheduleResults = [];
+
+    for (const channel of eligibleChannels) {
+      const created = await this.publications.createForClip({
+        projectId,
+        clipId: autoEditClip.id,
+        channelId: channel.id,
+        approvalRequired: config.approvalRequired,
+      });
+
+      publications.push(created.publication);
+
+      if (!config.approvalRequired) {
+        const current = created.publication;
+        if (current.status === "WAITING_APPROVAL") {
+          await this.publications.approve(current.id);
+        }
+        scheduleResults.push(
+          await this.scheduler.schedulePublication(current.id, config),
+        );
+      }
+    }
+
     return {
       projectId,
-      state: "READY_FOR_PUBLICATION",
+      state: config.approvalRequired
+        ? "WAITING_APPROVAL"
+        : "PUBLICATIONS_SCHEDULED",
       queuedJob: null,
       clipId: autoEditClip.id,
       eligibleChannelIds: eligibleChannels.map((channel) => channel.id),
+      publicationIds: publications.map((publication) => publication.id),
       approvalRequired: config.approvalRequired,
+      ...(scheduleResults.length > 0 ? { scheduleResults } : {}),
     };
   }
 
