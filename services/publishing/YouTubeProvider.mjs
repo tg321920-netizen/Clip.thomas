@@ -131,6 +131,43 @@ export class YouTubeProvider {
   }
 
   async getStatus(context) {
+    const video = await this.#fetchVideo(context, "status,processingDetails,statistics");
+    return {
+      status: normalizeYouTubeStatus(video),
+      privacyStatus: video?.status?.privacyStatus || null,
+      statistics: video?.statistics || null,
+      raw: video,
+    };
+  }
+
+  async getAnalytics(context) {
+    const video = await this.#fetchVideo(context, "statistics");
+    const statistics = video?.statistics || {};
+
+    return {
+      provider: "youtube-data-api",
+      metrics: {
+        views: parseCounter(statistics.viewCount),
+        likes: parseCounter(statistics.likeCount),
+        comments: parseCounter(statistics.commentCount),
+        shares: null,
+        watchTimeSeconds: null,
+        averageViewDurationSeconds: null,
+        retentionPercent: null,
+        followersGained: null,
+      },
+      raw: null,
+    };
+  }
+
+  async refreshAuth() {
+    throw new PublishingProviderError(
+      "YouTube token refresh must be handled by the OAuth credential service.",
+      { code: "OAUTH_SERVICE_REQUIRED", retryable: false },
+    );
+  }
+
+  async #fetchVideo(context, parts) {
     const accessToken = requireAccessToken(context?.credentials, "YouTube");
     const videoId = String(context?.externalPostId || "").trim();
     if (!videoId) {
@@ -141,30 +178,23 @@ export class YouTubeProvider {
     }
 
     const url = new URL(`${this.apiBase}/videos`);
-    url.searchParams.set("part", "status,processingDetails,statistics");
+    url.searchParams.set("part", parts);
     url.searchParams.set("id", videoId);
 
     const response = await this.fetchImpl(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await readJsonSafe(response);
-
     if (!response.ok) throwHttpError("YouTube", response, body);
 
     const video = Array.isArray(body?.items) ? body.items[0] : null;
-    return {
-      status: normalizeYouTubeStatus(video),
-      privacyStatus: video?.status?.privacyStatus || null,
-      statistics: video?.statistics || null,
-      raw: video,
-    };
-  }
-
-  async refreshAuth() {
-    throw new PublishingProviderError(
-      "YouTube token refresh must be handled by the OAuth credential service.",
-      { code: "OAUTH_SERVICE_REQUIRED", retryable: false },
-    );
+    if (!video) {
+      throw new PublishingProviderError("YouTube video was not found.", {
+        code: "YOUTUBE_VIDEO_NOT_FOUND",
+        retryable: false,
+      });
+    }
+    return video;
   }
 }
 
@@ -184,6 +214,12 @@ export function normalizeYouTubeStatus(video) {
   if (processingStatus) return processingStatus.toUpperCase();
   if (uploadStatus) return uploadStatus.toUpperCase();
   return "UNKNOWN";
+}
+
+function parseCounter(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function normalizePrivacy(value) {
