@@ -68,6 +68,9 @@ export class PublicationService {
       title: cleanText(metadata.title, 160),
       description: cleanText(metadata.description, 2200),
       hashtags: normalizeHashtags(metadata.hashtags),
+      platformSettings: {},
+      consentAt: null,
+      metadataApprovedAt: approvalRequired ? null : now,
       scheduledAt: null,
       publishedAt: null,
       status: approvalRequired ? "WAITING_APPROVAL" : "APPROVED",
@@ -81,19 +84,63 @@ export class PublicationService {
     return { publication, reused: false };
   }
 
-  async approve(publicationId) {
+  async updateDraft(publicationId, input = {}) {
+    const publication = await this.#require(publicationId);
+
+    if (!["DRAFT", "WAITING_APPROVAL", "APPROVED", "FAILED"].includes(publication.status)) {
+      throw new Error(`Publication cannot be edited from ${publication.status}.`);
+    }
+
+    if (Object.hasOwn(input, "title")) {
+      publication.title = cleanText(input.title, 160);
+      if (!publication.title) throw new Error("Publication title cannot be empty.");
+    }
+    if (Object.hasOwn(input, "description")) {
+      publication.description = cleanText(input.description, 2200);
+    }
+    if (Object.hasOwn(input, "hashtags")) {
+      publication.hashtags = normalizeHashtags(input.hashtags);
+    }
+    if (Object.hasOwn(input, "platformSettings")) {
+      publication.platformSettings = normalizePlatformSettings(
+        publication.platform,
+        input.platformSettings,
+      );
+    }
+
+    publication.status = "WAITING_APPROVAL";
+    publication.consentAt = null;
+    publication.metadataApprovedAt = null;
+    publication.error = null;
+    publication.updatedAt = new Date().toISOString();
+
+    await this.repository.save(publication);
+    return publication;
+  }
+
+  async approve(publicationId, options = {}) {
     const publication = await this.#require(publicationId);
 
     if (publication.status === "PUBLISHED") return publication;
     if (TERMINAL_OR_ACTIVE.has(publication.status)) return publication;
 
-    if (!new Set(["WAITING_APPROVAL", "DRAFT", "FAILED"]).has(publication.status)) {
+    if (!new Set(["WAITING_APPROVAL", "DRAFT", "FAILED", "APPROVED"]).has(publication.status)) {
       throw new Error(`Publication cannot be approved from ${publication.status}.`);
     }
 
+    if (Object.hasOwn(options, "platformSettings")) {
+      publication.platformSettings = normalizePlatformSettings(
+        publication.platform,
+        options.platformSettings,
+      );
+    }
+
+    const now = new Date().toISOString();
     publication.status = publication.scheduledAt ? "SCHEDULED" : "APPROVED";
+    publication.metadataApprovedAt = now;
+    publication.consentAt = options.consent === true ? now : publication.consentAt;
     publication.error = null;
-    publication.updatedAt = new Date().toISOString();
+    publication.updatedAt = now;
     await this.repository.save(publication);
     return publication;
   }
@@ -132,14 +179,30 @@ export class PublicationService {
     return publication;
   }
 
-  async markPublished(publicationId, externalPostId) {
+  async markSubmitted(publicationId, externalPostId) {
+    const publication = await this.#require(publicationId);
+    if (publication.status !== "PUBLISHING") {
+      throw new Error("Publication must be PUBLISHING before provider submission.");
+    }
+
+    const externalId = cleanText(externalPostId, 300);
+    if (!externalId) throw new Error("externalPostId is required.");
+
+    publication.externalPostId = externalId;
+    publication.error = null;
+    publication.updatedAt = new Date().toISOString();
+    await this.repository.save(publication);
+    return publication;
+  }
+
+  async markPublished(publicationId, externalPostId = null) {
     const publication = await this.#require(publicationId);
     if (publication.status === "PUBLISHED") return publication;
     if (publication.status !== "PUBLISHING") {
       throw new Error("Publication must be PUBLISHING before completion.");
     }
 
-    const externalId = cleanText(externalPostId, 300);
+    const externalId = cleanText(externalPostId || publication.externalPostId, 300);
     if (!externalId) throw new Error("externalPostId is required.");
 
     publication.status = "PUBLISHED";
@@ -177,6 +240,57 @@ export function buildIdempotencyKey(clipId, channelId) {
   assertUuid(clipId, "clip");
   assertUuid(channelId, "channel");
   return `${clipId}:${channelId}`;
+}
+
+export function normalizePlatformSettings(platform, value) {
+  const input = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+
+  if (platform === "TIKTOK") {
+    const output = {
+      ...(typeof input.privacyLevel === "string"
+        ? { privacyLevel: cleanText(input.privacyLevel, 80) }
+        : {}),
+      disableDuet: Boolean(input.disableDuet),
+      disableComment: Boolean(input.disableComment),
+      disableStitch: Boolean(input.disableStitch),
+      brandContent: Boolean(input.brandContent),
+      brandOrganic: Boolean(input.brandOrganic),
+      ...(typeof input.isAigc === "boolean" ? { isAigc: input.isAigc } : {}),
+    };
+
+    if (typeof input.publicVideoUrl === "string" && input.publicVideoUrl.trim()) {
+      const url = new URL(input.publicVideoUrl.trim());
+      if (url.protocol !== "https:") {
+        throw new Error("TikTok publicVideoUrl must use HTTPS.");
+      }
+      output.publicVideoUrl = url.toString();
+    }
+
+    return output;
+  }
+
+  if (platform === "YOUTUBE") {
+    const privacyStatus = String(input.privacyStatus || "private").toLowerCase();
+    if (!["private", "unlisted", "public"].includes(privacyStatus)) {
+      throw new Error("Invalid YouTube privacyStatus.");
+    }
+
+    return {
+      privacyStatus,
+      madeForKids: Boolean(input.madeForKids),
+      ...(typeof input.categoryId === "string" && input.categoryId.trim()
+        ? { categoryId: cleanText(input.categoryId, 30) }
+        : {}),
+      ...(Array.isArray(input.tags)
+        ? { tags: input.tags.map((tag) => cleanText(tag, 100)).filter(Boolean).slice(0, 30) }
+        : {}),
+    };
+  }
+
+  if (platform === "FACEBOOK") return {};
+  throw new Error("Unsupported publication platform.");
 }
 
 function getClipMetadata(project, clip) {
