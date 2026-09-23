@@ -74,7 +74,9 @@ export class AutopilotService {
     if (!project) throw new Error("Project not found.");
 
     if (!isCompletedTranscript(project.transcript)) {
-      const job = await this.jobs.enqueueTranscription(projectId);
+      const job = await this.jobs.enqueueTranscription(projectId, {
+        restartCompleted: true,
+      });
       return {
         projectId,
         state: "WAITING_TRANSCRIPTION",
@@ -117,8 +119,10 @@ export class AutopilotService {
       );
 
       if (
-        autoEditClip.status === "QUEUED" ||
-        autoEditClip.status === "RENDERING"
+        (autoEditClip.status === "QUEUED" ||
+          autoEditClip.status === "RENDERING") &&
+        existingRenderJob &&
+        ["QUEUED", "PROCESSING"].includes(existingRenderJob.status)
       ) {
         return {
           projectId,
