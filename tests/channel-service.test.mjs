@@ -60,6 +60,18 @@ test("creates, lists and updates channels with a default strategy", async () => 
 test("publishing cannot be enabled while channel is disconnected", async () => {
   await withStorage(async () => {
     const service = new ChannelService();
+
+    await assert.rejects(
+      () =>
+        service.createChannel({
+          platform: "TIKTOK",
+          name: "No conectado",
+          timezone: "UTC",
+          publishingEnabled: true,
+        }),
+      /cannot be enabled/i,
+    );
+
     const created = await service.createChannel({
       platform: "YOUTUBE",
       name: "Shorts",
@@ -114,7 +126,10 @@ test("platform and timezone validation reject unsupported values", async () => {
       /unsupported platform/i,
     );
 
-    assert.throws(() => normalizeTimezone("Not/A_Real_Zone"), /timezone is invalid/i);
+    assert.throws(
+      () => normalizeTimezone("Not/A_Real_Zone"),
+      /timezone is invalid/i,
+    );
   });
 });
 
