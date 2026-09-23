@@ -48,3 +48,5 @@ test("PerformanceAnalyzer ranks stronger samples first", () => {
   assert.equal(ranked[0].sample.id, "strong");
   assert.ok(ranked[0].analysis.score > ranked[1].analysis.score);
 });
+
+// Keep this test provider-independent: platform adapters will supply these raw metrics later.
