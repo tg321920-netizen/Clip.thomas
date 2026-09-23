@@ -138,21 +138,39 @@ La idempotencia se basa en analysis/transcript/provider/model/candidato solicita
 
 `ChannelService` introduce la configuración multicanal sin mezclar OAuth ni publicación todavía. Las plataformas iniciales son `TIKTOK`, `YOUTUBE` y `FACEBOOK` y el enum puede extenderse después.
 
-Cada `ChannelRecord` guarda:
-
-- `id`;
-- `userId` (actualmente `null` en modo local porque no existe autenticación real);
-- `platform`;
-- `name`;
-- `externalAccountId` opcional;
-- `status` (`DISCONNECTED`, `CONNECTED`, `PAUSED`, `ERROR`);
-- `publishingEnabled`;
-- `dailyLimit`;
-- `timezone` IANA validada;
-- `createdAt`/`updatedAt`.
+Cada `ChannelRecord` guarda `id`, `userId`, plataforma, nombre, cuenta externa opcional, estado, `publishingEnabled`, `dailyLimit`, timezone IANA y timestamps.
 
 `ChannelStrategy` pertenece a un canal y mantiene instrucciones editoriales independientes: nombre, descripción, `systemPrompt`, duración preferida, límite diario, temas preferidos y temas a evitar.
 
 La persistencia actual vive en `storage/channels/{channelId}.json` detrás de `ChannelRepository`. Esa capa es deliberadamente reemplazable por una base de datos más adelante.
 
 No se guardan access tokens, refresh tokens, API keys ni secretos dentro de ChannelRecord. `publishingEnabled` solo puede activarse cuando el canal está marcado `CONNECTED`; la conexión OAuth real se implementará en los publishing providers oficiales.
+
+## Autopilot core
+
+`AutopilotConfig` mantiene el modo general del sistema:
+
+- `enabled`;
+- `mode`: `MANUAL` o `AUTOPILOT`;
+- `approvalRequired` (por defecto `true`);
+- `postsPerDay`;
+- plataformas activas;
+- horarios preferidos;
+- `analyticsEnabled`;
+- `learningEnabled`.
+
+La configuración se persiste de forma atómica en `storage/autopilot/config.json` mediante `AutopilotRepository`.
+
+`AutopilotService.advanceProject()` nunca ejecuta procesamiento pesado dentro de HTTP. Inspecciona el estado persistido del proyecto y encola únicamente la siguiente dependencia que falta:
+
+1. sin transcript válido → `TRANSCRIBE_VIDEO`;
+2. con transcript pero sin análisis válido → `ANALYZE_VIDEO`;
+3. con análisis pero sin Auto Edit → `AUTO_EDIT`;
+4. con clip Auto Edit sin render READY → `RENDER_CLIP`;
+5. con clip READY → `READY_FOR_PUBLICATION`.
+
+Si un job previo figura COMPLETED pero falta su artefacto persistido, Autopilot reinicia ese job de forma explícita para no quedar bloqueado en un estado falso.
+
+`autopilot-worker.mjs` recorre los proyectos desde almacenamiento y avanza cada uno por ciclos cortos. El modo manual puede invocar una sola transición mediante API sin activar el worker automático.
+
+Autopilot todavía no publica por sí mismo. La transición `READY_FOR_PUBLICATION` entrega el clip y los canales elegibles a la próxima capa `Publication + Scheduler`. Esto conserva `approvalRequired=true` y evita fingir conectividad con plataformas antes de implementar OAuth/providers oficiales.
