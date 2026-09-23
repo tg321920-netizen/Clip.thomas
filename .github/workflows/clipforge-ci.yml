@@ -67,3 +67,6 @@ jobs:
 
       - name: Clip render end-to-end
         run: npm run render:e2e
+
+      - name: Auto Focus end-to-end
+        run: npm run reframe:e2e
