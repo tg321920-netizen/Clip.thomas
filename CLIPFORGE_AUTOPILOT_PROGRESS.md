@@ -19,10 +19,19 @@
 
 ## EN PROGRESO
 
-- Inicio de PublishingProvider y job PUBLISH_POST usando únicamente APIs oficiales/autorizadas.
+- Validación de Auto Focus reactivo a voz dentro del Clip Engine.
+- PublishingProvider y PUBLISH_POST continúan como siguiente bloque del Autopilot.
 
 ## COMPLETADO RECIENTE
 
+- AutoReframeService para detectar tramos hablados desde TranscriptSegment: implementado.
+- Zoom FFmpeg progresivo durante voz con ataque/liberación configurables: implementado.
+- API GET/POST/PATCH por clip para activar/desactivar Auto Focus: implementada.
+- UI de Auto Focus con niveles de zoom: implementada.
+- Los cambios invalidan el render y encolan un nuevo RENDER_CLIP sin tocar el original.
+- Render metadata registra autoReframeApplied para no fingir que el efecto fue aplicado.
+- Prueba unitaria de ventanas de voz, clamps y filtro FFmpeg: implementada.
+- Prueba E2E real de Auto Focus 1080×1920 preparada en CI.
 - Publication + Scheduler verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - PublicationRecord y repositorio reemplazable: implementados.
 - Idempotencia por clip + canal: implementada.
@@ -95,6 +104,7 @@
 
 ## PENDIENTE
 
+- Active-speaker multi-persona con detección visual/face tracking real. La versión actual no finge identificar qué rostro habla.
 - Publishing providers oficiales y PUBLISH_POST.
 - Cola de jobs generalizada/durable.
 - Analytics.
@@ -116,8 +126,8 @@
 
 ## SIGUIENTE PASO
 
-1. Crear interfaz PublishingProvider y adapters TikTok/YouTube/Facebook detrás de configuración segura.
-2. Implementar PUBLISH_POST con idempotencia y estados reales.
-3. Mantener los adapters en estado NOT_CONFIGURED hasta existir OAuth/tokens server-side autorizados.
-4. Documentar requisitos oficiales de scopes/auditorías sin inventar credenciales.
-5. Después implementar Analytics + PerformanceAnalyzer.
+1. Ejecutar lint, typecheck, tests, build, render E2E y Auto Focus E2E.
+2. Corregir cualquier fallo de FFmpeg/zoompan antes de integrar a main.
+3. Mantener esta V1 como speech-reactive zoom para streamer individual/sujeto centrado.
+4. Implementar ActiveSpeakerDetector visual antes de afirmar seguimiento multi-persona por rostro.
+5. Retomar PublishingProvider + PUBLISH_POST después de dejar Auto Focus estable.
