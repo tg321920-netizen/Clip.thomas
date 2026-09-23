@@ -14,6 +14,14 @@ export class AnalyticsCollectorService {
       options.providerFactory || ((platform) => createPublishingProvider(platform));
   }
 
+  supportsPlatform(platform) {
+    try {
+      return typeof this.providerFactory(platform)?.getAnalytics === "function";
+    } catch {
+      return false;
+    }
+  }
+
   async collect(publicationId, options = {}) {
     const publication = await this.publications.get(publicationId);
     if (!publication) throw new Error("Publication not found.");
@@ -23,9 +31,6 @@ export class AnalyticsCollectorService {
 
     const channel = await this.channels.getChannel(publication.channelId);
     if (!channel) throw new Error("Channel not found.");
-
-    const credentials = await this.credentials.get(channel.id);
-    if (!credentials) throw new Error("OAuth credentials are not configured for this channel.");
 
     const provider = this.providerFactory(channel.platform);
     if (typeof provider.getAnalytics !== "function") {
@@ -37,6 +42,9 @@ export class AnalyticsCollectorService {
         reason: "PROVIDER_ANALYTICS_NOT_IMPLEMENTED",
       };
     }
+
+    const credentials = await this.credentials.get(channel.id);
+    if (!credentials) throw new Error("OAuth credentials are not configured for this channel.");
 
     const result = await provider.getAnalytics({
       publication,
