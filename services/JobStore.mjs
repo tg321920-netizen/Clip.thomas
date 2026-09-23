@@ -17,6 +17,7 @@ const JOB_PREFIX = {
   ANALYZE_VIDEO: "analyze",
   AUTO_EDIT: "autoedit",
   RENDER_CLIP: "render",
+  RENDER_NEWS: "newsrender",
 };
 
 export class JobStore {
@@ -53,6 +54,13 @@ export class JobStore {
         ...sanitizePayload(payload),
         clipId,
       },
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
+  async enqueueNewsRender(projectId, payload = {}, options = {}) {
+    return this.enqueue("RENDER_NEWS", projectId, {
+      payload,
       restartCompleted: options.restartCompleted ?? false,
     });
   }
@@ -129,6 +137,10 @@ export class JobStore {
 
   async getRenderJob(projectId, clipId) {
     return this.get(jobId("RENDER_CLIP", projectId, clipId));
+  }
+
+  async getNewsRenderJob(projectId) {
+    return this.get(jobId("RENDER_NEWS", projectId));
   }
 
   async claimNext(allowedTypes = null) {
@@ -334,6 +346,10 @@ export function renderJobId(projectId, clipId) {
   return jobId("RENDER_CLIP", projectId, clipId);
 }
 
+export function newsRenderJobId(projectId) {
+  return jobId("RENDER_NEWS", projectId);
+}
+
 function jobId(type, projectId, entityId = null) {
   assertProjectId(projectId);
   assertJobType(type);
@@ -355,7 +371,7 @@ function assertJobType(type) {
 function safeJobId(value) {
   const text = String(value);
 
-  for (const prefix of ["transcribe", "analyze", "autoedit"]) {
+  for (const prefix of ["transcribe", "analyze", "autoedit", "newsrender"]) {
     const marker = `${prefix}-`;
     if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) {
       return text;
