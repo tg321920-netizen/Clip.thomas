@@ -5,6 +5,7 @@ import type { UploadedVideo } from "@/types/video";
 import type { TranscriptRecord } from "@/types/transcription";
 import type { ContentAnalysisRecord } from "@/types/analysis";
 import type { ClipRecord } from "@/types/clip";
+import type { NewsBrief } from "@/types/news";
 
 export type ProjectRecord = {
   id: string;
@@ -15,6 +16,7 @@ export type ProjectRecord = {
   transcript?: TranscriptRecord;
   analysis?: ContentAnalysisRecord;
   clips?: ClipRecord[];
+  newsBrief?: NewsBrief;
 };
 
 export class ProjectStore {
