@@ -19,10 +19,18 @@
 
 ## EN PROGRESO
 
-- Inicio de Channels y ChannelStrategy con persistencia local reemplazable.
+- Validación de Channels y ChannelStrategy antes de iniciar Autopilot.
 
 ## COMPLETADO RECIENTE
 
+- ChannelRecord para TikTok, YouTube y Facebook: implementado.
+- ChannelStrategy por canal: implementado.
+- Configuración de timezone, dailyLimit, publishingEnabled y estado: implementada.
+- Reglas editoriales independientes por canal: implementadas.
+- ChannelRepository file-based reemplazable: implementado.
+- APIs para listar/crear/editar/eliminar canales y editar estrategia: implementadas.
+- Validación de plataforma, timezone, límites y estado: implementada.
+- No se almacenan tokens OAuth ni secretos en ChannelRecord.
 - AutoEditService separado de UI: implementado.
 - HeuristicAutoEditProvider local sin coste externo: implementado.
 - OpenAIAutoEditProvider opcional con Responses API estructurada: implementado.
@@ -47,7 +55,6 @@
 - UI para crear y previsualizar clips desde candidatos: implementada.
 - Prueba E2E de render vertical y preservación del original: OK.
 - Clip Engine verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-
 - ContentAnalysisService separado de UI: implementado.
 - TranscriptCandidateProvider con ventanas sobre TranscriptSegment: implementado.
 - ViralScore 0–100 con componentes y razones: implementado.
@@ -69,9 +76,8 @@
 
 ## PENDIENTE
 
-- Channels y ChannelStrategy.
 - Autopilot.
-- Cola de jobs generalizada.
+- Cola de jobs generalizada/durable.
 - Scheduler.
 - Publishing providers oficiales.
 - Publication.
@@ -85,15 +91,16 @@
 ## BLOQUEADO
 
 - El repositorio no tiene actualmente base de datos ni autenticación.
+- Channel.userId permanece null en modo local hasta introducir auth real; no se finge un usuario.
 - Vercel no es el worker de video/Whisper definitivo.
 - El runtime de producción todavía necesita un worker persistente con FFmpeg + Whisper instalado.
-- El repositorio todavía no tiene credencial/proveedor de IA configurado para ejecutar el AI Content Analyzer contra un modelo externo.
+- El proveedor OpenAI es opcional y requiere credenciales reales fuera del repositorio.
 - Vercel no debe usarse como worker pesado definitivo.
 
 ## SIGUIENTE PASO
 
-1. Implementar Channel y ChannelStrategy sin acoplarlos a UI.
-2. Mantener TikTok, YouTube y Facebook como plataformas iniciales extensibles.
-3. Añadir límites diarios, timezone, publishingEnabled y estrategia editorial.
-4. Usar una capa de repositorio reemplazable; la persistencia local seguirá siendo temporal hasta introducir DB/auth.
-5. Validar tests/build antes de iniciar Autopilot.
+1. Ejecutar lint, typecheck, tests y build con Channels/ChannelStrategy.
+2. Corregir cualquier fallo antes de avanzar.
+3. Implementar AutopilotConfig y orquestación con approvalRequired=true por defecto.
+4. Después implementar Publication + Scheduler sobre canales configurables.
+5. Mantener publishing real desactivado hasta que existan OAuth y APIs oficiales autorizadas.
