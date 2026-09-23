@@ -19,10 +19,19 @@
 
 ## EN PROGRESO
 
-- Inicio de Publication + Scheduler con approvalRequired e idempotencia.
+- Inicio de PublishingProvider y job PUBLISH_POST usando únicamente APIs oficiales/autorizadas.
 
 ## COMPLETADO RECIENTE
 
+- Publication + Scheduler verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
+- PublicationRecord y repositorio reemplazable: implementados.
+- Idempotencia por clip + canal: implementada.
+- Estados WAITING_APPROVAL/APPROVED/SCHEDULED/PUBLISHING/PUBLISHED/FAILED: implementados.
+- APIs para crear, listar, consultar, aprobar y programar publicaciones: implementadas.
+- Scheduler con timezone IANA, dailyLimit, ChannelStrategy y postsPerDay: implementado.
+- approvalRequired impide programar antes de aprobación: verificado.
+- Autopilot crea publicaciones por canal elegible y las deja esperando aprobación por defecto: implementado.
+- Autopilot puede programar automáticamente cuando approvalRequired=false: implementado.
 - Autopilot core verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
 - AutopilotConfig persistido con modo MANUAL/AUTOPILOT: implementado.
 - approvalRequired=true por defecto: implementado.
@@ -86,9 +95,7 @@
 
 ## PENDIENTE
 
-- Scheduler.
-- Publishing providers oficiales.
-- Publication.
+- Publishing providers oficiales y PUBLISH_POST.
 - Cola de jobs generalizada/durable.
 - Analytics.
 - PerformanceAnalyzer.
@@ -99,6 +106,7 @@
 
 ## BLOQUEADO
 
+- No existe autenticación/OAuth ni almacenamiento seguro de tokens todavía; publicación real no se activará con tokens en JSON o frontend.
 - El repositorio no tiene actualmente base de datos ni autenticación.
 - Channel.userId permanece null en modo local hasta introducir auth real; no se finge un usuario.
 - Vercel no es el worker de video/Whisper definitivo.
@@ -108,8 +116,8 @@
 
 ## SIGUIENTE PASO
 
-1. Implementar Publication y su repositorio reemplazable.
-2. Implementar Scheduler con timezone, límites diarios, horarios preferidos y approvalRequired.
-3. Integrar Autopilot para crear publicaciones idempotentes cuando un clip quede READY.
-4. Validar tests/build antes de implementar providers oficiales.
-5. Mantener publicación real desactivada hasta existir OAuth/scopes autorizados.
+1. Crear interfaz PublishingProvider y adapters TikTok/YouTube/Facebook detrás de configuración segura.
+2. Implementar PUBLISH_POST con idempotencia y estados reales.
+3. Mantener los adapters en estado NOT_CONFIGURED hasta existir OAuth/tokens server-side autorizados.
+4. Documentar requisitos oficiales de scopes/auditorías sin inventar credenciales.
+5. Después implementar Analytics + PerformanceAnalyzer.
