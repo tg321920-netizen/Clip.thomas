@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const publications = new PublicationService();
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ publicationId: string }> },
 ) {
   const { publicationId } = await context.params;
@@ -20,13 +20,33 @@ export async function POST(
     );
   }
 
+  const body = await safeJson(request);
+
   try {
-    const publication = await publications.approve(publicationId);
+    const publication = await publications.approve(publicationId, {
+      consent: body.consent === true,
+      ...(Object.hasOwn(body, "platformSettings")
+        ? { platformSettings: body.platformSettings }
+        : {}),
+    });
     return NextResponse.json({ publication });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "No se pudo aprobar la publicación.";
+      error instanceof Error
+        ? error.message
+        : "No se pudo aprobar la publicación.";
     const status = /not found/i.test(message) ? 404 : 422;
     return NextResponse.json({ error: message }, { status });
+  }
+}
+
+async function safeJson(request: Request): Promise<Record<string, unknown>> {
+  try {
+    const value = await request.json();
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
   }
 }
