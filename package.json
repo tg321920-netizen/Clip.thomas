@@ -21,7 +21,9 @@
     "worker:autoedit": "node scripts/autoedit-worker.mjs",
     "worker:autoedit:once": "node scripts/autoedit-worker.mjs --once",
     "worker:autopilot": "node scripts/autopilot-worker.mjs",
-    "worker:autopilot:once": "node scripts/autopilot-worker.mjs --once"
+    "worker:autopilot:once": "node scripts/autopilot-worker.mjs --once",
+    "worker:publishing": "node scripts/publishing-worker.mjs",
+    "worker:publishing:once": "node scripts/publishing-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",
