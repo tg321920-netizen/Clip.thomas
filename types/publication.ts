@@ -19,6 +19,9 @@ export type PublicationRecord = {
   title: string;
   description: string;
   hashtags: string[];
+  platformSettings: Record<string, unknown>;
+  consentAt: string | null;
+  metadataApprovedAt: string | null;
   scheduledAt: string | null;
   publishedAt: string | null;
   status: PublicationStatus;
