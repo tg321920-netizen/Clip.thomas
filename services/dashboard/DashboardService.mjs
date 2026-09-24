@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
+import { AIUsageService } from "../ai/AIUsageService.mjs";
 import { AutopilotService } from "../autopilot/AutopilotService.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
 import { PerformanceAnalyzer } from "../learning/PerformanceAnalyzer.mjs";
@@ -12,17 +13,20 @@ export class DashboardService {
     this.channels = options.channels || new ChannelService();
     this.publications = options.publications || new PublicationService();
     this.performance = options.performance || new PerformanceAnalyzer();
+    this.aiUsage = options.aiUsage || new AIUsageService();
   }
 
   async getSnapshot(options = {}) {
     const now = options.now || new Date();
-    const [config, channels, publications, jobs, performance] = await Promise.all([
-      this.autopilot.getConfig(),
-      this.channels.listChannels(),
-      this.publications.list(),
-      listJobs(),
-      this.performance.analyze(),
-    ]);
+    const [config, channels, publications, jobs, performance, aiUsage] =
+      await Promise.all([
+        this.autopilot.getConfig(),
+        this.channels.listChannels(),
+        this.publications.list(),
+        listJobs(),
+        this.performance.analyze(),
+        this.aiUsage.summary(),
+      ]);
 
     const channelById = new Map(channels.map((channel) => [channel.id, channel]));
     const todayPosts = publications.filter((publication) => {
@@ -69,6 +73,7 @@ export class DashboardService {
         errorCount: failedPublications.length + failedJobs.length,
         publishedTotal: publications.filter((publication) => publication.status === "PUBLISHED").length,
       },
+      aiUsage,
       channels: channels.map((channel) => ({
         id: channel.id,
         platform: channel.platform,
