@@ -143,6 +143,40 @@ test("YouTube status waits for processing success instead of treating uploaded a
   );
 });
 
+test("YouTube provider reads normalized publication analytics from video statistics", async () => {
+  const requests = [];
+  const provider = new YouTubeProvider({
+    fetchImpl: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return jsonResponse({
+        items: [
+          {
+            id: "youtube-video-123",
+            statistics: {
+              viewCount: "1234",
+              likeCount: "87",
+              commentCount: "12",
+            },
+          },
+        ],
+      });
+    },
+  });
+
+  const result = await provider.getAnalytics({
+    credentials: { accessToken: "token" },
+    externalPostId: "youtube-video-123",
+  });
+
+  assert.equal(result.views, 1234);
+  assert.equal(result.likes, 87);
+  assert.equal(result.comments, 12);
+  assert.equal(result.source, "youtube-data-api");
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /part=statistics/);
+  assert.match(requests[0].url, /id=youtube-video-123/);
+});
+
 test("Facebook provider performs start, binary upload and finish using an explicit Graph version", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-facebook-"));
   const filePath = path.join(root, "clip.mp4");
