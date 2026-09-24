@@ -2,7 +2,7 @@
 
 ## ESTADO ACTUAL
 
-ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publicación preparada, analytics y aprendizaje. No se consideran verificadas en vivo las acciones que dependan de credenciales o aprobaciones externas hasta probarlas con cuentas reales autorizadas.
+ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publicación preparada, analytics y aprendizaje. El proyecto Vercel canónico `clip-thomas` está desplegado en producción y el commit de `main` correspondiente está verificado por CI. No se consideran verificadas en vivo las acciones que dependan de credenciales o aprobaciones externas hasta probarlas con cuentas reales autorizadas.
 
 ## COMPLETADO Y VERIFICADO
 
@@ -85,14 +85,19 @@ ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publica
 - Auto Focus E2E: OK.
 - News Mode E2E: OK.
 - Whisper E2E: OK en el workflow dedicado del bloque principal.
+- `ClipForge CI` de `main` para `19a0dd5e2237716704caa72ec7d6fabcad991eb8`: SUCCESS (run `36029262592`).
 
 ## CONFIGURACIÓN DE DESPLIEGUE
 
 - `vercel.json` raíz fija el proyecto canónico como Next.js, `npm run build` y salida `.next` para evitar que un preset estático busque `public` como output final.
-- Los dos proyectos Vercel históricos siguen necesitando una nueva ejecución exitosa antes de declarar producción lista. Los últimos deployments observados antes de esta corrección estaban en ERROR.
+- Proyecto canónico Vercel: `clip-thomas` (`prj_8rOfWiKDx2N5tWuvt5pfqtnypZwl`).
+- Producción verificada: deployment `dpl_GTkxNZCNBnD8YAg6x4NWqa5X9s33`, estado `READY`, target `production`, commit `19a0dd5e2237716704caa72ec7d6fabcad991eb8` de `main`.
+- El proyecto Vercel histórico `clipforge` se considera duplicado y no forma parte de la ruta canónica de producción.
 - Vercel no es el worker pesado definitivo: FFmpeg/Whisper/TTS requieren un proceso persistente separado.
 
 ## PENDIENTE DE CÓDIGO / INFRAESTRUCTURA
+
+Los siguientes puntos no se deben declarar terminados sin incorporar infraestructura o dependencias adicionales reales:
 
 - Active-speaker multi-persona con detección visual/face tracking real.
 - Sustituir JSON/archivos locales por persistencia, cola y almacenamiento compartidos/durables para producción multi-instancia.
@@ -106,7 +111,8 @@ ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publica
 - Registrar los redirect URI HTTPS reales.
 - Configurar en el hosting los secretos de OAuth, CredentialVault y acceso del propietario; nunca se guardan en Git.
 - Conectar cuentas reales en `/connections` y ejecutar una publicación controlada para validar cada provider en vivo.
-- Provisionar el worker persistente y el almacenamiento duradero de producción.
+- Provisionar el worker persistente y el almacenamiento duradero de producción antes de depender de FFmpeg/Whisper/TTS o archivos locales en una operación continua.
+- Si se decide convertir ClipForge en SaaS multiusuario, definir/provisionar la persistencia compartida y el modelo de identidad/tenant antes de activar usuarios externos.
 
 ## LIMITACIONES EXPLÍCITAS
 
