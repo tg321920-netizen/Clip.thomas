@@ -6,7 +6,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-8 sm:px-8 lg:px-10">
-        <header className="flex items-center justify-between gap-5 border-b border-white/10 pb-5">
+        <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-400">
               ClipForge Multi
@@ -15,12 +15,26 @@ export default function Home() {
               Convierte videos largos en clips listos para publicar.
             </h1>
           </div>
-          <a
-            href="#nuevo-proyecto"
-            className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
-          >
-            + NUEVO PROYECTO
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/live"
+              className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
+            >
+              ● CAPTURA LIVE
+            </a>
+            <a
+              href="/autopilot"
+              className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
+            >
+              AUTOPILOT
+            </a>
+            <a
+              href="#nuevo-proyecto"
+              className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+            >
+              + NUEVO PROYECTO
+            </a>
+          </div>
         </header>
 
         <section
@@ -29,19 +43,18 @@ export default function Home() {
         >
           <div>
             <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
-              Fase 1 · Upload + FFprobe + FFmpeg real
+              Pipeline real · video, LIVE y News Mode
             </div>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
-              Sube un MP4, MOV o WebM. El archivo se guarda por streaming,
-              FFprobe lee los metadatos y FFmpeg genera una miniatura real.
+              Sube un MP4, MOV o WebM, o captura manualmente una pestaña LIVE. ClipForge usa FFprobe, Whisper, análisis, Auto Edit, subtítulos y FFmpeg real.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {[
-                ["01", "Subir", "Sin cargar el video completo en RAM"],
-                ["02", "Analizar", "Metadatos reales con FFprobe"],
-                ["03", "Previsualizar", "Video real con seek por HTTP Range"],
+                ["01", "Ingesta", "Archivo o captura manual autorizada"],
+                ["02", "Analizar", "Whisper + candidatos + ViralScore"],
+                ["03", "Editar", "9:16, subtítulos, Auto Focus y News Mode"],
               ].map(([number, title, description]) => (
                 <div
                   key={number}
