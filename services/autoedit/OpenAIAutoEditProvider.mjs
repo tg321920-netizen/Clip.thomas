@@ -1,4 +1,8 @@
-import { extractOutputText } from "../analysis/OpenAIContentProvider.mjs";
+import {
+  extractOpenAIUsage,
+  extractOutputText,
+} from "../analysis/OpenAIContentProvider.mjs";
+import { AIUsageService } from "../usage/AIUsageService.mjs";
 import { HeuristicAutoEditProvider } from "./HeuristicAutoEditProvider.mjs";
 
 export class OpenAIAutoEditProvider {
@@ -15,9 +19,10 @@ export class OpenAIAutoEditProvider {
       process.env.OPENAI_BASE_URL?.trim() ??
       "https://api.openai.com/v1";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.usage = options.usageService ?? new AIUsageService();
   }
 
-  async prepare({ candidates, transcript, options = {} }) {
+  async prepare({ project, candidates, transcript, options = {} }) {
     if (!this.apiKey) {
       throw new Error(
         "OPENAI_API_KEY is required when CLIPFORGE_AUTOEDIT_PROVIDER=openai.",
@@ -140,6 +145,12 @@ export class OpenAIAutoEditProvider {
       );
     }
 
+    await recordUsageSafely(this.usage, {
+      body,
+      model: this.model,
+      projectId: project?.id || project?.projectId || null,
+    });
+
     const text = extractOutputText(body);
     if (!text) {
       throw new Error("OpenAI returned no structured Auto Edit output.");
@@ -150,6 +161,28 @@ export class OpenAIAutoEditProvider {
     } catch {
       throw new Error("OpenAI returned invalid JSON for Auto Edit.");
     }
+  }
+}
+
+async function recordUsageSafely(service, context) {
+  if (!service || typeof service.record !== "function") return;
+  const usage = extractOpenAIUsage(context.body);
+  if (usage.inputTokens === 0 && usage.outputTokens === 0) return;
+
+  try {
+    await service.record({
+      provider: "openai",
+      model: context.model,
+      operation: "auto-edit",
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      projectId: context.projectId,
+    });
+  } catch (error) {
+    console.warn("ClipForge could not persist OpenAI usage", {
+      operation: "auto-edit",
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
