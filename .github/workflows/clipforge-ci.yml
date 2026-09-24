@@ -22,6 +22,7 @@ on:
       - "postcss.config.mjs"
       - "eslint.config.mjs"
       - "vercel.json"
+      - "clipforge/vercel.json"
       - ".github/workflows/clipforge-ci.yml"
   pull_request:
     paths:
@@ -35,6 +36,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "vercel.json"
+      - "clipforge/vercel.json"
       - ".github/workflows/clipforge-ci.yml"
 
 jobs:
