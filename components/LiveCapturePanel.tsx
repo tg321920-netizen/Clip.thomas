@@ -20,6 +20,11 @@ export function LiveCapturePanel({
   const [error, setError] = useState<string | null>(null);
   const [audioIncluded, setAudioIncluded] = useState<boolean | null>(null);
 
+  function stopTracks() {
+    for (const track of streamRef.current?.getTracks() || []) track.stop();
+    streamRef.current = null;
+  }
+
   useEffect(() => {
     if (state !== "recording") return;
     const timer = window.setInterval(() => {
@@ -30,7 +35,10 @@ export function LiveCapturePanel({
   }, [state]);
 
   useEffect(() => {
-    return () => stopTracks();
+    return () => {
+      for (const track of streamRef.current?.getTracks() || []) track.stop();
+      streamRef.current = null;
+    };
   }, []);
 
   async function startCapture() {
@@ -126,11 +134,6 @@ export function LiveCapturePanel({
     if (!recorder || recorder.state !== "recording") return;
     setState("finalizing");
     recorder.stop();
-  }
-
-  function stopTracks() {
-    for (const track of streamRef.current?.getTracks() || []) track.stop();
-    streamRef.current = null;
   }
 
   const busy = state !== "idle";
