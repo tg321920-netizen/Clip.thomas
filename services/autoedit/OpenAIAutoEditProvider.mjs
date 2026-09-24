@@ -1,3 +1,4 @@
+import { AIUsageService } from "../ai/AIUsageService.mjs";
 import { extractOutputText } from "../analysis/OpenAIContentProvider.mjs";
 import { HeuristicAutoEditProvider } from "./HeuristicAutoEditProvider.mjs";
 
@@ -15,6 +16,7 @@ export class OpenAIAutoEditProvider {
       process.env.OPENAI_BASE_URL?.trim() ??
       "https://api.openai.com/v1";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.usageService = options.usageService ?? new AIUsageService();
   }
 
   async prepare({ candidates, transcript, options = {} }) {
@@ -140,6 +142,13 @@ export class OpenAIAutoEditProvider {
       );
     }
 
+    await recordUsageSafely(this.usageService, {
+      body,
+      model: this.model,
+      operation: "AUTO_EDIT",
+      projectId: transcript?.projectId || null,
+    });
+
     const text = extractOutputText(body);
     if (!text) {
       throw new Error("OpenAI returned no structured Auto Edit output.");
@@ -150,6 +159,18 @@ export class OpenAIAutoEditProvider {
     } catch {
       throw new Error("OpenAI returned invalid JSON for Auto Edit.");
     }
+  }
+}
+
+async function recordUsageSafely(service, input) {
+  if (!service || typeof service.recordOpenAIResponse !== "function") return;
+  try {
+    await service.recordOpenAIResponse(input);
+  } catch (error) {
+    console.warn("OpenAI usage accounting failed", {
+      operation: input.operation,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
