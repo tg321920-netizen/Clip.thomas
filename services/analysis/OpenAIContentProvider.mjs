@@ -1,3 +1,4 @@
+import { AIUsageService } from "../ai/AIUsageService.mjs";
 import { TranscriptCandidateProvider } from "./TranscriptCandidateProvider.mjs";
 
 export class OpenAIContentProvider {
@@ -10,6 +11,7 @@ export class OpenAIContentProvider {
       process.env.OPENAI_BASE_URL?.trim() ??
       "https://api.openai.com/v1";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.usageService = options.usageService ?? new AIUsageService();
   }
 
   async analyze({ transcript, options = {} }) {
@@ -115,6 +117,13 @@ export class OpenAIContentProvider {
       throw new Error(message);
     }
 
+    await recordUsageSafely(this.usageService, {
+      body,
+      model: this.model,
+      operation: "ANALYZE_CONTENT",
+      projectId: transcript?.projectId || null,
+    });
+
     const text = extractOutputText(body);
     if (!text) {
       throw new Error("OpenAI returned no structured text output.");
@@ -187,6 +196,18 @@ export function extractOutputText(responseBody) {
   }
 
   return "";
+}
+
+async function recordUsageSafely(service, input) {
+  if (!service || typeof service.recordOpenAIResponse !== "function") return;
+  try {
+    await service.recordOpenAIResponse(input);
+  } catch (error) {
+    console.warn("OpenAI usage accounting failed", {
+      operation: input.operation,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function readJsonResponse(response) {
