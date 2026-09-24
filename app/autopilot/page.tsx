@@ -4,9 +4,22 @@ import { PerformanceAnalyzer } from "@/services/analytics/PerformanceAnalyzer.mj
 import { ChannelService } from "@/services/channels/ChannelService.mjs";
 import { PublicationService } from "@/services/publications/PublicationService.mjs";
 import { AIUsageService } from "@/services/usage/AIUsageService.mjs";
+import type { ChannelRecord } from "@/types/channel";
+import type { PublicationRecord } from "@/types/publication";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type PerformanceRecommendation = {
+  type: string;
+  message: string;
+};
+
+type PerformanceReport = {
+  measuredCount: number;
+  sampleNotice: string | null;
+  recommendations: PerformanceRecommendation[];
+};
 
 export default async function AutopilotDashboard() {
   const publications = new PublicationService();
@@ -15,7 +28,7 @@ export default async function AutopilotDashboard() {
   const performance = new PerformanceAnalyzer({ publications, analytics });
   const usage = new AIUsageService();
 
-  const [allPublications, channels, analyticsSummary, report, usageSummary] =
+  const [rawPublications, rawChannels, analyticsSummary, rawReport, usageSummary] =
     await Promise.all([
       publications.list(),
       channelsService.listChannels(),
@@ -24,20 +37,29 @@ export default async function AutopilotDashboard() {
       usage.summarize(),
     ]);
 
+  const allPublications = rawPublications as PublicationRecord[];
+  const channels = rawChannels as ChannelRecord[];
+  const report = rawReport as PerformanceReport;
+
   const waiting = allPublications.filter(
-    (item) => item.status === "WAITING_APPROVAL",
+    (item: PublicationRecord) => item.status === "WAITING_APPROVAL",
   );
-  const errors = allPublications.filter((item) => item.status === "FAILED");
+  const errors = allPublications.filter(
+    (item: PublicationRecord) => item.status === "FAILED",
+  );
   const upcoming = allPublications
     .filter(
-      (item) =>
+      (item: PublicationRecord) =>
         item.status === "SCHEDULED" &&
         Number.isFinite(Date.parse(item.scheduledAt || "")),
     )
-    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
+    .sort((a: PublicationRecord, b: PublicationRecord) =>
+      Date.parse(a.scheduledAt || "") - Date.parse(b.scheduledAt || ""),
+    )
     .slice(0, 8);
   const connectedChannels = channels.filter(
-    (channel) => channel.status === "CONNECTED" && channel.publishingEnabled,
+    (channel: ChannelRecord) =>
+      channel.status === "CONNECTED" && channel.publishingEnabled,
   );
 
   return (
@@ -73,7 +95,7 @@ export default async function AutopilotDashboard() {
               <Empty text="No hay publicaciones programadas pendientes." />
             ) : (
               <div className="space-y-3">
-                {upcoming.map((item) => (
+                {upcoming.map((item: PublicationRecord) => (
                   <div key={item.id} className="rounded-xl border border-white/10 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -127,19 +149,21 @@ export default async function AutopilotDashboard() {
               <Empty text="Todavía no hay evidencia suficiente para recomendar cambios." />
             ) : (
               <div className="space-y-3">
-                {report.recommendations.slice(0, 6).map((recommendation) => (
-                  <div
-                    key={recommendation.type}
-                    className="rounded-xl border border-violet-400/15 bg-violet-400/[0.04] p-3"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">
-                      {recommendation.type}
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      {recommendation.message}
-                    </p>
-                  </div>
-                ))}
+                {report.recommendations.slice(0, 6).map(
+                  (recommendation: PerformanceRecommendation) => (
+                    <div
+                      key={recommendation.type}
+                      className="rounded-xl border border-violet-400/15 bg-violet-400/[0.04] p-3"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">
+                        {recommendation.type}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        {recommendation.message}
+                      </p>
+                    </div>
+                  ),
+                )}
               </div>
             )}
           </Panel>
@@ -172,7 +196,7 @@ export default async function AutopilotDashboard() {
               <Empty text="No hay publicaciones en estado FAILED." />
             ) : (
               <div className="space-y-3">
-                {errors.slice(0, 8).map((item) => (
+                {errors.slice(0, 8).map((item: PublicationRecord) => (
                   <div key={item.id} className="rounded-xl border border-red-400/15 p-3">
                     <p className="text-sm font-medium">{item.title}</p>
                     <p className="mt-1 text-xs leading-5 text-red-300/80">
@@ -189,7 +213,7 @@ export default async function AutopilotDashboard() {
               <Empty text="Todavía no hay canales configurados." />
             ) : (
               <div className="space-y-3">
-                {channels.map((channel) => (
+                {channels.map((channel: ChannelRecord) => (
                   <div
                     key={channel.id}
                     className="flex items-center justify-between gap-4 rounded-xl border border-white/10 p-3"
