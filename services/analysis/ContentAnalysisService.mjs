@@ -90,6 +90,11 @@ export async function analyzeProject(projectId, options = {}) {
   }
 }
 
+/**
+ * @param {any} project
+ * @param {string} [sourceKey]
+ * @param {{ minDuration?: number, maxDuration?: number, targetDuration?: number, maxCandidates?: number } | null} [expectedConfig]
+ */
 export function isAnalysisCurrent(
   project,
   sourceKey = getAnalysisSourceKey(project),
