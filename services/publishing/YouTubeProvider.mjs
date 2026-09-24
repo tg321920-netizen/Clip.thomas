@@ -25,6 +25,7 @@ export class YouTubeProvider {
     return {
       oauthScopes: ["https://www.googleapis.com/auth/youtube.upload"],
       supportsLocalFileUpload: true,
+      supportsAnalytics: true,
       notes: [
         "Shorts use the normal YouTube video upload API; YouTube classifies eligible vertical short videos.",
         "Some unverified API projects can be restricted to private uploads until Google completes the required audit.",
@@ -132,26 +133,9 @@ export class YouTubeProvider {
 
   async getStatus(context) {
     const accessToken = requireAccessToken(context?.credentials, "YouTube");
-    const videoId = String(context?.externalPostId || "").trim();
-    if (!videoId) {
-      throw new PublishingProviderError("YouTube video id is required.", {
-        code: "YOUTUBE_VIDEO_ID_REQUIRED",
-        retryable: false,
-      });
-    }
+    const videoId = requireVideoId(context?.externalPostId);
+    const video = await this.#fetchVideo(accessToken, videoId, "status,processingDetails,statistics");
 
-    const url = new URL(`${this.apiBase}/videos`);
-    url.searchParams.set("part", "status,processingDetails,statistics");
-    url.searchParams.set("id", videoId);
-
-    const response = await this.fetchImpl(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const body = await readJsonSafe(response);
-
-    if (!response.ok) throwHttpError("YouTube", response, body);
-
-    const video = Array.isArray(body?.items) ? body.items[0] : null;
     return {
       status: normalizeYouTubeStatus(video),
       privacyStatus: video?.status?.privacyStatus || null,
@@ -160,11 +144,47 @@ export class YouTubeProvider {
     };
   }
 
+  async getAnalytics(context) {
+    const accessToken = requireAccessToken(context?.credentials, "YouTube");
+    const videoId = requireVideoId(context?.externalPostId);
+    const video = await this.#fetchVideo(accessToken, videoId, "statistics");
+    const statistics = video?.statistics || {};
+
+    return {
+      views: parseMetric(statistics.viewCount),
+      likes: parseMetric(statistics.likeCount),
+      comments: parseMetric(statistics.commentCount),
+      source: "youtube-data-api",
+      raw: statistics,
+    };
+  }
+
   async refreshAuth() {
     throw new PublishingProviderError(
       "YouTube token refresh must be handled by the OAuth credential service.",
       { code: "OAUTH_SERVICE_REQUIRED", retryable: false },
     );
+  }
+
+  async #fetchVideo(accessToken, videoId, part) {
+    const url = new URL(`${this.apiBase}/videos`);
+    url.searchParams.set("part", part);
+    url.searchParams.set("id", videoId);
+
+    const response = await this.fetchImpl(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const body = await readJsonSafe(response);
+    if (!response.ok) throwHttpError("YouTube", response, body);
+
+    const video = Array.isArray(body?.items) ? body.items[0] : null;
+    if (!video) {
+      throw new PublishingProviderError("YouTube video was not found.", {
+        code: "YOUTUBE_VIDEO_NOT_FOUND",
+        retryable: false,
+      });
+    }
+    return video;
   }
 }
 
@@ -184,6 +204,22 @@ export function normalizeYouTubeStatus(video) {
   if (processingStatus) return processingStatus.toUpperCase();
   if (uploadStatus) return uploadStatus.toUpperCase();
   return "UNKNOWN";
+}
+
+function requireVideoId(value) {
+  const videoId = String(value || "").trim();
+  if (!videoId) {
+    throw new PublishingProviderError("YouTube video id is required.", {
+      code: "YOUTUBE_VIDEO_ID_REQUIRED",
+      retryable: false,
+    });
+  }
+  return videoId;
+}
+
+function parseMetric(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
 }
 
 function normalizePrivacy(value) {
