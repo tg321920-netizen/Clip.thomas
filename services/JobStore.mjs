@@ -19,7 +19,14 @@ const JOB_PREFIX = {
   RENDER_CLIP: "render",
   RENDER_NEWS: "newsrender",
   PUBLISH_POST: "publish",
+  FETCH_ANALYTICS: "analytics",
 };
+
+const ENTITY_JOB_TYPES = new Set([
+  "RENDER_CLIP",
+  "PUBLISH_POST",
+  "FETCH_ANALYTICS",
+]);
 
 export class JobStore {
   constructor(options = {}) {
@@ -77,12 +84,23 @@ export class JobStore {
     });
   }
 
+  async enqueueAnalytics(projectId, publicationId, payload = {}, options = {}) {
+    return this.enqueue("FETCH_ANALYTICS", projectId, {
+      entityId: publicationId,
+      payload: {
+        ...sanitizePayload(payload),
+        publicationId,
+      },
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
   async enqueue(type, projectId, options = {}) {
     assertProjectId(projectId);
     assertJobType(type);
 
     const entityId = options.entityId || null;
-    if (["RENDER_CLIP", "PUBLISH_POST"].includes(type)) {
+    if (ENTITY_JOB_TYPES.has(type)) {
       assertProjectId(entityId);
     }
 
@@ -157,6 +175,10 @@ export class JobStore {
 
   async getPublishJob(projectId, publicationId) {
     return this.get(jobId("PUBLISH_POST", projectId, publicationId));
+  }
+
+  async getAnalyticsJob(projectId, publicationId) {
+    return this.get(jobId("FETCH_ANALYTICS", projectId, publicationId));
   }
 
   async claimNext(allowedTypes = null) {
@@ -370,11 +392,15 @@ export function publishJobId(projectId, publicationId) {
   return jobId("PUBLISH_POST", projectId, publicationId);
 }
 
+export function analyticsJobId(projectId, publicationId) {
+  return jobId("FETCH_ANALYTICS", projectId, publicationId);
+}
+
 function jobId(type, projectId, entityId = null) {
   assertProjectId(projectId);
   assertJobType(type);
 
-  if (["RENDER_CLIP", "PUBLISH_POST"].includes(type)) {
+  if (ENTITY_JOB_TYPES.has(type)) {
     assertProjectId(entityId);
     return `${JOB_PREFIX[type]}-${projectId}-${entityId}`;
   }
@@ -398,7 +424,7 @@ function safeJobId(value) {
     }
   }
 
-  for (const prefix of ["render", "publish"]) {
+  for (const prefix of ["render", "publish", "analytics"]) {
     const marker = `${prefix}-`;
     if (text.startsWith(marker)) {
       const rest = text.slice(marker.length);
