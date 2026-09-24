@@ -23,12 +23,12 @@ export async function analyzeProject(projectId, options = {}) {
   }
 
   const sourceKey = getAnalysisSourceKey(project);
+  const config = normalizeAnalysisOptions(options);
 
-  if (isAnalysisCurrent(project, sourceKey)) {
+  if (isAnalysisCurrent(project, sourceKey, config)) {
     return { analysis: project.analysis, reused: true };
   }
 
-  const config = normalizeAnalysisOptions(options);
   const provider =
     options.provider ||
     createContentAnalysisProvider({
@@ -93,6 +93,7 @@ export async function analyzeProject(projectId, options = {}) {
 export function isAnalysisCurrent(
   project,
   sourceKey = getAnalysisSourceKey(project),
+  expectedConfig = null,
 ) {
   const analysis = project?.analysis;
 
@@ -101,7 +102,19 @@ export function isAnalysisCurrent(
       analysis.status === "COMPLETED" &&
       analysis.sourceKey === sourceKey &&
       Array.isArray(analysis.candidates) &&
-      analysis.candidates.length > 0,
+      analysis.candidates.length > 0 &&
+      (!expectedConfig || analysisConfigsEqual(analysis.config, expectedConfig)),
+  );
+}
+
+function analysisConfigsEqual(existing, expected) {
+  if (!existing || !expected) return false;
+
+  return (
+    Number(existing.minDuration) === Number(expected.minDuration) &&
+    Number(existing.maxDuration) === Number(expected.maxDuration) &&
+    Number(existing.targetDuration) === Number(expected.targetDuration) &&
+    Number(existing.maxCandidates) === Number(expected.maxCandidates)
   );
 }
 
