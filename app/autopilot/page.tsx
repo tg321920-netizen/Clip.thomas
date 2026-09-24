@@ -24,7 +24,6 @@ export default async function AutopilotDashboard() {
       usage.summarize(),
     ]);
 
-  const now = Date.now();
   const waiting = allPublications.filter(
     (item) => item.status === "WAITING_APPROVAL",
   );
@@ -33,8 +32,7 @@ export default async function AutopilotDashboard() {
     .filter(
       (item) =>
         item.status === "SCHEDULED" &&
-        Number.isFinite(Date.parse(item.scheduledAt || "")) &&
-        Date.parse(item.scheduledAt) >= now,
+        Number.isFinite(Date.parse(item.scheduledAt || "")),
     )
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
     .slice(0, 8);
@@ -70,7 +68,7 @@ export default async function AutopilotDashboard() {
         </section>
 
         <section className="grid gap-5 lg:grid-cols-2">
-          <Panel title="Próximas publicaciones">
+          <Panel title="Publicaciones programadas">
             {upcoming.length === 0 ? (
               <Empty text="No hay publicaciones programadas pendientes." />
             ) : (
