@@ -53,7 +53,7 @@ test("candidate provider creates bounded, sorted, explainable candidates", async
   }
 });
 
-test("content analysis persists candidates and reuses current results", async () => {
+test("content analysis reuses identical config and reruns when clip quantity config changes", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-analysis-"));
   const previous = process.env.CLIPFORGE_STORAGE_DIR;
   process.env.CLIPFORGE_STORAGE_DIR = root;
@@ -102,9 +102,11 @@ test("content analysis persists candidates and reuses current results", async ()
 
     assert.equal(first.reused, false);
     assert.equal(first.analysis.status, "COMPLETED");
+    assert.equal(first.analysis.config.maxCandidates, 5);
     assert.ok(first.analysis.candidates.length > 0);
 
     const second = await analyzeProject(PROJECT_ID, {
+      maxCandidates: 5,
       provider: {
         name: "must-not-run",
         async analyze() {
@@ -115,8 +117,26 @@ test("content analysis persists candidates and reuses current results", async ()
 
     assert.equal(second.reused, true);
 
+    let changedConfigRuns = 0;
+    const third = await analyzeProject(PROJECT_ID, {
+      maxCandidates: 6,
+      provider: {
+        name: "changed-config",
+        async analyze({ transcript }) {
+          changedConfigRuns += 1;
+          const provider = new TranscriptCandidateProvider({ maxCandidates: 6 });
+          return provider.analyze({ transcript });
+        },
+      },
+    });
+
+    assert.equal(third.reused, false);
+    assert.equal(changedConfigRuns, 1);
+    assert.equal(third.analysis.config.maxCandidates, 6);
+
     const stored = JSON.parse(await readFile(target, "utf8"));
     assert.equal(stored.analysis.status, "COMPLETED");
+    assert.equal(stored.analysis.config.maxCandidates, 6);
     assert.ok(stored.analysis.candidates.length > 0);
   } finally {
     if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
