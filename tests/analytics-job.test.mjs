@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { AnalyticsService } from "../services/analytics/AnalyticsService.mjs";
 import { JobStore, analyticsJobId } from "../services/JobStore.mjs";
 
 const projectId = "11111111-1111-4111-8111-111111111111";
