@@ -12,10 +12,12 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   const auth = getOwnerAuthConfig(process.env);
-  const wantsJson = request.headers
-    .get("content-type")
-    ?.toLowerCase()
-    .includes("application/json");
+  const wantsJson = Boolean(
+    request.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .includes("application/json"),
+  );
 
   if (shouldRequireOwnerAuth(process.env) && !auth.configured) {
     return wantsJson
