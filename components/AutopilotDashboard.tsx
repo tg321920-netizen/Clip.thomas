@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type DashboardData = {
   generatedAt: string;
@@ -23,6 +23,14 @@ type DashboardData = {
     queueCount: number;
     errorCount: number;
     publishedTotal: number;
+  };
+  aiUsage: {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    knownEstimatedCostUsd: number;
+    unknownCostRequests: number;
   };
   channels: Array<{
     id: string;
@@ -107,9 +115,17 @@ export function AutopilotDashboard() {
   }, []);
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(true), 10_000);
-    return () => window.clearInterval(timer);
+    const initial = window.setTimeout(() => {
+      void load();
+    }, 0);
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 10_000);
+
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
   }, [load]);
 
   async function setAutopilotEnabled(enabled: boolean) {
@@ -126,7 +142,9 @@ export function AutopilotDashboard() {
         }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "No se pudo cambiar Autopilot.");
+      if (!response.ok) {
+        throw new Error(payload?.error || "No se pudo cambiar Autopilot.");
+      }
       await load(true);
     } catch (saveError) {
       setError(
@@ -293,6 +311,25 @@ export function AutopilotDashboard() {
       </div>
 
       <Panel
+        title="Uso de IA"
+        subtitle={`${data.aiUsage.requests} solicitudes registradas`}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metric label="Tokens totales" value={data.aiUsage.totalTokens} />
+          <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+            <p className="text-xs text-zinc-600">Costo estimado conocido</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-100">
+              ${data.aiUsage.knownEstimatedCostUsd.toFixed(4)}
+            </p>
+          </div>
+          <Metric label="Costos sin tarifa" value={data.aiUsage.unknownCostRequests} />
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-zinc-600">
+          El costo solo se calcula cuando configuraste tarifas por millón de tokens; ClipForge no inventa precios.
+        </p>
+      </Panel>
+
+      <Panel
         title="Aprendizaje de rendimiento"
         subtitle={`${data.performance.sampleCount} publicaciones con métricas`}
       >
@@ -373,7 +410,7 @@ function Panel({
 }: {
   title: string;
   subtitle: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
