@@ -1,0 +1,11 @@
+node_modules
+.next
+storage
+.git
+.github
+clipforge/node_modules
+clipforge/.next
+*.log
+.env
+.env.*
+!.env.example
