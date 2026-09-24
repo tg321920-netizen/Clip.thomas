@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AutopilotDashboard } from "@/components/AutopilotDashboard";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +19,12 @@ export default function AutopilotPage() {
               Canales, cola, aprobaciones, programación, errores y aprendizaje basados en el estado persistido real.
             </p>
           </div>
-          <a
+          <Link
             href="/"
             className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-white/10"
           >
             Volver a proyectos
-          </a>
+          </Link>
         </header>
 
         <AutopilotDashboard />
