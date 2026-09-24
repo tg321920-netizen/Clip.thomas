@@ -14,6 +14,11 @@ await mkdir(storageRoot, { recursive: true });
 await mkdir(runtimeHome, { recursive: true });
 process.env.HOME = runtimeHome;
 
+if (process.argv.includes("--check")) {
+  await verifyRuntime();
+  process.exit(0);
+}
+
 const children = new Map();
 let shuttingDown = false;
 
@@ -96,4 +101,42 @@ function shutdown(signal, exitCode = 0) {
         }),
     ),
   ).finally(() => process.exit(exitCode));
+}
+
+async function verifyRuntime() {
+  const commands = [
+    [process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-version"], "FFmpeg"],
+    [process.env.FFPROBE_PATH?.trim() || "ffprobe", ["-version"], "FFprobe"],
+    [process.env.ESPEAK_NG_PATH?.trim() || "espeak-ng", ["--version"], "espeak-ng"],
+    [process.env.WHISPER_COMMAND?.trim() || "whisper", ["--help"], "Whisper CLI"],
+  ];
+
+  for (const [command, args, label] of commands) {
+    await runCheck(command, args, label);
+  }
+
+  console.log("[runtime] media runtime check passed.");
+}
+
+function runCheck(command, args, label) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: process.env,
+      stdio: ["ignore", "ignore", "pipe"],
+      shell: false,
+    });
+
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      reject(new Error(`${label} is unavailable: ${error.message}`));
+    });
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${label} check failed: ${stderr.trim() || `exit ${code}`}`));
+    });
+  });
 }
