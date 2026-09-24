@@ -27,7 +27,9 @@
     "worker:news:once": "node scripts/news-worker.mjs --once",
     "news:e2e": "node scripts/news-e2e.mjs",
     "worker:publishing": "node scripts/publishing-worker.mjs",
-    "worker:publishing:once": "node scripts/publishing-worker.mjs --once"
+    "worker:publishing:once": "node scripts/publishing-worker.mjs --once",
+    "worker:analytics": "node scripts/analytics-worker.mjs",
+    "worker:analytics:once": "node scripts/analytics-worker.mjs --once"
   },
   "dependencies": {
     "next": "16.3.5",
