@@ -2,39 +2,44 @@
 
 ## ESTADO ACTUAL
 
-ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publicación preparada, analytics y aprendizaje. El proyecto Vercel canónico `clip-thomas` está desplegado en producción y el commit de `main` correspondiente está verificado por CI. Además, el repositorio ya contiene y verifica una imagen Docker de producción para el procesamiento pesado de medios con web + workers en una sola instancia persistente. No se consideran verificadas en vivo las acciones que dependan de credenciales, aprobaciones externas o recursos de pago hasta probarlas con cuentas/infraestructura reales autorizadas.
+**MVP de propietario único: código completo y verificado.**
+
+`main` integra el flujo real desde ingesta hasta clips, News Mode, captura manual, Autopilot, OAuth/providers, scheduler, analytics y runtime persistente preparado. El commit `17c95d3e2ccb1aad422de4242dfb42742b598b23` pasó `ClipForge CI` completo (run `36057286731`) y se desplegó correctamente en el proyecto Vercel canónico `clip-thomas` como deployment `dpl_iWsHt8bqTt5W4wyfhPV6rZc7drZp`, estado `READY`, target `production`.
+
+El endpoint de salud de ese deployment Vercel reporta `mediaReady: false` porque Vercel no contiene FFmpeg/FFprobe ni el almacenamiento persistente requerido. El procesamiento pesado debe ejecutarse en el runtime Docker persistente preparado en este repositorio. No se presenta el runtime Vercel como procesador de medios.
 
 ## COMPLETADO Y VERIFICADO
 
 ### Ingesta y medios
 
-- Upload real MP4/MOV/WebM por streaming, con validación y límite de tamaño.
+- Upload real MP4/MOV/WebM por streaming, validación y límite de tamaño.
 - FFprobe real para metadatos y FFmpeg real para poster/renders.
 - HTTP Range para originales y renders.
-- Rutas/parametrización seguras; multimedia sin concatenar shell crudo.
+- Rutas y parámetros seguros; `spawn` sin shell para procesos multimedia.
 
-### Transcripción, análisis, edición y clips
+### Transcripción, análisis y clips
 
-- Whisper CLI real mediante worker separado, Transcript y TranscriptSegment con tiempos.
-- ContentAnalysisService, candidatos, ViralScore explicable y provider OpenAI opcional.
+- Whisper CLI real mediante worker separado.
+- Transcript y TranscriptSegment con timestamps.
+- ContentAnalysisService, candidatos y ViralScore explicable.
+- Cantidad de candidatos/clips configurable; cambiar esa configuración invalida y repite el análisis cuando corresponde.
 - Clip Engine 9:16 1080×1920 H.264/AAC.
 - Subtítulos CLEAN/VIRAL/KARAOKE editables y quemados con FFmpeg.
 - Auto Edit heurístico + provider OpenAI opcional.
-- Auto Focus V1 reactivo a voz con zoom FFmpeg progresivo sin alterar el original.
-- La V1 no finge reconocer cuál de varias caras habla.
+- Auto Focus V1 reactivo a voz con zoom FFmpeg progresivo.
 
 ### News Mode
 
-- Resumen extractivo desde la fuente, titular, categoría y plantilla.
+- Resumen extractivo basado en la fuente, titular, categoría y plantilla.
 - TTS real con espeak-ng.
 - Render vertical narrado 1080×1920 con FFmpeg.
 - Worker y E2E separados.
 
-### Live manual
+### Captura manual LIVE
 
-- Captura manual con getDisplayMedia + MediaRecorder cuando el navegador lo soporta.
-- El usuario autoriza explícitamente pantalla/ventana/pestaña.
-- El resultado entra al mismo pipeline real de ClipForge.
+- `getDisplayMedia` + MediaRecorder cuando el navegador lo soporta.
+- El usuario elige y autoriza explícitamente pantalla/ventana/pestaña.
+- La captura entra al pipeline real de ClipForge.
 
 ### Canales, Autopilot y scheduler
 
@@ -43,47 +48,42 @@ ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publica
 - Dependencias transcripción → análisis → Auto Edit → render → publicación.
 - PublicationRecord, aprobación, horarios, límites diarios, timezone y estados.
 - PUBLISH_POST y publishing worker.
+- Dashboard `/autopilot` con datos persistidos reales.
 
 ### OAuth y publicación oficial
 
 - CredentialVault AES-256-GCM server-side.
-- Flujo web de conectar/desconectar cuentas desde `/connections`.
+- Conexión/desconexión desde `/connections`.
 - OAuth con estado HMAC firmado y expiración.
-- TikTok: autorización, callback, token y refresh.
-- YouTube/Google: autorización offline, callback, refresh y detección de canal.
-- Facebook: autorización, lectura de Pages y selección explícita cuando hay varias.
-- TikTok Direct Post consulta creator info, exige consentimiento/privacidad y soporta FILE_UPLOAD directo del MP4 local por chunks; PULL_FROM_URL permanece disponible para dominios HTTPS verificados.
-- YouTube usa resumable upload desde archivo local y espera procesamiento real.
-- Facebook Reels usa inicio → transferencia binaria local → finalización, con Graph API version configurada explícitamente.
-- Los providers están probados por contrato/mocks y no se afirma una publicación real hasta disponer de cuentas/apps autorizadas.
+- TikTok: autorización/callback/refresh y Direct Post con FILE_UPLOAD local por chunks; PULL_FROM_URL permanece disponible para dominios verificados.
+- YouTube: OAuth offline, resumable upload y espera de procesamiento real.
+- Facebook: autorización, Pages, selección explícita y Reels con inicio → transferencia binaria → finalización.
+- Los providers están probados por contrato/mocks. Una publicación externa no se declara verificada hasta usar cuentas/apps reales autorizadas.
 
 ### Analytics, aprendizaje y costos
 
 - AnalyticsRepository, AnalyticsService y FETCH_ANALYTICS idempotente.
 - Worker periódico de analytics.
-- YouTubeProvider obtiene estadísticas reales disponibles.
-- PerformanceAnalyzer genera recomendaciones solo con evidencia suficiente.
-- AIUsageService registra provider/model/operación/tokens y no inventa costos ausentes.
-- Dashboard `/autopilot` muestra únicamente datos persistidos reales.
+- YouTubeProvider obtiene estadísticas disponibles.
+- PerformanceAnalyzer genera recomendaciones con evidencia suficiente.
+- AIUsageService registra provider/model/operación/tokens sin inventar costos.
 
-### Protección de acceso del propietario
+### Seguridad del propietario
 
-- El despliegue canónico de Vercel usa Deployment Protection y ClipForge puede confiar explícitamente en esa capa solo dentro de Vercel.
-- Si se activa `CLIPFORGE_REQUIRE_OWNER_AUTH=true`, el login propio de ClipForge vuelve a ser obligatorio y tiene prioridad sobre el modo de confianza de plataforma.
-- Login propio server-side con cookie HttpOnly, SameSite=Lax y firma HMAC-SHA256.
-- Las APIs protegidas fallan cerrado sin sesión válida cuando el login propio está activo.
-- Local puede permanecer abierto para desarrollo o forzar el mismo control con variable de entorno.
+- Deployment Protection de Vercel soportado para el frontend canónico.
+- Login propio opcional con cookie HttpOnly, SameSite=Lax y HMAC-SHA256.
+- APIs protegidas fallan cerrado cuando se exige sesión propia.
+- Tokens OAuth no se exponen al frontend ni se guardan en ChannelRecord.
 
-### Runtime persistente preparado
+### Runtime persistente
 
-- `Dockerfile` de producción instala FFmpeg/FFprobe, espeak-ng, Python y Whisper CLI reales.
-- `scripts/render-runtime.mjs` supervisa Next.js + workers de transcripción, análisis, Auto Edit, render, News Mode, Autopilot, publicación y analytics en una sola instancia.
-- `/api/health` comprueba FFmpeg, FFprobe y almacenamiento escribible sin exponer rutas ni secretos.
-- `render.yaml` define el MVP de propietario único con una instancia, disco persistente y secretos fuera de Git.
-- El HOME de Whisper puede residir en el volumen persistente para reutilizar modelos descargados.
-- Workflow `ClipForge Render Runtime` construye la imagen, valida FFmpeg/FFprobe/espeak-ng/Whisper y arranca el runtime completo antes de considerarlo verificable.
+- `Dockerfile` instala FFmpeg/FFprobe, espeak-ng, Python y Whisper CLI reales.
+- `scripts/render-runtime.mjs` supervisa Next.js y los workers de transcripción, análisis, Auto Edit, render, News Mode, Autopilot, publishing y analytics.
+- `/api/health` comprueba FFmpeg, FFprobe y almacenamiento escribible.
+- `render.yaml` define una instancia con disco persistente para el MVP de propietario único.
+- `ClipForge Render Runtime` ya verificó build Docker, binarios y arranque/health del runtime completo.
 
-### Pruebas verificadas
+## PRUEBAS
 
 - lint: OK.
 - typecheck: OK.
@@ -93,41 +93,34 @@ ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publica
 - Clip render E2E: OK.
 - Auto Focus E2E: OK.
 - News Mode E2E: OK.
-- Whisper E2E: OK en el workflow dedicado del bloque principal.
-- `ClipForge CI` para el bloque de runtime: SUCCESS (run `36045943968`).
-- `ClipForge Render Runtime`: SUCCESS (run `36045981913`), incluyendo build Docker, binarios reales y health check del runtime completo.
+- Whisper E2E: verificado en workflow dedicado.
+- Último `main` verificado por `ClipForge CI`: run `36057286731`, SUCCESS.
+- Producción Vercel correspondiente: `dpl_iWsHt8bqTt5W4wyfhPV6rZc7drZp`, READY.
 
-## CONFIGURACIÓN DE DESPLIEGUE
+## LO ÚNICO QUE FALTA PARA ACTIVAR PRODUCCIÓN COMPLETA
 
-- `vercel.json` raíz fija el proyecto canónico como Next.js, `npm run build` y salida `.next`.
-- Proyecto canónico Vercel: `clip-thomas` (`prj_8rOfWiKDx2N5tWuvt5pfqtnypZwl`).
-- Producción Vercel verificada antes del bloque Docker: deployment `dpl_CiMpDxD56trLPC5Gqn8y8rVkqwyQ`, estado `READY`, target `production`, commit `3675f287efcfde752cbbc0becdbdaa7b825f2f90` de `main`.
-- El proyecto Vercel histórico `clipforge` se considera duplicado y no forma parte de la ruta canónica.
-- Runtime pesado preparado: Docker + Blueprint Render documentados en `docs/RENDER_PRODUCTION.md`.
+Requiere infraestructura, cuentas o secretos reales del propietario; no debe resolverse inventando valores:
 
-## PENDIENTE DE CÓDIGO / INFRAESTRUCTURA
+- provisionar/aprobar el servicio Render (o equivalente) con disco persistente a partir de `render.yaml`;
+- definir `CLIPFORGE_OWNER_ACCESS_KEY` para ese runtime;
+- crear/configurar o aprobar las apps de TikTok, Google/YouTube y Meta;
+- registrar los redirect URI HTTPS y secretos OAuth reales;
+- conectar cuentas en `/connections`;
+- hacer una publicación controlada por plataforma para validar el flujo externo en vivo.
 
-Los siguientes puntos no se deben declarar terminados sin infraestructura, dependencias o alcance adicional real:
+## MEJORAS POST-MVP
 
-- Active-speaker multi-persona con detección visual/face tracking real.
-- Para escalar a múltiples instancias/tenants: sustituir archivos locales por persistencia, cola y almacenamiento compartidos/durables.
-- Autenticación multiusuario y aislamiento por tenant si ClipForge se ofrece como SaaS; el modo actual está diseñado para un propietario único.
-- Analytics adicional de TikTok/Facebook donde las APIs, revisión y scopes lo permitan.
+No bloquean empezar a trabajar con ClipForge:
+
+- Active-speaker multi-persona con detección visual/face tracking real. Auto Focus V1 sí funciona, pero no afirma saber cuál de varias caras habla.
+- Persistencia/colas/objetos compartidos y aislamiento multi-tenant para escalar como SaaS.
+- Analytics adicionales de TikTok/Facebook donde las APIs y scopes lo permitan.
 - Webhooks/n8n opcionales.
-
-## REQUIERE ACCIÓN EXTERNA DEL PROPIETARIO
-
-- Aprobar/provisionar el servicio Render con disco persistente si se desea activar el runtime pesado continuo. El Blueprint está preparado, pero no se crea un recurso de pago sin aprobación explícita.
-- Elegir `CLIPFORGE_OWNER_ACCESS_KEY` para ese runtime; el resto de secretos internos pueden generarse en la plataforma.
-- Crear/configurar o aprobar las apps de TikTok, Google/YouTube y Meta con los scopes necesarios.
-- Registrar los redirect URI HTTPS reales y configurar sus secretos OAuth.
-- Conectar cuentas reales en `/connections` y ejecutar una publicación controlada para validar cada provider en vivo.
-- Si se decide convertir ClipForge en SaaS multiusuario, definir/provisionar persistencia compartida y modelo de identidad/tenant antes de activar usuarios externos.
+- Mejoras de TTS, B-roll y modelos de análisis.
 
 ## LIMITACIONES EXPLÍCITAS
 
-- `Channel.userId` sigue `null` en el modo actual de propietario único.
-- El filesystem persistente de una sola instancia es adecuado para el MVP de un dueño, no para escalar horizontalmente o aislar múltiples tenants.
-- Auto Focus V1 reacciona a voz pero no identifica visualmente al hablante entre varias personas.
-- News Mode V1 no descarga material protegido de medios de terceros ni inventa hechos ausentes en la fuente.
-- Publicación real de terceros no se declara verificada hasta completar OAuth con credenciales reales y publicar una prueba autorizada.
+- `Channel.userId` permanece `null` en el modo propietario único.
+- El filesystem persistente de una sola instancia es adecuado para el MVP de un dueño, no para escalar horizontalmente.
+- News Mode no descarga material protegido de terceros ni inventa hechos ausentes en la fuente.
+- Ninguna publicación real de terceros se declara verificada sin OAuth y una prueba autorizada.
