@@ -57,6 +57,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   const [analysisJob, setAnalysisJob] = useState<JobRecord | null>(null);
   const [autoEditJob, setAutoEditJob] = useState<JobRecord | null>(null);
   const [clips, setClips] = useState<ClipWithJob[]>([]);
+  const [desiredClipCount, setDesiredClipCount] = useState(5);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,7 +198,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
           minDuration: 15,
           maxDuration: 60,
           targetDuration: 30,
-          maxCandidates: 10,
+          maxCandidates: 30,
         }),
       });
       const payload = (await response.json()) as AnalysisPayload;
@@ -284,8 +285,74 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
     }
   }
 
+  async function queueClipBatch() {
+    if (!analysis) return;
+
+    const selected = analysis.candidates.slice(0, desiredClipCount);
+    const pending = selected.filter((candidate) => {
+      const clip = clips.find((entry) => entry.candidateId === candidate.id);
+      return !(
+        clip?.status === "READY" ||
+        clip?.job?.status === "QUEUED" ||
+        clip?.job?.status === "PROCESSING"
+      );
+    });
+
+    if (pending.length === 0) return;
+
+    setLoadingAction("clip-batch");
+    setError(null);
+
+    try {
+      for (const candidate of pending) {
+        const response = await fetch(`/api/projects/${projectId}/clips`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            candidateId: candidate.id,
+            framingMode: "FILL",
+            quality: "BALANCED",
+          }),
+        });
+        const payload = (await response.json()) as ClipsPayload;
+
+        if (!response.ok) {
+          throw new Error(
+            payload.error || `No se pudo preparar el clip ${candidate.title}.`,
+          );
+        }
+      }
+
+      await loadState(true);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "No se pudieron preparar los clips seleccionados.",
+      );
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
   const transcriptionDone = transcript?.status === "COMPLETED";
   const analysisDone = analysis?.status === "COMPLETED";
+  const selectedCandidates = analysis?.candidates.slice(0, desiredClipCount) ?? [];
+  const readySelectedCount = selectedCandidates.filter((candidate) =>
+    clips.some(
+      (clip) => clip.candidateId === candidate.id && clip.status === "READY",
+    ),
+  ).length;
+  const pendingSelectedCount = selectedCandidates.filter((candidate) => {
+    const clip = clips.find((entry) => entry.candidateId === candidate.id);
+    return !(
+      clip?.status === "READY" ||
+      clip?.job?.status === "QUEUED" ||
+      clip?.job?.status === "PROCESSING"
+    );
+  }).length;
 
   return (
     <div className="mt-5 space-y-4 border-t border-white/10 pt-5">
@@ -377,6 +444,39 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
           />
         </div>
 
+        {transcriptionDone && (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <label
+                  htmlFor={`clip-count-${projectId}`}
+                  className="text-xs font-medium text-zinc-200"
+                >
+                  Cantidad de clips
+                </label>
+                <p className="mt-1 text-[11px] leading-5 text-zinc-500">
+                  Elegí cuántos clips querés crear de este video, de 1 a 30.
+                </p>
+              </div>
+              <input
+                id={`clip-count-${projectId}`}
+                type="number"
+                min={1}
+                max={30}
+                inputMode="numeric"
+                value={desiredClipCount}
+                onChange={(event) => {
+                  const next = Number.parseInt(event.target.value, 10);
+                  setDesiredClipCount(
+                    Number.isFinite(next) ? Math.max(1, Math.min(30, next)) : 1,
+                  );
+                }}
+                className="w-20 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-zinc-100 outline-none transition focus:border-violet-400/50"
+              />
+            </div>
+          </div>
+        )}
+
         {!transcriptionDone ? (
           <p className="mt-3 text-xs leading-5 text-zinc-500">
             Este paso se habilita cuando Whisper termina la transcripción.
@@ -384,12 +484,40 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         ) : analysisDone ? (
           <>
             <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
-              <span>{analysis.candidates.length} candidatos</span>
+              <span>{analysis.candidates.length} candidatos encontrados</span>
               <span>{analysis.provider}</span>
             </div>
 
+            <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/[0.07] p-3">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-violet-200">
+                  {selectedCandidates.length} seleccionados
+                </span>
+                <span className="text-zinc-500">
+                  {readySelectedCount} listos
+                </span>
+              </div>
+              {selectedCandidates.length < desiredClipCount && (
+                <p className="mt-2 text-[11px] leading-5 text-amber-300/80">
+                  Este video solo tiene {selectedCandidates.length} momentos candidatos disponibles para la selección actual.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => void queueClipBatch()}
+                disabled={loadingAction !== null || pendingSelectedCount === 0}
+                className="mt-3 w-full rounded-lg bg-violet-500 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {loadingAction === "clip-batch"
+                  ? "Encolando clips…"
+                  : pendingSelectedCount === 0
+                    ? "Clips seleccionados listos o en proceso"
+                    : `Crear ${pendingSelectedCount} clip${pendingSelectedCount === 1 ? "" : "s"}`}
+              </button>
+            </div>
+
             <div className="mt-3 space-y-3">
-              {analysis.candidates.slice(0, 5).map((candidate) => {
+              {analysis.candidates.slice(0, desiredClipCount).map((candidate) => {
                 const clip = clips.find(
                   (entry) => entry.candidateId === candidate.id,
                 );
@@ -484,10 +612,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                         <button
                           type="button"
                           onClick={() => void queueClip(candidate.id)}
-                          disabled={
-                            loadingAction !== null ||
-                            clipBusy
-                          }
+                          disabled={loadingAction !== null || clipBusy}
                           className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {loadingAction === `clip:${candidate.id}`
@@ -551,7 +676,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         ) : (
           <>
             <p className="mt-3 text-xs leading-5 text-zinc-500">
-              Genera ventanas de 15–60 segundos sobre los segmentos reales y
+              Genera hasta 30 ventanas de 15–60 segundos sobre los segmentos reales y
               puntúa las señales disponibles sin inventar energía de audio.
               {analysisJob?.status === "QUEUED" &&
                 " El trabajo está esperando al worker de análisis."}
