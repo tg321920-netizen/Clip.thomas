@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LiveCaptureWorkspace } from "@/components/LiveCaptureWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -19,18 +20,18 @@ export default function LiveCapturePage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <a
+            <Link
               href="/autopilot"
               className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-white/10"
             >
               Autopilot
-            </a>
-            <a
+            </Link>
+            <Link
               href="/"
               className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-white/10"
             >
               Proyectos
-            </a>
+            </Link>
           </div>
         </header>
 
