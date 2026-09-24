@@ -19,11 +19,25 @@ export default function Home() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
+              href="/connections"
+              className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/5"
+            >
+              CONEXIONES
+            </Link>
+            <Link
               href="/autopilot"
               className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/5"
             >
               AUTOPILOT
             </Link>
+            <form action="/api/auth/owner/logout" method="post">
+              <button
+                type="submit"
+                className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
+              >
+                SALIR
+              </button>
+            </form>
             <a
               href="#nuevo-proyecto"
               className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
