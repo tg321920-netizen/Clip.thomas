@@ -5,6 +5,7 @@ import {
   createOwnerSessionToken,
   getOwnerAuthConfig,
   shouldRequireOwnerAuth,
+  shouldTrustPlatformAuth,
   verifyOwnerSessionToken,
 } from "../lib/owner-auth.mjs";
 
@@ -31,6 +32,36 @@ test("hosted deployments require owner auth while local dev can opt in", () => {
   assert.equal(shouldRequireOwnerAuth({ VERCEL_ENV: "preview" }), true);
   assert.equal(
     shouldRequireOwnerAuth({ CLIPFORGE_REQUIRE_OWNER_AUTH: "true" }),
+    true,
+  );
+});
+
+test("trusted platform auth is explicit, Vercel-only and can be overridden", () => {
+  assert.equal(shouldTrustPlatformAuth({}), false);
+  assert.equal(
+    shouldTrustPlatformAuth({ CLIPFORGE_TRUST_PLATFORM_AUTH: "true" }),
+    false,
+  );
+  assert.equal(
+    shouldTrustPlatformAuth({
+      VERCEL_ENV: "production",
+      CLIPFORGE_TRUST_PLATFORM_AUTH: "true",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRequireOwnerAuth({
+      VERCEL_ENV: "production",
+      CLIPFORGE_TRUST_PLATFORM_AUTH: "true",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequireOwnerAuth({
+      VERCEL_ENV: "production",
+      CLIPFORGE_TRUST_PLATFORM_AUTH: "true",
+      CLIPFORGE_REQUIRE_OWNER_AUTH: "true",
+    }),
     true,
   );
 });
