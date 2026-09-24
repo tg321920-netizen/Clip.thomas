@@ -103,13 +103,13 @@ test("OAuth config rejects missing secrets and accepts explicit HTTPS callbacks"
 
   const config = getOAuthConfig("TIKTOK", {
     CLIPFORGE_OAUTH_STATE_KEY: secret,
-    TIKTOK_CLIENT_KEY: "client-key",
-    TIKTOK_CLIENT_SECRET: "client-secret",
+    TIKTOK_CLIENT_KEY: "client-key-1234567890",
+    TIKTOK_CLIENT_SECRET: "client-secret-1234567890",
     TIKTOK_REDIRECT_URI: "https://clip.example/api/oauth/tiktok/callback",
     TIKTOK_OAUTH_SCOPES: "video.publish user.info.basic",
   });
 
-  assert.equal(config.clientId, "client-key");
+  assert.equal(config.clientId, "client-key-1234567890");
   assert.equal(config.redirectUri, "https://clip.example/api/oauth/tiktok/callback");
   assert.ok(config.scopes.includes("video.publish"));
 });
