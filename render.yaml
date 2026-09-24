@@ -2,7 +2,7 @@ services:
   - type: web
     name: clipforge-runtime
     runtime: docker
-    plan: 1c-2g
+    plan: starter
     region: virginia
     repo: https://github.com/tg321920-netizen/Clip.thomas
     branch: main
@@ -12,15 +12,11 @@ services:
     healthCheckPath: /api/health
     numInstances: 1
     maxShutdownDelaySeconds: 60
-    disk:
-      name: clipforge-data
-      mountPath: /var/data/clipforge
-      sizeGB: 10
     envVars:
       - key: CLIPFORGE_STORAGE_DIR
-        value: /var/data/clipforge
+        value: /tmp/clipforge
       - key: CLIPFORGE_RUNTIME_HOME
-        value: /var/data/clipforge/.runtime-home
+        value: /tmp/clipforge/.runtime-home
       - key: CLIPFORGE_REQUIRE_OWNER_AUTH
         value: "true"
       - key: CLIPFORGE_OWNER_ACCESS_KEY
