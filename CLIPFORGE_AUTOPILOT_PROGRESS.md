@@ -1,133 +1,120 @@
 # ClipForge Autopilot — progreso
 
-## COMPLETADO
+## ESTADO ACTUAL
 
-- Inspección del repositorio actual.
-- App canónica identificada en la raíz.
-- Upload real MP4/MOV/WebM.
-- Validación de archivos.
-- FFprobe real para metadatos.
-- FFmpeg real para miniaturas.
-- Reproducción con HTTP Range.
-- Persistencia actual por JSON + archivos locales.
-- Pruebas de upload, project id y HTTP Range.
-- Contrato inicial de Transcript y TranscriptSegment.
-- Cola de jobs local/file-based para TRANSCRIBE_VIDEO.
-- Worker independiente de transcripción.
-- Adapter local para Whisper CLI.
-- API idempotente para encolar y consultar transcripciones.
+ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la preparación/publicación programada. No se consideran completadas las integraciones que dependan de credenciales externas hasta probarlas con cuentas autorizadas reales.
 
-## EN PROGRESO
+## COMPLETADO Y VERIFICADO
 
-- Validación de Auto Focus reactivo a voz dentro del Clip Engine.
-- PublishingProvider y PUBLISH_POST continúan como siguiente bloque del Autopilot.
+### Ingesta y medios
 
-## COMPLETADO RECIENTE
+- Upload real MP4/MOV/WebM por streaming, con límite de tamaño y validación de nombre/MIME/extensión.
+- FFprobe real para duración, resolución, FPS y códecs.
+- FFmpeg real para poster y renders.
+- Reproducción del original y renders con HTTP Range.
+- Persistencia local actual por JSON + archivos.
+- Rutas y parámetros validados; procesos multimedia se ejecutan sin `shell: true`.
 
-- AutoReframeService para detectar tramos hablados desde TranscriptSegment: implementado.
-- Zoom FFmpeg progresivo durante voz con ataque/liberación configurables: implementado.
-- API GET/POST/PATCH por clip para activar/desactivar Auto Focus: implementada.
-- UI de Auto Focus con niveles de zoom: implementada.
-- Los cambios invalidan el render y encolan un nuevo RENDER_CLIP sin tocar el original.
-- Render metadata registra autoReframeApplied para no fingir que el efecto fue aplicado.
-- Prueba unitaria de ventanas de voz, clamps y filtro FFmpeg: implementada.
-- Prueba E2E real de Auto Focus 1080×1920 preparada en CI.
-- Publication + Scheduler verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-- PublicationRecord y repositorio reemplazable: implementados.
-- Idempotencia por clip + canal: implementada.
-- Estados WAITING_APPROVAL/APPROVED/SCHEDULED/PUBLISHING/PUBLISHED/FAILED: implementados.
-- APIs para crear, listar, consultar, aprobar y programar publicaciones: implementadas.
-- Scheduler con timezone IANA, dailyLimit, ChannelStrategy y postsPerDay: implementado.
-- approvalRequired impide programar antes de aprobación: verificado.
-- Autopilot crea publicaciones por canal elegible y las deja esperando aprobación por defecto: implementado.
-- Autopilot puede programar automáticamente cuando approvalRequired=false: implementado.
-- Autopilot core verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-- AutopilotConfig persistido con modo MANUAL/AUTOPILOT: implementado.
-- approvalRequired=true por defecto: implementado.
-- Configuración de postsPerDay, plataformas, horarios, analytics y learning: implementada.
-- AutopilotService encola solo la siguiente dependencia faltante: implementado.
-- Recuperación de artefactos faltantes aunque un job anterior figure COMPLETED: implementada.
-- Worker Autopilot separado de HTTP: implementado.
-- API de configuración y avance manual por proyecto: implementadas.
-- Selección de canales elegibles respeta plataforma, estado, publishingEnabled y dailyLimit: implementada.
-- Channels + ChannelStrategy verificados con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-- ChannelRecord para TikTok, YouTube y Facebook: implementado.
-- ChannelStrategy por canal: implementado.
-- Configuración de timezone, dailyLimit, publishingEnabled y estado: implementada.
-- Reglas editoriales independientes por canal: implementadas.
-- ChannelRepository file-based reemplazable: implementado.
-- APIs para listar/crear/editar/eliminar canales y editar estrategia: implementadas.
-- Validación de plataforma, timezone, límites y estado: implementada.
-- No se almacenan tokens OAuth ni secretos en ChannelRecord.
-- AutoEditService separado de UI: implementado.
-- HeuristicAutoEditProvider local sin coste externo: implementado.
-- OpenAIAutoEditProvider opcional con Responses API estructurada: implementado.
-- Selección de candidato, timing validado, hook, título, descripción, hashtags y texto en pantalla: implementados.
-- Recomendación multicanal y estilo de subtítulos: implementados.
-- Job AUTO_EDIT, worker independiente y encadenado a RENDER_CLIP: implementados.
-- API GET/POST de Auto Edit: implementada.
-- UI para iniciar y seguir Auto Edit: implementada.
-- Auto Edit verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-- SubtitleService con cues derivados de TranscriptSegment/word timestamps: implementado.
-- Edición de texto y tiempos con validación: implementada.
-- Estilos CLEAN/VIRAL/KARAOKE en ASS: implementados.
-- Activación/desactivación de subtítulos: implementada.
-- Render FFmpeg con subtítulos quemados sin tocar el original: implementado.
-- UI de generación/edición/guardado y rerender: implementada.
-- API GET/POST/PATCH de subtítulos por clip: implementada.
-- Fase de subtítulos verificada con lint, typecheck, tests, build, Phase 1 E2E y render E2E con ASS/KARAOKE: OK.
-- ClipService para convertir candidatos reales en clips persistidos: implementado.
-- RenderService FFmpeg 9:16 con FILL/FIT y calidades FAST/BALANCED/HIGH: implementado.
-- RENDER_CLIP con worker separado y progreso derivado de FFmpeg: implementado.
-- Streaming HTTP Range de clips renderizados: implementado.
-- UI para crear y previsualizar clips desde candidatos: implementada.
-- Prueba E2E de render vertical y preservación del original: OK.
-- Clip Engine verificado con lint, typecheck, tests, build, Phase 1 E2E y render E2E: OK.
-- ContentAnalysisService separado de UI: implementado.
-- TranscriptCandidateProvider con ventanas sobre TranscriptSegment: implementado.
-- ViralScore 0–100 con componentes y razones: implementado.
-- audioEnergy permanece null hasta existir AudioAnalyzer; no se inventa señal.
-- Job ANALYZE_VIDEO y worker independiente: implementados.
-- API de análisis idempotente: implementada.
+### Transcripción y análisis
+
+- Worker independiente de Whisper CLI.
+- Transcript + TranscriptSegment con tiempos reales.
+- Idempotencia de transcripciones vigentes.
+- ContentAnalysisService y TranscriptCandidateProvider.
+- ViralScore 0–100 con razones; `audioEnergy` permanece `null` mientras no exista una señal de audio medida.
+- Provider OpenAI opcional con Responses API estructurada.
+- Uso de tokens de OpenAI registrado cuando la respuesta devuelve `usage`; no se inventan precios ni costos ausentes.
+
+### Clips, subtítulos y edición
+
+- Clip Engine real 9:16 1080×1920 H.264/AAC.
+- Modos FILL/FIT y calidades FAST/BALANCED/HIGH.
+- CLEAN/VIRAL/KARAOKE con edición de texto y tiempos.
+- Auto Edit heurístico y provider OpenAI opcional.
+- Auto Focus V1 reactivo a voz a partir de TranscriptSegment.
+- Auto Focus aplica zoom FFmpeg progresivo sin modificar el original.
+- La V1 de Auto Focus no afirma identificar cuál de varias caras está hablando.
+
+### News Mode
+
+- Resumen extractivo desde la transcripción, sin inventar hechos fuera de la fuente.
+- Categoría, titular, resumen, evidencia fuente y plantilla.
+- TTS real con `espeak-ng` mediante worker separado.
+- Render vertical narrado 1080×1920 con FFmpeg.
+- Poster real del proyecto como recurso visual de la V1.
+
+### Canales, Autopilot y publicaciones
+
+- ChannelRecord para TikTok, YouTube y Facebook.
+- ChannelStrategy por canal.
+- AutopilotConfig y worker de orquestación.
+- Flujo de dependencias transcripción → análisis → Auto Edit → render → publicación.
+- PublicationRecord con aprobación, programación y estados de publicación.
+- Scheduler con timezone, límites diarios y horarios preferidos.
+- PUBLISH_POST y publishing worker.
+- CredentialVault AES-256-GCM para credenciales OAuth server-side.
+- Providers oficiales implementados para TikTok, YouTube y Facebook, con fallos cerrados cuando faltan permisos/credenciales.
+- TikTok exige consentimiento explícito, privacidad válida y URL HTTPS verificada para Direct Post.
+- YouTube usa subida reanudable y no marca `uploaded` como publicado hasta completar procesamiento.
+- Facebook Reels usa sesión de subida de Page y versión Graph configurada explícitamente.
+- Código/provider tests verificados; publicación real todavía requiere cuentas/apps OAuth autorizadas.
+
+### Analytics, aprendizaje y costos
+
+- AnalyticsRepository y AnalyticsService normalizados.
+- Métricas soportadas se guardan solo cuando existen; no se fabrican métricas ausentes.
+- `FETCH_ANALYTICS` añadido a JobStore con idempotencia por publicación.
+- Analytics worker separado con refresco periódico configurable.
+- YouTubeProvider obtiene estadísticas reales de video para vistas, likes y comentarios.
+- Providers sin analytics implementado se omiten explícitamente en lugar de simular datos.
+- PerformanceAnalyzer correlaciona duración, estilo de subtítulos, plataforma y resultados observados.
+- Recomendaciones requieren evidencia mínima y no cambian silenciosamente la estrategia.
+- AIUsageService registra provider/model/operación/tokens y costo únicamente si el costo fue proporcionado.
+- `/autopilot` muestra datos persistidos reales: canales, aprobaciones, programaciones, errores, analytics, recomendaciones y uso IA.
+
+### Live manual
+
+- Captura manual mediante `getDisplayMedia` + `MediaRecorder` cuando el navegador lo soporta.
+- El usuario debe autorizar explícitamente la pantalla/ventana/pestaña.
+- Botones comenzar/terminar, preview local y validación de upload.
+- La captura entra al mismo proyecto real y puede iniciar Autopilot.
+- Compatibilidad depende del navegador/dispositivo; no se simula soporte donde no existe.
+
+### Pruebas
+
 - lint: OK.
 - typecheck: OK.
 - tests unitarios: OK.
 - build Next.js: OK.
-- Fase 1 end-to-end (upload + FFprobe + FFmpeg + playback + persistencia): OK.
-- Whisper CLI instalado y ejecutado realmente en GitHub Actions: OK.
-- Video con voz sintética procesado de extremo a extremo: OK.
-- Audio extraído con FFmpeg: OK.
-- Transcript persistido: OK.
-- TranscriptSegment con startTime/endTime/text: OK.
-- Job TRANSCRIBE_VIDEO completado: OK.
-- Reutilización/idempotencia de una transcripción vigente: OK.
+- Phase 1 E2E: OK.
+- Clip render E2E: OK.
+- Auto Focus E2E: OK.
+- News Mode E2E: OK.
+- Whisper E2E en GitHub Actions: OK en el bloque principal previamente integrado.
 
-## PENDIENTE
+## PENDIENTE DE CÓDIGO
 
-- Active-speaker multi-persona con detección visual/face tracking real. La versión actual no finge identificar qué rostro habla.
-- Publishing providers oficiales y PUBLISH_POST.
-- Cola de jobs generalizada/durable.
-- Analytics.
-- PerformanceAnalyzer.
-- Dashboard /autopilot.
-- AIUsage/cost control.
-- Autenticación y aislamiento multiusuario.
-- Webhooks opcionales para n8n.
+- OAuth web completo para conectar/desconectar cuentas desde la UI y refrescar tokens automáticamente.
+- Analytics oficial adicional para plataformas donde la app y sus permisos lo permitan.
+- Active-speaker multi-persona con detección visual/face tracking real.
+- Autenticación de usuarios de ClipForge y aislamiento multiusuario.
+- Persistencia/cola/almacenamiento durables para producción multi-instancia.
+- Webhooks/n8n opcionales.
 
-## BLOQUEADO
+## REQUIERE CONFIGURACIÓN O ACCIÓN EXTERNA
 
-- No existe autenticación/OAuth ni almacenamiento seguro de tokens todavía; publicación real no se activará con tokens en JSON o frontend.
-- El repositorio no tiene actualmente base de datos ni autenticación.
-- Channel.userId permanece null en modo local hasta introducir auth real; no se finge un usuario.
-- Vercel no es el worker de video/Whisper definitivo.
-- El runtime de producción todavía necesita un worker persistente con FFmpeg + Whisper instalado.
-- El proveedor OpenAI es opcional y requiere credenciales reales fuera del repositorio.
-- Vercel no debe usarse como worker pesado definitivo.
+- Crear/configurar las apps de TikTok, Google/YouTube y Meta y aprobar los permisos/scopes requeridos.
+- Registrar redirect URIs y completar OAuth con cuentas reales.
+- Proporcionar secretos mediante variables de entorno server-side; nunca se guardan en Git.
+- Elegir/provisionar un worker persistente con FFmpeg, FFprobe, Whisper y TTS.
+- Proporcionar almacenamiento duradero compartido para producción.
+- Resolver límites externos de despliegue si Vercel bloquea builds por cuota/rate limit.
 
-## SIGUIENTE PASO
+## LIMITACIONES QUE NO SE OCULTAN
 
-1. Ejecutar lint, typecheck, tests, build, render E2E y Auto Focus E2E.
-2. Corregir cualquier fallo de FFmpeg/zoompan antes de integrar a main.
-3. Mantener esta V1 como speech-reactive zoom para streamer individual/sujeto centrado.
-4. Implementar ActiveSpeakerDetector visual antes de afirmar seguimiento multi-persona por rostro.
-5. Retomar PublishingProvider + PUBLISH_POST después de dejar Auto Focus estable.
+- `Channel.userId` continúa `null` hasta implementar autenticación real.
+- JSON local no ofrece aislamiento multiusuario ni operación segura multi-instancia.
+- Vercel no debe ejecutar el trabajo pesado definitivo de FFmpeg/Whisper/TTS.
+- Auto Focus V1 reacciona a voz, pero no identifica visualmente al hablante entre varias personas.
+- News Mode V1 no verifica hechos contra Internet ni descarga material de medios de terceros.
+- Los providers de publicación están probados con mocks/contratos; no se afirma publicación real sin OAuth y cuentas autorizadas.
