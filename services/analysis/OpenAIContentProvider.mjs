@@ -1,3 +1,4 @@
+import { AIUsageService } from "../usage/AIUsageService.mjs";
 import { TranscriptCandidateProvider } from "./TranscriptCandidateProvider.mjs";
 
 export class OpenAIContentProvider {
@@ -10,9 +11,10 @@ export class OpenAIContentProvider {
       process.env.OPENAI_BASE_URL?.trim() ??
       "https://api.openai.com/v1";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.usage = options.usageService ?? new AIUsageService();
   }
 
-  async analyze({ transcript, options = {} }) {
+  async analyze({ project, transcript, options = {} }) {
     if (!this.apiKey) {
       throw new Error(
         "OPENAI_API_KEY is required when CLIPFORGE_ANALYSIS_PROVIDER=openai.",
@@ -115,6 +117,13 @@ export class OpenAIContentProvider {
       throw new Error(message);
     }
 
+    await recordUsageSafely(this.usage, {
+      body,
+      model: this.model,
+      operation: "content-analysis",
+      projectId: project?.id || project?.projectId || null,
+    });
+
     const text = extractOutputText(body);
     if (!text) {
       throw new Error("OpenAI returned no structured text output.");
@@ -187,6 +196,42 @@ export function extractOutputText(responseBody) {
   }
 
   return "";
+}
+
+export function extractOpenAIUsage(responseBody) {
+  const inputTokens = Number(responseBody?.usage?.input_tokens);
+  const outputTokens = Number(responseBody?.usage?.output_tokens);
+
+  return {
+    inputTokens:
+      Number.isFinite(inputTokens) && inputTokens >= 0 ? Math.round(inputTokens) : 0,
+    outputTokens:
+      Number.isFinite(outputTokens) && outputTokens >= 0
+        ? Math.round(outputTokens)
+        : 0,
+  };
+}
+
+async function recordUsageSafely(service, context) {
+  if (!service || typeof service.record !== "function") return;
+  const usage = extractOpenAIUsage(context.body);
+  if (usage.inputTokens === 0 && usage.outputTokens === 0) return;
+
+  try {
+    await service.record({
+      provider: "openai",
+      model: context.model,
+      operation: context.operation,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      projectId: context.projectId,
+    });
+  } catch (error) {
+    console.warn("ClipForge could not persist OpenAI usage", {
+      operation: context.operation,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function readJsonResponse(response) {
