@@ -75,8 +75,11 @@ export async function POST(
     );
   }
 
+  const body = await safeJson(request);
+  const config = normalizeAnalysisOptions(body);
   const sourceKey = getAnalysisSourceKey(project);
-  if (isAnalysisCurrent(project, sourceKey)) {
+
+  if (isAnalysisCurrent(project, sourceKey, config)) {
     return NextResponse.json({
       analysis: project.analysis,
       job: await jobs.getAnalysisJob(projectId),
@@ -84,8 +87,6 @@ export async function POST(
     });
   }
 
-  const body = await safeJson(request);
-  const config = normalizeAnalysisOptions(body);
   const job = await jobs.enqueueAnalysis(projectId, config, {
     restartCompleted: true,
   });
