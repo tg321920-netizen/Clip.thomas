@@ -1,6 +1,7 @@
 import { loadProjectFile } from "../../lib/project-files.mjs";
 import { resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
+import { OAuthConnectionService } from "../oauth/OAuthConnectionService.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
 import { CredentialVault } from "../security/CredentialVault.mjs";
 import { createPublishingProvider } from "./createPublishingProvider.mjs";
@@ -10,6 +11,12 @@ export class PublishingService {
     this.publications = options.publications || new PublicationService();
     this.channels = options.channels || new ChannelService();
     this.credentials = options.credentials || new CredentialVault();
+    this.oauth =
+      options.oauth ||
+      new OAuthConnectionService({
+        channels: this.channels,
+        vault: this.credentials,
+      });
     this.providerFactory =
       options.providerFactory || ((platform) => createPublishingProvider(platform));
   }
@@ -67,7 +74,7 @@ export class PublishingService {
       throw new Error("Channel is not enabled for publishing.");
     }
 
-    const credentials = await this.credentials.get(channel.id);
+    const credentials = await this.#credentialsFor(channel.id);
     if (!credentials) {
       throw new Error("OAuth credentials are not configured for this channel.");
     }
@@ -136,7 +143,7 @@ export class PublishingService {
 
     const channel = await this.channels.getChannel(publication.channelId);
     if (!channel) throw new Error("Channel not found.");
-    const credentials = await this.credentials.get(channel.id);
+    const credentials = await this.#credentialsFor(channel.id);
     if (!credentials) throw new Error("OAuth credentials are not configured for this channel.");
 
     const provider = this.providerFactory(channel.platform);
@@ -164,6 +171,13 @@ export class PublishingService {
       changed: saved.status !== publication.status,
       providerStatus,
     };
+  }
+
+  async #credentialsFor(channelId) {
+    if (this.oauth && typeof this.oauth.getValidCredentials === "function") {
+      return this.oauth.getValidCredentials(channelId);
+    }
+    return this.credentials.get(channelId);
   }
 }
 
