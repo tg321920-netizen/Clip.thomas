@@ -2,85 +2,79 @@
 
 ## ESTADO ACTUAL
 
-ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la preparación/publicación programada. No se consideran completadas las integraciones que dependan de credenciales externas hasta probarlas con cuentas autorizadas reales.
+ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la publicación preparada, analytics y aprendizaje. No se consideran verificadas en vivo las acciones que dependan de credenciales o aprobaciones externas hasta probarlas con cuentas reales autorizadas.
 
 ## COMPLETADO Y VERIFICADO
 
 ### Ingesta y medios
 
-- Upload real MP4/MOV/WebM por streaming, con límite de tamaño y validación de nombre/MIME/extensión.
-- FFprobe real para duración, resolución, FPS y códecs.
-- FFmpeg real para poster y renders.
-- Reproducción del original y renders con HTTP Range.
-- Persistencia local actual por JSON + archivos.
-- Rutas y parámetros validados; procesos multimedia se ejecutan sin `shell: true`.
+- Upload real MP4/MOV/WebM por streaming, con validación y límite de tamaño.
+- FFprobe real para metadatos y FFmpeg real para poster/renders.
+- HTTP Range para originales y renders.
+- Rutas/parametrización seguras; multimedia sin concatenar shell crudo.
 
-### Transcripción y análisis
+### Transcripción, análisis, edición y clips
 
-- Worker independiente de Whisper CLI.
-- Transcript + TranscriptSegment con tiempos reales.
-- Idempotencia de transcripciones vigentes.
-- ContentAnalysisService y TranscriptCandidateProvider.
-- ViralScore 0–100 con razones; `audioEnergy` permanece `null` mientras no exista una señal de audio medida.
-- Provider OpenAI opcional con Responses API estructurada.
-- Uso de tokens de OpenAI registrado cuando la respuesta devuelve `usage`; no se inventan precios ni costos ausentes.
-
-### Clips, subtítulos y edición
-
-- Clip Engine real 9:16 1080×1920 H.264/AAC.
-- Modos FILL/FIT y calidades FAST/BALANCED/HIGH.
-- CLEAN/VIRAL/KARAOKE con edición de texto y tiempos.
-- Auto Edit heurístico y provider OpenAI opcional.
-- Auto Focus V1 reactivo a voz a partir de TranscriptSegment.
-- Auto Focus aplica zoom FFmpeg progresivo sin modificar el original.
-- La V1 de Auto Focus no afirma identificar cuál de varias caras está hablando.
+- Whisper CLI real mediante worker separado, Transcript y TranscriptSegment con tiempos.
+- ContentAnalysisService, candidatos, ViralScore explicable y provider OpenAI opcional.
+- Clip Engine 9:16 1080×1920 H.264/AAC.
+- Subtítulos CLEAN/VIRAL/KARAOKE editables y quemados con FFmpeg.
+- Auto Edit heurístico + provider OpenAI opcional.
+- Auto Focus V1 reactivo a voz con zoom FFmpeg progresivo sin alterar el original.
+- La V1 no finge reconocer cuál de varias caras habla.
 
 ### News Mode
 
-- Resumen extractivo desde la transcripción, sin inventar hechos fuera de la fuente.
-- Categoría, titular, resumen, evidencia fuente y plantilla.
-- TTS real con `espeak-ng` mediante worker separado.
+- Resumen extractivo desde la fuente, titular, categoría y plantilla.
+- TTS real con espeak-ng.
 - Render vertical narrado 1080×1920 con FFmpeg.
-- Poster real del proyecto como recurso visual de la V1.
-
-### Canales, Autopilot y publicaciones
-
-- ChannelRecord para TikTok, YouTube y Facebook.
-- ChannelStrategy por canal.
-- AutopilotConfig y worker de orquestación.
-- Flujo de dependencias transcripción → análisis → Auto Edit → render → publicación.
-- PublicationRecord con aprobación, programación y estados de publicación.
-- Scheduler con timezone, límites diarios y horarios preferidos.
-- PUBLISH_POST y publishing worker.
-- CredentialVault AES-256-GCM para credenciales OAuth server-side.
-- Providers oficiales implementados para TikTok, YouTube y Facebook, con fallos cerrados cuando faltan permisos/credenciales.
-- TikTok exige consentimiento explícito, privacidad válida y URL HTTPS verificada para Direct Post.
-- YouTube usa subida reanudable y no marca `uploaded` como publicado hasta completar procesamiento.
-- Facebook Reels usa sesión de subida de Page y versión Graph configurada explícitamente.
-- Código/provider tests verificados; publicación real todavía requiere cuentas/apps OAuth autorizadas.
-
-### Analytics, aprendizaje y costos
-
-- AnalyticsRepository y AnalyticsService normalizados.
-- Métricas soportadas se guardan solo cuando existen; no se fabrican métricas ausentes.
-- `FETCH_ANALYTICS` añadido a JobStore con idempotencia por publicación.
-- Analytics worker separado con refresco periódico configurable.
-- YouTubeProvider obtiene estadísticas reales de video para vistas, likes y comentarios.
-- Providers sin analytics implementado se omiten explícitamente en lugar de simular datos.
-- PerformanceAnalyzer correlaciona duración, estilo de subtítulos, plataforma y resultados observados.
-- Recomendaciones requieren evidencia mínima y no cambian silenciosamente la estrategia.
-- AIUsageService registra provider/model/operación/tokens y costo únicamente si el costo fue proporcionado.
-- `/autopilot` muestra datos persistidos reales: canales, aprobaciones, programaciones, errores, analytics, recomendaciones y uso IA.
+- Worker y E2E separados.
 
 ### Live manual
 
-- Captura manual mediante `getDisplayMedia` + `MediaRecorder` cuando el navegador lo soporta.
-- El usuario debe autorizar explícitamente la pantalla/ventana/pestaña.
-- Botones comenzar/terminar, preview local y validación de upload.
-- La captura entra al mismo proyecto real y puede iniciar Autopilot.
-- Compatibilidad depende del navegador/dispositivo; no se simula soporte donde no existe.
+- Captura manual con getDisplayMedia + MediaRecorder cuando el navegador lo soporta.
+- El usuario autoriza explícitamente pantalla/ventana/pestaña.
+- El resultado entra al mismo pipeline real de ClipForge.
 
-### Pruebas
+### Canales, Autopilot y scheduler
+
+- ChannelRecord + ChannelStrategy para TikTok, YouTube y Facebook.
+- AutopilotConfig y worker de orquestación.
+- Dependencias transcripción → análisis → Auto Edit → render → publicación.
+- PublicationRecord, aprobación, horarios, límites diarios, timezone y estados.
+- PUBLISH_POST y publishing worker.
+
+### OAuth y publicación oficial
+
+- CredentialVault AES-256-GCM server-side.
+- Flujo web de conectar/desconectar cuentas desde `/connections`.
+- OAuth con estado HMAC firmado y expiración.
+- TikTok: autorización, callback, token y refresh.
+- YouTube/Google: autorización offline, callback, refresh y detección de canal.
+- Facebook: autorización, lectura de Pages y selección explícita cuando hay varias.
+- TikTok Direct Post consulta creator info, exige consentimiento/privacidad y soporta FILE_UPLOAD directo del MP4 local por chunks; PULL_FROM_URL permanece disponible para dominios HTTPS verificados.
+- YouTube usa resumable upload desde archivo local y espera procesamiento real.
+- Facebook Reels usa inicio → transferencia binaria local → finalización, con Graph API version configurada explícitamente.
+- Los providers están probados por contrato/mocks y no se afirma una publicación real hasta disponer de cuentas/apps autorizadas.
+
+### Analytics, aprendizaje y costos
+
+- AnalyticsRepository, AnalyticsService y FETCH_ANALYTICS idempotente.
+- Worker periódico de analytics.
+- YouTubeProvider obtiene estadísticas reales disponibles.
+- PerformanceAnalyzer genera recomendaciones solo con evidencia suficiente.
+- AIUsageService registra provider/model/operación/tokens y no inventa costos ausentes.
+- Dashboard `/autopilot` muestra únicamente datos persistidos reales.
+
+### Protección de acceso del propietario
+
+- Despliegues hospedados requieren sesión firmada del propietario.
+- Login server-side con cookie HttpOnly, SameSite=Lax y firma HMAC-SHA256.
+- Las APIs devuelven 401 sin sesión válida.
+- Si faltan secretos en hosting, ClipForge falla cerrado y muestra `/setup-required` en vez de exponer la aplicación.
+- Local puede permanecer abierto para desarrollo o forzar el mismo control con variable de entorno.
+
+### Pruebas verificadas
 
 - lint: OK.
 - typecheck: OK.
@@ -90,31 +84,34 @@ ClipForge ya tiene un flujo real y comprobable desde la ingesta hasta la prepara
 - Clip render E2E: OK.
 - Auto Focus E2E: OK.
 - News Mode E2E: OK.
-- Whisper E2E en GitHub Actions: OK en el bloque principal previamente integrado.
+- Whisper E2E: OK en el workflow dedicado del bloque principal.
 
-## PENDIENTE DE CÓDIGO
+## CONFIGURACIÓN DE DESPLIEGUE
 
-- OAuth web completo para conectar/desconectar cuentas desde la UI y refrescar tokens automáticamente.
-- Analytics oficial adicional para plataformas donde la app y sus permisos lo permitan.
+- `vercel.json` raíz fija el proyecto canónico como Next.js, `npm run build` y salida `.next` para evitar que un preset estático busque `public` como output final.
+- Los dos proyectos Vercel históricos siguen necesitando una nueva ejecución exitosa antes de declarar producción lista. Los últimos deployments observados antes de esta corrección estaban en ERROR.
+- Vercel no es el worker pesado definitivo: FFmpeg/Whisper/TTS requieren un proceso persistente separado.
+
+## PENDIENTE DE CÓDIGO / INFRAESTRUCTURA
+
 - Active-speaker multi-persona con detección visual/face tracking real.
-- Autenticación de usuarios de ClipForge y aislamiento multiusuario.
-- Persistencia/cola/almacenamiento durables para producción multi-instancia.
+- Sustituir JSON/archivos locales por persistencia, cola y almacenamiento compartidos/durables para producción multi-instancia.
+- Autenticación multiusuario y aislamiento por tenant si ClipForge se ofrece como SaaS; el acceso del propietario actual protege un despliegue controlado de un solo dueño, no sustituye tenant isolation.
+- Analytics adicional de TikTok/Facebook donde las APIs, revisión y scopes de la app lo permitan.
 - Webhooks/n8n opcionales.
 
-## REQUIERE CONFIGURACIÓN O ACCIÓN EXTERNA
+## REQUIERE ACCIÓN EXTERNA DEL PROPIETARIO
 
-- Crear/configurar las apps de TikTok, Google/YouTube y Meta y aprobar los permisos/scopes requeridos.
-- Registrar redirect URIs y completar OAuth con cuentas reales.
-- Proporcionar secretos mediante variables de entorno server-side; nunca se guardan en Git.
-- Elegir/provisionar un worker persistente con FFmpeg, FFprobe, Whisper y TTS.
-- Proporcionar almacenamiento duradero compartido para producción.
-- Resolver límites externos de despliegue si Vercel bloquea builds por cuota/rate limit.
+- Crear/configurar o aprobar las apps de TikTok, Google/YouTube y Meta con los scopes necesarios.
+- Registrar los redirect URI HTTPS reales.
+- Configurar en el hosting los secretos de OAuth, CredentialVault y acceso del propietario; nunca se guardan en Git.
+- Conectar cuentas reales en `/connections` y ejecutar una publicación controlada para validar cada provider en vivo.
+- Provisionar el worker persistente y el almacenamiento duradero de producción.
 
-## LIMITACIONES QUE NO SE OCULTAN
+## LIMITACIONES EXPLÍCITAS
 
-- `Channel.userId` continúa `null` hasta implementar autenticación real.
-- JSON local no ofrece aislamiento multiusuario ni operación segura multi-instancia.
-- Vercel no debe ejecutar el trabajo pesado definitivo de FFmpeg/Whisper/TTS.
-- Auto Focus V1 reacciona a voz, pero no identifica visualmente al hablante entre varias personas.
-- News Mode V1 no verifica hechos contra Internet ni descarga material de medios de terceros.
-- Los providers de publicación están probados con mocks/contratos; no se afirma publicación real sin OAuth y cuentas autorizadas.
+- `Channel.userId` sigue `null` en el modo actual de propietario único.
+- El filesystem local no es seguro para múltiples instancias ni tenants.
+- Auto Focus V1 reacciona a voz pero no identifica visualmente al hablante entre varias personas.
+- News Mode V1 no descarga material protegido de medios de terceros ni inventa hechos ausentes en la fuente.
+- Publicación real de terceros no se declara verificada hasta completar OAuth con credenciales reales y publicar una prueba autorizada.
