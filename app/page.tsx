@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { MediaEnvironmentStatus } from "@/components/MediaEnvironmentStatus";
 import { RecentProjects } from "@/components/RecentProjects";
 import { UploadPanel } from "@/components/UploadPanel";
@@ -16,18 +17,18 @@ export default function Home() {
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a
+            <Link
               href="/live"
               className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
             >
               ● CAPTURA LIVE
-            </a>
-            <a
+            </Link>
+            <Link
               href="/autopilot"
               className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:bg-white/10"
             >
               AUTOPILOT
-            </a>
+            </Link>
             <a
               href="#nuevo-proyecto"
               className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
