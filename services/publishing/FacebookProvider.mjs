@@ -94,6 +94,7 @@ export class FacebookProvider {
       method: "POST",
       headers: {
         Authorization: `OAuth ${accessToken}`,
+        offset: "0",
         file_size: String(file.size),
         "Content-Type": "application/octet-stream",
       },
