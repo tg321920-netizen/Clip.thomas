@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ManualLiveCapture } from "@/components/ManualLiveCapture";
 import { MediaEnvironmentStatus } from "@/components/MediaEnvironmentStatus";
 import { RecentProjects } from "@/components/RecentProjects";
 import { UploadPanel } from "@/components/UploadPanel";
@@ -6,7 +8,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-8 sm:px-8 lg:px-10">
-        <header className="flex items-center justify-between gap-5 border-b border-white/10 pb-5">
+        <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-400">
               ClipForge Multi
@@ -15,12 +17,20 @@ export default function Home() {
               Convierte videos largos en clips listos para publicar.
             </h1>
           </div>
-          <a
-            href="#nuevo-proyecto"
-            className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
-          >
-            + NUEVO PROYECTO
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/autopilot"
+              className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/5"
+            >
+              AUTOPILOT
+            </Link>
+            <a
+              href="#nuevo-proyecto"
+              className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+            >
+              + NUEVO PROYECTO
+            </a>
+          </div>
         </header>
 
         <section
@@ -29,7 +39,7 @@ export default function Home() {
         >
           <div>
             <div className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
-              Fase 1 · Upload + FFprobe + FFmpeg real
+              Upload + FFprobe + FFmpeg real
             </div>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
@@ -59,6 +69,10 @@ export default function Home() {
 
           <UploadPanel />
         </section>
+
+        <div className="pb-10">
+          <ManualLiveCapture />
+        </div>
 
         <RecentProjects />
 
