@@ -10,8 +10,9 @@ const PUBLIC_PATHS = new Set([
   "/login",
   "/setup-required",
   "/api/auth/owner/login",
-  "/api/health",
 ]);
+
+const PUBLIC_HEALTH_PATH = "/api/health";
 
 export default async function proxy(request: NextRequest) {
   if (!shouldRequireOwnerAuth(process.env)) {
@@ -19,26 +20,18 @@ export default async function proxy(request: NextRequest) {
   }
 
   const pathname = request.nextUrl.pathname;
-  const isApi = pathname.startsWith("/api/");
-  const auth = getOwnerAuthConfig(process.env);
-
-  if (PUBLIC_PATHS.has(pathname)) {
-    if (pathname === "/login" && auth.configured) {
-      const token = request.cookies.get(OWNER_SESSION_COOKIE)?.value || "";
-      const valid = await verifyOwnerSessionToken(token, {
-        sessionKey: auth.sessionKey,
-      });
-      if (valid) {
-        const homeUrl = request.nextUrl.clone();
-        homeUrl.pathname = "/";
-        homeUrl.search = "";
-        return NextResponse.redirect(homeUrl);
-      }
-    }
+  if (pathname === PUBLIC_HEALTH_PATH) {
     return NextResponse.next();
   }
 
+  const isApi = pathname.startsWith("/api/");
+  const auth = getOwnerAuthConfig(process.env);
+
   if (!auth.configured) {
+    if (pathname === "/setup-required") {
+      return NextResponse.next();
+    }
+
     if (isApi) {
       return NextResponse.json(
         {
@@ -61,6 +54,22 @@ export default async function proxy(request: NextRequest) {
     homeUrl.pathname = "/";
     homeUrl.search = "";
     return NextResponse.redirect(homeUrl);
+  }
+
+  if (PUBLIC_PATHS.has(pathname)) {
+    if (pathname === "/login") {
+      const token = request.cookies.get(OWNER_SESSION_COOKIE)?.value || "";
+      const valid = await verifyOwnerSessionToken(token, {
+        sessionKey: auth.sessionKey,
+      });
+      if (valid) {
+        const homeUrl = request.nextUrl.clone();
+        homeUrl.pathname = "/";
+        homeUrl.search = "";
+        return NextResponse.redirect(homeUrl);
+      }
+    }
+    return NextResponse.next();
   }
 
   const token = request.cookies.get(OWNER_SESSION_COOKIE)?.value || "";
