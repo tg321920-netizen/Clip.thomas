@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "node -e \"console.log('Legacy duplicate Vercel project disabled; canonical deployment is clip-thomas.'); process.exit(0)\""
+}
