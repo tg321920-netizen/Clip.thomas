@@ -1,0 +1,64 @@
+FROM node:22-bookworm-slim AS whisper-builder
+
+ARG WHISPER_CPP_COMMIT=d09f61a708f3487afa956ff578e60eae5e7a233c
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    curl \
+    git \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --filter=blob:none https://github.com/ggml-org/whisper.cpp.git /src/whisper.cpp \
+  && cd /src/whisper.cpp \
+  && git checkout "${WHISPER_CPP_COMMIT}" \
+  && cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_NATIVE=OFF \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+  && cmake --build build --config Release --target whisper-cli --parallel 2
+
+RUN mkdir -p /opt/clipforge/models \
+  && curl --fail --location --retry 3 \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
+    --output /opt/clipforge/models/ggml-tiny.bin \
+  && test -s /opt/clipforge/models/ggml-tiny.bin
+
+FROM node:22-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV WHISPER_PROVIDER=cpp
+ENV WHISPER_CPP_COMMAND=/usr/local/bin/whisper-cli
+ENV WHISPER_CPP_MODEL_PATH=/opt/clipforge/models/ggml-tiny.bin
+ENV WHISPER_CPP_THREADS=1
+ENV ESPEAK_NG_PATH=/usr/bin/espeak-ng
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    ffmpeg \
+    espeak-ng \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=whisper-builder /src/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper-builder /opt/clipforge/models/ggml-tiny.bin /opt/clipforge/models/ggml-tiny.bin
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --include=dev
+
+COPY . .
+RUN npm run build \
+  && npm prune --omit=dev
+
+EXPOSE 10000
+
+CMD ["node", "scripts/render-runtime-free.mjs"]
