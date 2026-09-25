@@ -13,6 +13,7 @@ on:
       - "render.production.yaml"
       - "scripts/render-runtime.mjs"
       - "scripts/render-runtime-free.mjs"
+      - "scripts/whisper-cpp-smoke.mjs"
       - "services/transcription/TranscriptionService.mjs"
       - "services/transcription/WhisperCppProvider.mjs"
       - "tests/whisper-cpp.test.mjs"
@@ -85,6 +86,13 @@ jobs:
             -e CLIPFORGE_STORAGE_DIR=/tmp/clipforge \
             clipforge-runtime-free-ci \
             node scripts/render-runtime-free.mjs --check
+
+      - name: Whisper.cpp real speech smoke test
+        run: |
+          docker run --rm \
+            -e CLIPFORGE_STORAGE_DIR=/tmp/clipforge \
+            clipforge-runtime-free-ci \
+            node scripts/whisper-cpp-smoke.mjs
 
       - name: Boot free runtime and verify health
         run: |
