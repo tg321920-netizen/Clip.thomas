@@ -1,0 +1,45 @@
+# Production owner-only runtime: durable disk is required because projects, jobs,
+# renders and encrypted OAuth credentials currently use filesystem persistence.
+services:
+  - type: web
+    name: clipforge-runtime
+    runtime: docker
+    plan: 1c-2g
+    region: virginia
+    repo: https://github.com/tg321920-netizen/Clip.thomas
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    numInstances: 1
+    maxShutdownDelaySeconds: 60
+    disk:
+      name: clipforge-data
+      mountPath: /var/data/clipforge
+      sizeGB: 10
+    envVars:
+      - key: CLIPFORGE_STORAGE_DIR
+        value: /var/data/clipforge
+      - key: CLIPFORGE_RUNTIME_HOME
+        value: /var/data/clipforge/.runtime-home
+      - key: CLIPFORGE_REQUIRE_OWNER_AUTH
+        value: "true"
+      - key: CLIPFORGE_OWNER_ACCESS_KEY
+        sync: false
+      - key: CLIPFORGE_SESSION_KEY
+        generateValue: true
+      - key: CLIPFORGE_CREDENTIALS_KEY
+        generateValue: true
+      - key: CLIPFORGE_OAUTH_STATE_KEY
+        generateValue: true
+      - key: WHISPER_COMMAND
+        value: /opt/clipforge-venv/bin/whisper
+      - key: WHISPER_MODEL
+        value: tiny
+      - key: ESPEAK_NG_PATH
+        value: /usr/bin/espeak-ng
+      - key: CLIPFORGE_NEWS_VOICE
+        value: es
+      - key: CLIPFORGE_NEWS_TTS_SPEED
+        value: "165"
