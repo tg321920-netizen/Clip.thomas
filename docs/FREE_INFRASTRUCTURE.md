@@ -6,27 +6,30 @@ Empezar a usar ClipForge sin pagar infraestructura mientras se valida el flujo r
 
 ## Frontend / panel
 
-El proyecto canónico en Vercel es `clip-thomas`. La aplicación ya se construye y despliega desde `main`.
+El proyecto canónico en Vercel es `clip-thomas`. La aplicación se construye y despliega desde `main`.
 
-Vercel puede servir la interfaz y las rutas ligeras, pero su entorno no se considera el procesador multimedia principal porque el deployment no incluye FFmpeg/FFprobe/Whisper persistentes.
+Vercel sirve la interfaz y las rutas ligeras. No se presenta como el procesador multimedia principal porque su runtime no incluye FFmpeg/FFprobe/Whisper persistentes.
 
 ## Runtime multimedia gratis
 
-`render.yaml` define ahora un runtime Docker en plan `free` con el pipeline real de ClipForge:
+`render.yaml` define un runtime Docker en plan `free` usando `Dockerfile.free` y el pipeline real de ClipForge:
 
-- FFmpeg + FFprobe
-- Whisper `tiny`
-- espeak-ng
-- Next.js
-- workers de transcripción, análisis, Auto Edit, render, News Mode, Autopilot, publishing y analytics
+- FFmpeg + FFprobe.
+- `whisper.cpp` con modelo multilingual `tiny`, en vez del runtime Python/PyTorch más pesado.
+- espeak-ng.
+- Next.js.
+- transcripción, análisis, Auto Edit, render, News Mode, Autopilot, publishing y analytics.
+
+Para reducir memoria, `scripts/render-runtime-free.mjs` mantiene el servidor web y ejecuta los workers **uno por uno** mediante `--once`; no mantiene ocho procesos Node de workers residentes simultáneamente.
 
 El almacenamiento se apunta a `/tmp/clipforge` para no requerir disco de pago.
 
 ### Limitaciones del modo gratis
 
 - El almacenamiento es efímero: proyectos, videos, renders, jobs y credenciales locales pueden perderse cuando la instancia duerme, reinicia o se redepliega.
-- El plan gratis puede dormir por inactividad y tardar en despertar.
-- Video + Whisper + FFmpeg pueden superar CPU/RAM disponibles en trabajos grandes. Para empezar, usar videos cortos y `WHISPER_MODEL=tiny`.
+- El servicio gratis puede dormir por inactividad y tardar en despertar.
+- La CPU/RAM gratis es limitada. `whisper.cpp tiny` y los workers secuenciales reducen consumo, pero video + transcripción + FFmpeg seguirán siendo lentos frente a infraestructura dedicada.
+- Para validar el MVP conviene comenzar con videos cortos y clips pequeños.
 - No usar este modo como almacenamiento definitivo ni para un SaaS multiusuario.
 
 ## Seguridad
@@ -35,6 +38,6 @@ El almacenamiento se apunta a `/tmp/clipforge` para no requerir disco de pago.
 
 ## Paso de actualización cuando haya ingresos
 
-`render.production.yaml` conserva la configuración durable: una instancia con disco persistente. Al migrar, los datos dejan de depender de `/tmp` y se mantienen entre reinicios/despliegues.
+`render.production.yaml` conserva la configuración durable: una instancia con disco persistente y el runtime completo. Al migrar, los datos dejan de depender de `/tmp` y se mantienen entre reinicios/despliegues.
 
-Después, el siguiente salto es mover proyectos/jobs/publicaciones a Postgres/Neon y los videos/renders a object storage, dejando los workers separados para escalar.
+Después, el siguiente salto es mover proyectos/jobs/publicaciones a Postgres/Neon y los videos/renders a object storage, dejando workers separados para escalar.
