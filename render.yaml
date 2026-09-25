@@ -1,10 +1,12 @@
-# Production owner-only runtime: durable disk is required because projects, jobs,
-# renders and encrypted OAuth credentials currently use filesystem persistence.
+# Free MVP runtime. This intentionally uses ephemeral storage so ClipForge can be
+# tried without paid infrastructure. Data can disappear when the free instance
+# sleeps, restarts or redeploys. Use render.production.yaml when durable storage
+# and always-on processing become necessary.
 services:
   - type: web
-    name: clipforge-runtime
+    name: clipforge-runtime-free
     runtime: docker
-    plan: 1c-2g
+    plan: free
     region: virginia
     repo: https://github.com/tg321920-netizen/Clip.thomas
     branch: main
@@ -14,15 +16,11 @@ services:
     healthCheckPath: /api/health
     numInstances: 1
     maxShutdownDelaySeconds: 60
-    disk:
-      name: clipforge-data
-      mountPath: /var/data/clipforge
-      sizeGB: 10
     envVars:
       - key: CLIPFORGE_STORAGE_DIR
-        value: /var/data/clipforge
+        value: /tmp/clipforge
       - key: CLIPFORGE_RUNTIME_HOME
-        value: /var/data/clipforge/.runtime-home
+        value: /tmp/clipforge/.runtime-home
       - key: CLIPFORGE_REQUIRE_OWNER_AUTH
         value: "true"
       - key: CLIPFORGE_OWNER_ACCESS_KEY
