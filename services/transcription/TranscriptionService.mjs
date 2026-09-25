@@ -5,6 +5,7 @@ import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { extractWhisperAudio } from "./AudioExtractor.mjs";
 import { WhisperCliProvider } from "./WhisperCliProvider.mjs";
+import { WhisperCppProvider } from "./WhisperCppProvider.mjs";
 
 export async function transcribeProject(projectId, options = {}) {
   const project = await loadProjectFile(projectId);
@@ -22,14 +23,15 @@ export async function transcribeProject(projectId, options = {}) {
   await mkdir(transcriptDir, { recursive: true });
 
   const startedAt = new Date().toISOString();
+  const providerMetadata = getDefaultProviderMetadata(options);
 
   project.transcript = {
     id: project?.transcript?.id || randomUUID(),
     projectId,
     videoId: getVideoId(project),
     status: "PROCESSING",
-    provider: "whisper-cli",
-    model: options.model || process.env.WHISPER_MODEL?.trim() || "base",
+    provider: providerMetadata.provider,
+    model: providerMetadata.model,
     language: null,
     text: "",
     segments: [],
@@ -46,13 +48,7 @@ export async function transcribeProject(projectId, options = {}) {
   try {
     await extractWhisperAudio(sourcePath, audioPath);
 
-    const provider =
-      options.provider ||
-      new WhisperCliProvider({
-        model: options.model,
-        language: options.language,
-      });
-
+    const provider = options.provider || createDefaultProvider(options);
     const result = await provider.transcribe(audioPath, transcriptDir);
 
     project.transcript = {
@@ -105,6 +101,49 @@ export function getSourceKey(project) {
     Number(source.sizeBytes || 0),
     Number(source.durationSeconds || 0),
   ].join(":");
+}
+
+export function createDefaultProvider(options = {}) {
+  const providerKind = String(process.env.WHISPER_PROVIDER || "cli")
+    .trim()
+    .toLowerCase();
+
+  if (providerKind === "cpp" || providerKind === "whisper.cpp") {
+    return new WhisperCppProvider({
+      language: options.language,
+    });
+  }
+
+  return new WhisperCliProvider({
+    model: options.model,
+    language: options.language,
+  });
+}
+
+function getDefaultProviderMetadata(options = {}) {
+  if (options.provider) {
+    return {
+      provider: "transcription-provider",
+      model: options.model || "custom",
+    };
+  }
+
+  const providerKind = String(process.env.WHISPER_PROVIDER || "cli")
+    .trim()
+    .toLowerCase();
+
+  if (providerKind === "cpp" || providerKind === "whisper.cpp") {
+    const modelPath = String(process.env.WHISPER_CPP_MODEL_PATH || "").trim();
+    return {
+      provider: "whisper.cpp",
+      model: modelPath ? path.basename(modelPath) : "whisper.cpp",
+    };
+  }
+
+  return {
+    provider: "whisper-cli",
+    model: options.model || process.env.WHISPER_MODEL?.trim() || "base",
+  };
 }
 
 function getVideoId(project) {
