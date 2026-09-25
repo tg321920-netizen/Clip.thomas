@@ -1,3 +1,5 @@
+# Production owner-only runtime: durable disk is required because projects, jobs,
+# renders and encrypted OAuth credentials currently use filesystem persistence.
 services:
   - type: web
     name: clipforge-runtime
