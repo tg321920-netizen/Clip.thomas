@@ -87,8 +87,6 @@ export async function POST(request: Request) {
       source: {
         ...video,
         relativePath: path.posix.join("uploads", projectId, "source.mp4"),
-        streamOrigin: rawUrl,
-        captureDurationSeconds: durationSeconds,
       },
     });
 
