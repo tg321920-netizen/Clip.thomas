@@ -13,6 +13,9 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "clipforge/**",
+    // Runtime dependencies are generated/downloaded during Render builds.
+    // They are third-party artifacts (FFmpeg/whisper.cpp), not ClipForge source.
+    ".runtime/**",
   ]),
 ]);
 
