@@ -6,6 +6,9 @@ RUNTIME_ROOT="$ROOT/.runtime"
 WHISPER_SRC="$RUNTIME_ROOT/src/whisper.cpp"
 WHISPER_COMMIT="d09f61a708f3487afa956ff578e60eae5e7a233c"
 WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+ESPEAK_SRC="$RUNTIME_ROOT/src/espeak-ng"
+ESPEAK_PREFIX="$RUNTIME_ROOT/espeak"
+ESPEAK_COMMIT="4870adfa25b1a32b4361592f1be8a40337c58d6c"
 TOOLING_ROOT="$RUNTIME_ROOT/tooling"
 
 cd "$ROOT"
@@ -41,8 +44,8 @@ ffmpeg -version >/dev/null
 ffprobe -version >/dev/null
 
 # cmake is not guaranteed by Render's native runtime. Install its Python wheel
-# only for the build if necessary; the built whisper-cli is copied into the
-# deploy artifact and does not require cmake at runtime.
+# only for the build if necessary; the built media tools are copied into the
+# deploy artifact and do not require cmake at runtime.
 if ! command -v cmake >/dev/null 2>&1; then
   python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-cache-dir cmake
   export PATH="$(python3 -m site --user-base)/bin:$PATH"
@@ -69,6 +72,28 @@ curl --fail --location --retry 3 \
   --output "$RUNTIME_ROOT/models/ggml-tiny.bin"
 test -s "$RUNTIME_ROOT/models/ggml-tiny.bin"
 
+# News Mode needs real narration. Bundle a pinned eSpeak NG build instead of
+# depending on packages installed in Render's host image or a paid TTS API.
+rm -rf "$ESPEAK_SRC" "$ESPEAK_PREFIX"
+git clone --filter=blob:none --no-checkout https://github.com/espeak-ng/espeak-ng.git "$ESPEAK_SRC"
+cd "$ESPEAK_SRC"
+git fetch --depth 1 origin "$ESPEAK_COMMIT"
+git checkout --detach FETCH_HEAD
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$ESPEAK_PREFIX" \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DUSE_LIBPCAUDIO=OFF \
+  -DUSE_SONIC=OFF
+cmake --build build --config Release --parallel 2
+cmake --build build --config Release --target data --parallel 1
+cmake --install build
+
+test -x "$ESPEAK_PREFIX/bin/espeak-ng"
+test -d "$ESPEAK_PREFIX/share/espeak-ng-data"
+ESPEAK_DATA_PATH="$ESPEAK_PREFIX/share/espeak-ng-data" \
+  "$ESPEAK_PREFIX/bin/espeak-ng" --version >/dev/null
+
 cd "$ROOT"
 npm ci --include=dev
 npm run build
@@ -78,11 +103,8 @@ rm -rf "$TOOLING_ROOT"
 "$RUNTIME_ROOT/bin/whisper-cli" --help >/dev/null 2>&1 || true
 ffmpeg -version >/dev/null
 ffprobe -version >/dev/null
+ESPEAK_DATA_PATH="$ESPEAK_PREFIX/share/espeak-ng-data" \
+  "$ESPEAK_PREFIX/bin/espeak-ng" --version >/dev/null
 
-if command -v espeak-ng >/dev/null 2>&1; then
-  echo "[render-native] espeak-ng detected; News Mode local narration is available."
-else
-  echo "[render-native] espeak-ng is not present in the native runtime; core clip processing remains available."
-fi
-
-echo "[render-native] build completed with FFmpeg, FFprobe and whisper.cpp tiny model."
+echo "[render-native] eSpeak NG bundled; News Mode local narration is available."
+echo "[render-native] build completed with FFmpeg, FFprobe, whisper.cpp tiny model and eSpeak NG."
