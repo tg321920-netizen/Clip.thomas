@@ -9,7 +9,9 @@ const ALGORITHM = "aes-256-gcm";
 
 export class CredentialVault {
   constructor(options = {}) {
-    this.key = options.key || loadMasterKey();
+    this.key = Object.prototype.hasOwnProperty.call(options, "key")
+      ? options.key
+      : loadMasterKey();
   }
 
   isConfigured() {
