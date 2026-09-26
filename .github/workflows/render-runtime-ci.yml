@@ -11,6 +11,7 @@ on:
       - ".dockerignore"
       - "render.yaml"
       - "render.production.yaml"
+      - "scripts/render-native-free-build.sh"
       - "scripts/render-runtime.mjs"
       - "scripts/render-runtime-free.mjs"
       - "scripts/whisper-cpp-smoke.mjs"
@@ -118,4 +119,68 @@ jobs:
           done
 
           echo "ClipForge free runtime did not become healthy in time." >&2
+          exit 1
+
+  native-free-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify native host prerequisites
+        run: |
+          command -v ffmpeg
+          command -v ffprobe
+          command -v python3
+          command -v curl
+          command -v git
+
+      - name: Build native Render runtime
+        run: bash scripts/render-native-free-build.sh
+
+      - name: Verify native whisper runtime
+        run: |
+          test -x "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli"
+          test -s "$GITHUB_WORKSPACE/.runtime/models/ggml-tiny.bin"
+          "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli" --help >/dev/null 2>&1 || true
+
+      - name: Boot native runtime and verify health
+        env:
+          PORT: "10002"
+          CLIPFORGE_STORAGE_DIR: /tmp/clipforge-native
+          CLIPFORGE_RUNTIME_HOME: /tmp/clipforge-native/.runtime-home
+          CLIPFORGE_REQUIRE_OWNER_AUTH: "false"
+          WHISPER_PROVIDER: cpp
+          WHISPER_CPP_COMMAND: ${{ github.workspace }}/.runtime/bin/whisper-cli
+          WHISPER_CPP_MODEL_PATH: ${{ github.workspace }}/.runtime/models/ggml-tiny.bin
+          WHISPER_CPP_THREADS: "1"
+        run: |
+          node scripts/render-runtime-free.mjs > /tmp/native-runtime.log 2>&1 &
+          runtime_pid=$!
+
+          cleanup() {
+            cat /tmp/native-runtime.log || true
+            kill "$runtime_pid" >/dev/null 2>&1 || true
+            wait "$runtime_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:10002/api/health > /tmp/native-health.json; then
+              cat /tmp/native-health.json
+              node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("/tmp/native-health.json","utf8")); if (value.status !== "ok" || value.mediaReady !== true || value.ffmpeg !== true || value.ffprobe !== true || value.storageWritable !== true) process.exit(1);'
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "ClipForge native free runtime did not become healthy in time." >&2
           exit 1
