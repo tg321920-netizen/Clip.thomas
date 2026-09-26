@@ -4,6 +4,7 @@ export type ChannelStatus =
   | "CONNECTED"
   | "PAUSED"
   | "ERROR";
+export type OAuthProfile = "DEFAULT" | "SECONDARY";
 
 export type ChannelStrategy = {
   channelId: string;
@@ -24,6 +25,7 @@ export type ChannelRecord = {
   userId: string | null;
   platform: ChannelPlatform;
   name: string;
+  oauthProfile: OAuthProfile;
   externalAccountId: string | null;
   status: ChannelStatus;
   publishingEnabled: boolean;
