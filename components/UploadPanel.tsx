@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import {
   MAX_UPLOAD_BYTES,
@@ -12,6 +12,8 @@ import { NewsModePanel } from "@/components/NewsModePanel";
 
 type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
+const PROJECT_OPEN_EVENT = "clipforge:project-open";
+
 export function UploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
@@ -21,6 +23,22 @@ export function UploadPanel() {
   const [result, setResult] = useState<UploadedVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    const openProject = (event: Event) => {
+      const video = (event as CustomEvent<UploadedVideo>).detail;
+      if (!video?.projectId) return;
+
+      setFile(null);
+      setProgress(null);
+      setError(null);
+      setResult(video);
+      setState("done");
+    };
+
+    window.addEventListener(PROJECT_OPEN_EVENT, openProject);
+    return () => window.removeEventListener(PROJECT_OPEN_EVENT, openProject);
+  }, []);
 
   function chooseFile(nextFile: File | undefined) {
     if (!nextFile) return;
@@ -141,7 +159,10 @@ export function UploadPanel() {
   const busy = state === "checking" || state === "uploading";
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30 sm:p-6">
+    <div
+      id="clipforge-upload-panel"
+      className="scroll-mt-6 rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30 sm:p-6"
+    >
       <div
         onDragEnter={(event) => {
           event.preventDefault();
@@ -275,7 +296,7 @@ export function UploadPanel() {
               <span className="text-xs text-emerald-400">REAL</span>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
-              El reproductor usa el archivo que acabas de subir, no una demo.
+              El reproductor usa el archivo guardado de este proyecto, no una demo.
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
