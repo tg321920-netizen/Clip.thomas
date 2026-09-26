@@ -9,6 +9,8 @@ type ProjectRecord = {
   source: UploadedVideo;
 };
 
+const PROJECT_OPEN_EVENT = "clipforge:project-open";
+
 export function RecentProjects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -44,6 +46,21 @@ export function RecentProjects() {
     };
   }, []);
 
+  function openProject(project: ProjectRecord) {
+    window.dispatchEvent(
+      new CustomEvent<UploadedVideo>(PROJECT_OPEN_EVENT, {
+        detail: project.source,
+      }),
+    );
+
+    requestAnimationFrame(() => {
+      document.getElementById("clipforge-upload-panel")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   if (!loaded || projects.length === 0) return null;
 
   return (
@@ -60,9 +77,12 @@ export function RecentProjects() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {projects.slice(0, 6).map((project) => (
-          <article
+          <button
             key={project.id}
-            className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            type="button"
+            onClick={() => openProject(project)}
+            className="group rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:border-violet-400/30 hover:bg-violet-500/[0.06] focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+            aria-label={`Abrir proyecto ${project.source.originalName}`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -77,12 +97,15 @@ export function RecentProjects() {
                 {project.source.width}×{project.source.height}
               </span>
             </div>
-            <div className="mt-3 flex gap-3 text-xs text-zinc-500">
+            <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-500">
               <span>{formatDuration(project.source.durationSeconds)}</span>
               <span>{project.source.codec.toUpperCase()}</span>
               <span>{project.source.aspectRatio}</span>
+              <span className="ml-auto font-medium text-violet-300 transition group-hover:text-violet-200">
+                Abrir proyecto →
+              </span>
             </div>
-          </article>
+          </button>
         ))}
       </div>
     </section>
