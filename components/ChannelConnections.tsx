@@ -80,6 +80,50 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
     }
   }
 
+  async function deleteChannel(channel: ChannelRecord) {
+    const confirmed = window.confirm(
+      `¿Eliminar el canal "${channel.name}" de ClipForge? También se eliminarán sus credenciales guardadas.`,
+    );
+    if (!confirmed) return;
+
+    setBusy(channel.id);
+    setMessage((current) => ({ ...current, [channel.id]: "" }));
+
+    try {
+      const disconnectResponse = await fetch(
+        `/api/oauth/${channel.platform.toLowerCase()}/disconnect?channelId=${encodeURIComponent(channel.id)}`,
+        { method: "POST" },
+      );
+      if (!disconnectResponse.ok) {
+        const body = await disconnectResponse.json().catch(() => null);
+        throw new Error(body?.error || "No se pudieron limpiar las credenciales del canal.");
+      }
+
+      const response = await fetch(`/api/channels/${encodeURIComponent(channel.id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok && response.status !== 404) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "No se pudo eliminar el canal.");
+      }
+
+      setPages((current) => {
+        const next = { ...current };
+        delete next[channel.id];
+        return next;
+      });
+      setCreateMessage(`Canal eliminado: ${channel.name}`);
+      router.refresh();
+    } catch (error) {
+      setMessage((current) => ({
+        ...current,
+        [channel.id]: error instanceof Error ? error.message : "No se pudo eliminar el canal.",
+      }));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function loadFacebookPages(channel: ChannelRecord) {
     setBusy(channel.id);
     setMessage((current) => ({ ...current, [channel.id]: "" }));
@@ -279,6 +323,15 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
                       Elegir página
                     </button>
                   ) : null}
+
+                  <button
+                    type="button"
+                    disabled={working}
+                    onClick={() => void deleteChannel(channel)}
+                    className="rounded-lg border border-red-400/25 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-40"
+                  >
+                    {working ? "Procesando…" : "Eliminar"}
+                  </button>
                 </div>
 
                 {channelPages.length > 0 ? (
