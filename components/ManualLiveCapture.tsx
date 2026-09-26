@@ -14,11 +14,14 @@ type CaptureState =
   | "done"
   | "error";
 
+type CaptureSource = "screen" | "camera";
+
 export function ManualLiveCapture() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [state, setState] = useState<CaptureState>("idle");
+  const [source, setSource] = useState<CaptureSource | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<UploadedVideo | null>(null);
@@ -32,18 +35,27 @@ export function ManualLiveCapture() {
     };
   }, [previewUrl]);
 
-  const supported =
+  const recorderSupported = typeof MediaRecorder !== "undefined";
+  const screenSupported =
     typeof navigator !== "undefined" &&
     Boolean(navigator.mediaDevices?.getDisplayMedia) &&
-    typeof MediaRecorder !== "undefined";
+    recorderSupported;
+  const cameraSupported =
+    typeof navigator !== "undefined" &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    recorderSupported;
+  const supported = screenSupported || cameraSupported;
 
-  async function startCapture() {
+  async function startCapture(nextSource: CaptureSource) {
     if (!supported || state === "recording" || state === "requesting") return;
+    if (nextSource === "screen" && !screenSupported) return;
+    if (nextSource === "camera" && !cameraSupported) return;
 
     setError(null);
     setAutopilotMessage(null);
     setResult(null);
     setFile(null);
+    setSource(nextSource);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -51,10 +63,14 @@ export function ManualLiveCapture() {
     setState("requesting");
 
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      const stream =
+        nextSource === "screen"
+          ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+          : await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: "environment" } },
+              audio: true,
+            });
+
       streamRef.current = stream;
       chunksRef.current = [];
 
@@ -69,7 +85,7 @@ export function ManualLiveCapture() {
       };
 
       recorder.onerror = () => {
-        setError("La captura del navegador reportó un error.");
+        setError("La grabación del navegador reportó un error.");
         setState("error");
         stopTracks(streamRef.current);
       };
@@ -83,7 +99,7 @@ export function ManualLiveCapture() {
         streamRef.current = null;
 
         if (blob.size <= 0) {
-          setError("La captura terminó sin datos de video.");
+          setError("La grabación terminó sin datos de video.");
           setState("error");
           return;
         }
@@ -100,7 +116,7 @@ export function ManualLiveCapture() {
         });
 
         if (!validation.ok) {
-          setError(validation.error || "La captura no cumple las reglas de subida.");
+          setError(validation.error || "La grabación no cumple las reglas de subida.");
           setState("error");
           return;
         }
@@ -129,7 +145,7 @@ export function ManualLiveCapture() {
       setError(
         captureError instanceof Error
           ? captureError.message
-          : "No se pudo iniciar la captura de pantalla.",
+          : "No se pudo iniciar la grabación.",
       );
       setState("error");
     }
@@ -200,14 +216,14 @@ export function ManualLiveCapture() {
       } else {
         setAutopilotMessage(
           advancePayload.error ||
-            "La captura se guardó, pero Autopilot no pudo iniciar el siguiente paso.",
+            "La grabación se guardó, pero Autopilot no pudo iniciar el siguiente paso.",
         );
       }
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
           ? uploadError.message
-          : "No se pudo guardar la captura.",
+          : "No se pudo guardar la grabación.",
       );
       setState("error");
     }
@@ -224,6 +240,7 @@ export function ManualLiveCapture() {
     setResult(null);
     setError(null);
     setAutopilotMessage(null);
+    setSource(null);
     setState("idle");
   }
 
@@ -236,26 +253,50 @@ export function ManualLiveCapture() {
           </p>
           <h2 className="mt-2 text-xl font-semibold">Marca el inicio y final de un momento</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-            El navegador te pide elegir una pantalla, ventana o pestaña. ClipForge solo
-            graba después de tu autorización. Al terminar, la captura se sube como un
-            proyecto real y puede entrar al mismo flujo de Whisper, Auto Edit y render.
+            En computadora puedes capturar una pantalla, ventana o pestaña. En móvil,
+            cuando el navegador no permite compartir pantalla, puedes grabar cámara y
+            micrófono. Al terminar, ClipForge lo guarda como proyecto real y lo envía al
+            mismo flujo de Whisper, Auto Edit y render.
           </p>
         </div>
         <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">
-          {supported ? "CAPTURA DISPONIBLE" : "NO DISPONIBLE EN ESTE NAVEGADOR"}
+          {screenSupported
+            ? "CAPTURA DE PANTALLA DISPONIBLE"
+            : cameraSupported
+              ? "MODO MÓVIL DISPONIBLE"
+              : "NO DISPONIBLE EN ESTE NAVEGADOR"}
         </span>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-3">
         {state !== "recording" ? (
-          <button
-            type="button"
-            onClick={() => void startCapture()}
-            disabled={!supported || state === "requesting" || state === "uploading"}
-            className="rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {state === "requesting" ? "Esperando permiso…" : "● COMENZAR CAPTURA"}
-          </button>
+          <>
+            {screenSupported ? (
+              <button
+                type="button"
+                onClick={() => void startCapture("screen")}
+                disabled={state === "requesting" || state === "uploading"}
+                className="rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {state === "requesting" && source === "screen"
+                  ? "Esperando permiso…"
+                  : "● CAPTURAR PANTALLA"}
+              </button>
+            ) : null}
+
+            {cameraSupported ? (
+              <button
+                type="button"
+                onClick={() => void startCapture("camera")}
+                disabled={state === "requesting" || state === "uploading"}
+                className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2.5 text-sm font-semibold text-red-200 transition hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {state === "requesting" && source === "camera"
+                  ? "Esperando permiso…"
+                  : "● GRABAR CÁMARA / MIC"}
+              </button>
+            ) : null}
+          </>
         ) : (
           <button
             type="button"
@@ -272,7 +313,7 @@ export function ManualLiveCapture() {
             onClick={() => void uploadCapture()}
             className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
           >
-            Procesar captura con ClipForge
+            Procesar grabación con ClipForge
           </button>
         ) : null}
 
@@ -282,14 +323,23 @@ export function ManualLiveCapture() {
             onClick={reset}
             className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300"
           >
-            Nueva captura
+            Nueva grabación
           </button>
         ) : null}
       </div>
 
+      {!screenSupported && cameraSupported ? (
+        <p className="mt-3 text-xs leading-5 text-amber-200/70">
+          Este navegador móvil no permite que una web grabe otra app o la pantalla completa.
+          Para Twitch, YouTube Live o TikTok Live hace falta el módulo de entrada de streaming
+          por URL/servidor; la grabación móvil disponible aquí usa cámara y micrófono reales.
+        </p>
+      ) : null}
+
       {state === "recording" ? (
         <div className="mt-5 rounded-2xl border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-200">
-          Grabando el origen que autorizaste. Pulsa TERMINAR cuando acabe el momento.
+          Grabando {source === "screen" ? "la pantalla autorizada" : "cámara y micrófono"}.
+          Pulsa TERMINAR cuando acabe el momento.
         </div>
       ) : null}
 
@@ -301,19 +351,19 @@ export function ManualLiveCapture() {
             className="aspect-video w-full rounded-2xl bg-black object-contain"
           />
           <div className="rounded-2xl border border-white/10 p-4">
-            <p className="text-sm font-medium">Captura lista</p>
+            <p className="text-sm font-medium">Grabación lista</p>
             <p className="mt-2 text-xs text-zinc-500">{formatBytes(file.size)}</p>
             <p className="mt-1 text-xs text-zinc-500">{file.type}</p>
             <p className="mt-4 text-xs leading-5 text-zinc-600">
               Límite de subida: {formatBytes(MAX_UPLOAD_BYTES)}. El video no se procesa
-              hasta que pulses “Procesar captura con ClipForge”.
+              hasta que pulses “Procesar grabación con ClipForge”.
             </p>
           </div>
         </div>
       ) : null}
 
       {state === "uploading" ? (
-        <p className="mt-5 text-sm text-violet-300">Subiendo y validando la captura real…</p>
+        <p className="mt-5 text-sm text-violet-300">Subiendo y validando la grabación real…</p>
       ) : null}
 
       {error ? (
@@ -324,7 +374,7 @@ export function ManualLiveCapture() {
 
       {result ? (
         <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4">
-          <p className="text-sm font-semibold text-emerald-200">Captura guardada como proyecto real</p>
+          <p className="text-sm font-semibold text-emerald-200">Grabación guardada como proyecto real</p>
           <p className="mt-1 break-all text-xs text-zinc-500">{result.projectId}</p>
           {autopilotMessage ? (
             <p className="mt-3 text-xs leading-5 text-zinc-400">{autopilotMessage}</p>
