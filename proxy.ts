@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   OWNER_SESSION_COOKIE,
   getOwnerAuthConfig,
+  getPublicRequestOrigin,
   shouldRequireOwnerAuth,
   verifyOwnerSessionToken,
 } from "./lib/owner-auth.mjs";
@@ -43,17 +44,11 @@ export default async function proxy(request: NextRequest) {
       );
     }
 
-    const setupUrl = request.nextUrl.clone();
-    setupUrl.pathname = "/setup-required";
-    setupUrl.search = "";
-    return NextResponse.redirect(setupUrl);
+    return redirectTo(request, "/setup-required");
   }
 
   if (pathname === "/setup-required") {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = "/";
-    homeUrl.search = "";
-    return NextResponse.redirect(homeUrl);
+    return redirectTo(request, "/");
   }
 
   if (PUBLIC_PATHS.has(pathname)) {
@@ -63,10 +58,7 @@ export default async function proxy(request: NextRequest) {
         sessionKey: auth.sessionKey,
       });
       if (valid) {
-        const homeUrl = request.nextUrl.clone();
-        homeUrl.pathname = "/";
-        homeUrl.search = "";
-        return NextResponse.redirect(homeUrl);
+        return redirectTo(request, "/");
       }
     }
     return NextResponse.next();
@@ -88,10 +80,12 @@ export default async function proxy(request: NextRequest) {
     );
   }
 
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = "/login";
-  loginUrl.search = "";
-  return NextResponse.redirect(loginUrl);
+  return redirectTo(request, "/login");
+}
+
+function redirectTo(request: NextRequest, destination: string) {
+  const url = new URL(destination, getPublicRequestOrigin(request));
+  return NextResponse.redirect(url);
 }
 
 export const config = {
