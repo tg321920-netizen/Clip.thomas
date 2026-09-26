@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
@@ -56,10 +56,43 @@ export class ProjectStore {
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, Math.max(1, Math.min(limit, 100)));
   }
+
+  async delete(projectId: string): Promise<boolean> {
+    const root = getStorageRoot();
+    const metadataPath = path.join(getProjectsDir(), `${projectId}.json`);
+    let existed = true;
+
+    try {
+      await rm(metadataPath);
+    } catch (error) {
+      if (isNotFound(error)) existed = false;
+      else throw error;
+    }
+
+    await Promise.all(
+      ["uploads", "clips", "transcripts", "news"].map((directory) =>
+        rm(path.join(root, directory, projectId), {
+          recursive: true,
+          force: true,
+        }),
+      ),
+    );
+
+    return existed;
+  }
 }
 
 function getProjectsDir(): string {
   return path.join(getStorageRoot(), "projects");
+}
+
+function isNotFound(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT",
+  );
 }
 
 function parseProject(raw: string): ProjectRecord | null {
