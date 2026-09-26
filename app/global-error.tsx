@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function GlobalError({
   error,
@@ -9,6 +10,8 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+
   useEffect(() => {
     console.error("ClipForge unexpected application error", error);
   }, [error]);
@@ -45,7 +48,7 @@ export default function GlobalError({
               </button>
               <button
                 type="button"
-                onClick={() => window.location.assign("/")}
+                onClick={() => router.push("/")}
                 className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/10"
               >
                 Volver al inicio
