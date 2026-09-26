@@ -3,6 +3,7 @@ import { ChannelRepository } from "./ChannelRepository.mjs";
 
 const PLATFORMS = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
 const STATUSES = new Set(["DISCONNECTED", "CONNECTED", "PAUSED", "ERROR"]);
+const OAUTH_PROFILES = new Set(["DEFAULT", "SECONDARY"]);
 
 export class ChannelService {
   constructor(options = {}) {
@@ -24,6 +25,7 @@ export class ChannelService {
     const dailyLimit = boundedInteger(input.dailyLimit, 0, 50, 3);
     const status = normalizeStatus(input.status || "DISCONNECTED");
     const publishingEnabled = Boolean(input.publishingEnabled);
+    const oauthProfile = normalizeOAuthProfile(input.oauthProfile || "DEFAULT");
     const now = new Date().toISOString();
     const id = randomUUID();
 
@@ -38,6 +40,7 @@ export class ChannelService {
       userId: null,
       platform,
       name,
+      oauthProfile,
       externalAccountId: cleanOptional(input.externalAccountId, 180),
       status,
       publishingEnabled,
@@ -62,8 +65,12 @@ export class ChannelService {
 
     const updated = {
       ...current,
+      oauthProfile: normalizeOAuthProfile(current.oauthProfile || "DEFAULT"),
       ...(Object.hasOwn(input, "name")
         ? { name: cleanRequired(input.name, "Channel name", 100) }
+        : {}),
+      ...(Object.hasOwn(input, "oauthProfile")
+        ? { oauthProfile: normalizeOAuthProfile(input.oauthProfile) }
         : {}),
       ...(Object.hasOwn(input, "externalAccountId")
         ? { externalAccountId: cleanOptional(input.externalAccountId, 180) }
@@ -170,6 +177,14 @@ export function normalizeTimezone(value) {
   }
 
   return timezone;
+}
+
+export function normalizeOAuthProfile(value) {
+  const profile = String(value || "").trim().toUpperCase();
+  if (!OAUTH_PROFILES.has(profile)) {
+    throw new Error("Invalid OAuth profile. Use DEFAULT or SECONDARY.");
+  }
+  return profile;
 }
 
 function normalizePlatform(value) {
