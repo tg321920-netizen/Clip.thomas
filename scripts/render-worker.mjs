@@ -24,12 +24,24 @@ while (!stopping) {
   }
 
   const clipId = job.entityId || job.payload?.clipId;
+  let heartbeatTimer = null;
 
   try {
     if (!clipId) throw new Error("Render job is missing clipId.");
 
     const clip = await getClip(job.projectId, clipId);
     if (!clip) throw new Error("Clip not found.");
+
+    heartbeatTimer = setInterval(() => {
+      void store.heartbeat(job.id).catch((error) => {
+        console.error("Render heartbeat failed", {
+          projectId: job.projectId,
+          clipId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, 15_000);
+    heartbeatTimer.unref?.();
 
     let lastPersistedProgress = Number(job.progress || 0);
     let progressWrites = Promise.resolve();
@@ -75,6 +87,8 @@ while (!stopping) {
       attempts: failed.attempts,
       error: failed.error,
     });
+  } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
   }
 
   if (once) break;
