@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { access, mkdir } from "node:fs/promises";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import path from "node:path";
 
 const storageRoot = path.resolve(
@@ -15,10 +15,24 @@ const loopDelayMs = clampInteger(
   1000,
   60000,
 );
+const bundledEspeakRoot = path.resolve(process.cwd(), ".runtime", "espeak");
+const bundledEspeakCommand = path.join(bundledEspeakRoot, "bin", "espeak-ng");
+const bundledEspeakData = path.join(
+  bundledEspeakRoot,
+  "share",
+  "espeak-ng-data",
+);
 
 await mkdir(storageRoot, { recursive: true });
 await mkdir(runtimeHome, { recursive: true });
 process.env.HOME = runtimeHome;
+
+if (!process.env.ESPEAK_NG_PATH?.trim() && existsSync(bundledEspeakCommand)) {
+  process.env.ESPEAK_NG_PATH = bundledEspeakCommand;
+}
+if (!process.env.ESPEAK_DATA_PATH?.trim() && existsSync(bundledEspeakData)) {
+  process.env.ESPEAK_DATA_PATH = bundledEspeakData;
+}
 
 if (process.argv.includes("--check")) {
   await verifyRuntime();
@@ -151,7 +165,13 @@ async function verifyRuntime() {
   const modelPath = String(process.env.WHISPER_CPP_MODEL_PATH || "").trim();
   if (!modelPath) throw new Error("WHISPER_CPP_MODEL_PATH is not configured.");
   await access(modelPath, constants.R_OK);
+
+  const espeakDataPath = String(process.env.ESPEAK_DATA_PATH || "").trim();
+  if (!espeakDataPath) throw new Error("ESPEAK_DATA_PATH is not configured.");
+  await access(espeakDataPath, constants.R_OK);
+
   console.log(`[free-runtime] whisper.cpp model ready: ${modelPath}`);
+  console.log(`[free-runtime] eSpeak NG data ready: ${espeakDataPath}`);
   console.log("[free-runtime] media runtime check passed.");
 }
 
