@@ -35,13 +35,18 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
   cp "$FFMPEG_STATIC" "$RUNTIME_ROOT/bin/ffmpeg"
   cp "$FFPROBE_STATIC" "$RUNTIME_ROOT/bin/ffprobe"
   chmod +x "$RUNTIME_ROOT/bin/ffmpeg" "$RUNTIME_ROOT/bin/ffprobe"
+else
+  # The start command intentionally points at .runtime/bin. A host binary may
+  # exist during the build but not at that path in the deployed artifact, so
+  # always copy it into the runtime bundle instead of assuming PATH will match.
+  cp "$(command -v ffmpeg)" "$RUNTIME_ROOT/bin/ffmpeg"
+  cp "$(command -v ffprobe)" "$RUNTIME_ROOT/bin/ffprobe"
+  chmod +x "$RUNTIME_ROOT/bin/ffmpeg" "$RUNTIME_ROOT/bin/ffprobe"
 fi
 
 export PATH="$RUNTIME_ROOT/bin:$PATH"
-command -v ffmpeg >/dev/null
-command -v ffprobe >/dev/null
-ffmpeg -version >/dev/null
-ffprobe -version >/dev/null
+"$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null
+"$RUNTIME_ROOT/bin/ffprobe" -version >/dev/null
 
 # cmake is not guaranteed by Render's native runtime. Install its Python wheel
 # only for the build if necessary; the built media tools are copied into the
@@ -101,8 +106,8 @@ npm prune --omit=dev
 rm -rf "$TOOLING_ROOT"
 
 "$RUNTIME_ROOT/bin/whisper-cli" --help >/dev/null 2>&1 || true
-ffmpeg -version >/dev/null
-ffprobe -version >/dev/null
+"$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null
+"$RUNTIME_ROOT/bin/ffprobe" -version >/dev/null
 ESPEAK_DATA_PATH="$ESPEAK_PREFIX/share/espeak-ng-data" \
   "$ESPEAK_PREFIX/bin/espeak-ng" --version >/dev/null
 
