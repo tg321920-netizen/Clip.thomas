@@ -48,15 +48,15 @@ export async function POST(request: NextRequest) {
   const token = await createOwnerSessionToken({
     sessionKey: auth.sessionKey,
   });
+  const publicOrigin = getPublicRequestOrigin(request);
   const response = wantsJson
     ? NextResponse.json({ ok: true })
-    : redirectTo(request, "/");
+    : NextResponse.redirect(new URL("/", publicOrigin), 303);
 
   response.cookies.set(OWNER_SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure:
-      Boolean(process.env.VERCEL_ENV) || request.nextUrl.protocol === "https:",
+    secure: publicOrigin.startsWith("https://"),
     path: "/",
     maxAge: OWNER_SESSION_MAX_AGE_SECONDS,
   });
