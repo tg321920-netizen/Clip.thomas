@@ -82,6 +82,36 @@ export default async function AutopilotDashboard() {
           </Link>
         </header>
 
+        <section className="mt-6 grid gap-3 sm:grid-cols-3">
+          <Link
+            href="/#nuevo-proyecto"
+            className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.06] p-4 transition hover:bg-violet-400/[0.1]"
+          >
+            <p className="text-sm font-semibold text-violet-200">+ Nuevo trabajo</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Sube un video y arranca el pipeline real de ClipForge.
+            </p>
+          </Link>
+          <Link
+            href="/connections"
+            className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] p-4 transition hover:bg-cyan-400/[0.09]"
+          >
+            <p className="text-sm font-semibold text-cyan-200">Conectar canales</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Agrega TikTok, YouTube o Facebook y autoriza la cuenta.
+            </p>
+          </Link>
+          <Link
+            href="/"
+            className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 transition hover:bg-emerald-400/[0.09]"
+          >
+            <p className="text-sm font-semibold text-emerald-200">Capturar streaming</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Usa la entrada HLS/RTMP del panel principal.
+            </p>
+          </Link>
+        </section>
+
         <section className="grid gap-3 py-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Canales listos" value={connectedChannels.length} />
           <StatCard label="Esperando aprobación" value={waiting.length} />
@@ -210,7 +240,15 @@ export default async function AutopilotDashboard() {
 
           <Panel title="Canales">
             {channels.length === 0 ? (
-              <Empty text="Todavía no hay canales configurados." />
+              <div>
+                <Empty text="Todavía no hay canales configurados." />
+                <Link
+                  href="/connections"
+                  className="mt-3 inline-flex rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  + Agregar canal
+                </Link>
+              </div>
             ) : (
               <div className="space-y-3">
                 {channels.map((channel: ChannelRecord) => (
