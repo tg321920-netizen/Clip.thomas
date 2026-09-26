@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { ChannelRecord } from "@/types/channel";
+import type { ChannelRecord, OAuthProfile } from "@/types/channel";
 
 type FacebookPage = { id: string; name: string };
 
@@ -15,6 +15,7 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
   const [message, setMessage] = useState<Record<string, string>>({});
   const [createMessage, setCreateMessage] = useState<string>("");
   const [platform, setPlatform] = useState<Platform>("TIKTOK");
+  const [oauthProfile, setOauthProfile] = useState<OAuthProfile>("DEFAULT");
   const [name, setName] = useState("");
   const [dailyLimit, setDailyLimit] = useState(3);
 
@@ -35,6 +36,7 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
         body: JSON.stringify({
           platform,
           name: cleanName,
+          oauthProfile: platform === "YOUTUBE" ? oauthProfile : "DEFAULT",
           timezone,
           dailyLimit,
           status: "DISCONNECTED",
@@ -147,10 +149,14 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr_110px_auto]">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[150px_170px_1fr_100px_auto]">
           <select
             value={platform}
-            onChange={(event) => setPlatform(event.target.value as Platform)}
+            onChange={(event) => {
+              const nextPlatform = event.target.value as Platform;
+              setPlatform(nextPlatform);
+              if (nextPlatform !== "YOUTUBE") setOauthProfile("DEFAULT");
+            }}
             disabled={busy === "create"}
             className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-zinc-200 outline-none"
           >
@@ -159,10 +165,21 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
             <option value="FACEBOOK">Facebook</option>
           </select>
 
+          <select
+            value={oauthProfile}
+            onChange={(event) => setOauthProfile(event.target.value as OAuthProfile)}
+            disabled={busy === "create" || platform !== "YOUTUBE"}
+            title="Credencial OAuth de Google"
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-zinc-200 outline-none disabled:opacity-40"
+          >
+            <option value="DEFAULT">Google principal</option>
+            <option value="SECONDARY">Google secundaria</option>
+          </select>
+
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Ej. TikTok principal"
+            placeholder="Ej. YouTube canal 2"
             maxLength={100}
             disabled={busy === "create"}
             className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
@@ -189,7 +206,9 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
           </button>
         </div>
 
-        <p className="mt-2 text-[11px] text-zinc-600">El número indica el límite máximo de publicaciones diarias.</p>
+        <p className="mt-2 text-[11px] text-zinc-600">
+          Para YouTube puedes elegir Google principal o Google secundaria. El número indica el límite máximo de publicaciones diarias.
+        </p>
         {createMessage ? (
           <p className="mt-3 text-xs leading-5 text-zinc-300">{createMessage}</p>
         ) : null}
@@ -205,6 +224,7 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
             const connected = channel.status === "CONNECTED";
             const channelPages = pages[channel.id] || [];
             const working = busy === channel.id;
+            const profile = channel.oauthProfile || "DEFAULT";
 
             return (
               <div key={channel.id} className="rounded-xl border border-white/10 p-3">
@@ -213,6 +233,9 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
                     <p className="text-sm font-medium">{channel.name}</p>
                     <p className="mt-1 text-xs text-zinc-500">
                       {channel.platform}
+                      {channel.platform === "YOUTUBE"
+                        ? ` · ${profile === "SECONDARY" ? "Google secundaria" : "Google principal"}`
+                        : ""}
                       {channel.externalAccountId ? ` · ${channel.externalAccountId}` : ""}
                     </p>
                   </div>
