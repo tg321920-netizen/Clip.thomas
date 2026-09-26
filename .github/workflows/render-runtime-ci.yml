@@ -20,6 +20,9 @@ on:
       - "tests/whisper-cpp.test.mjs"
       - "app/api/health/route.ts"
       - "proxy.ts"
+      - "eslint.config.mjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/render-runtime-ci.yml"
   workflow_dispatch:
 
