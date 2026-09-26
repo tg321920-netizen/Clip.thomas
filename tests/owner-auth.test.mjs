@@ -4,6 +4,7 @@ import {
   constantTimeTextEqual,
   createOwnerSessionToken,
   getOwnerAuthConfig,
+  getPublicRequestOrigin,
   shouldRequireOwnerAuth,
   shouldTrustPlatformAuth,
   verifyOwnerSessionToken,
@@ -64,6 +65,29 @@ test("trusted platform auth is explicit, Vercel-only and can be overridden", () 
     }),
     true,
   );
+});
+
+test("public request origin honors reverse proxy headers instead of internal bind address", () => {
+  const request = {
+    url: "http://0.0.0.0:10000/api/auth/owner/login",
+    headers: new Headers({
+      "x-forwarded-host": "clipforge-runtime-free.onrender.com",
+      "x-forwarded-proto": "https",
+    }),
+  };
+
+  assert.equal(
+    getPublicRequestOrigin(request),
+    "https://clipforge-runtime-free.onrender.com",
+  );
+});
+
+test("public request origin falls back to request URL without proxy headers", () => {
+  const request = {
+    url: "http://localhost:3000/api/auth/owner/login",
+    headers: new Headers(),
+  };
+  assert.equal(getPublicRequestOrigin(request), "http://localhost:3000");
 });
 
 test("signed owner session validates, expires and rejects tampering", async () => {
