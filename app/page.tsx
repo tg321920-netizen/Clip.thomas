@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ManualLiveCapture } from "@/components/ManualLiveCapture";
 import { MediaEnvironmentStatus } from "@/components/MediaEnvironmentStatus";
 import { RecentProjects } from "@/components/RecentProjects";
+import { StreamCapturePanel } from "@/components/StreamCapturePanel";
 import { UploadPanel } from "@/components/UploadPanel";
 
 export default function Home() {
@@ -84,7 +85,8 @@ export default function Home() {
           <UploadPanel />
         </section>
 
-        <div className="pb-10">
+        <div className="space-y-6 pb-10">
+          <StreamCapturePanel />
           <ManualLiveCapture />
         </div>
 
