@@ -310,9 +310,16 @@ export function UploadPanel() {
               Proyecto: {result.projectId}
             </p>
 
-            <ProjectPipeline projectId={result.projectId} />
+            <ProjectPipeline
+              key={`pipeline:${result.projectId}`}
+              projectId={result.projectId}
+            />
             <div className="mt-4">
-              <NewsModePanel projectId={result.projectId} enabled />
+              <NewsModePanel
+                key={`news:${result.projectId}`}
+                projectId={result.projectId}
+                enabled
+              />
             </div>
           </div>
         </div>
