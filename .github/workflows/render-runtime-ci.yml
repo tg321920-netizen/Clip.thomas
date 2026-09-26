@@ -137,8 +137,8 @@ jobs:
 
       - name: Verify native host prerequisites
         run: |
-          command -v ffmpeg
-          command -v ffprobe
+          command -v node
+          command -v npm
           command -v python3
           command -v curl
           command -v git
@@ -146,8 +146,13 @@ jobs:
       - name: Build native Render runtime
         run: bash scripts/render-native-free-build.sh
 
-      - name: Verify native whisper runtime
+      - name: Verify native media runtime
         run: |
+          export PATH="$GITHUB_WORKSPACE/.runtime/bin:$PATH"
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version >/dev/null
+          ffprobe -version >/dev/null
           test -x "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli"
           test -s "$GITHUB_WORKSPACE/.runtime/models/ggml-tiny.bin"
           "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli" --help >/dev/null 2>&1 || true
@@ -158,6 +163,8 @@ jobs:
           CLIPFORGE_STORAGE_DIR: /tmp/clipforge-native
           CLIPFORGE_RUNTIME_HOME: /tmp/clipforge-native/.runtime-home
           CLIPFORGE_REQUIRE_OWNER_AUTH: "false"
+          FFMPEG_PATH: ${{ github.workspace }}/.runtime/bin/ffmpeg
+          FFPROBE_PATH: ${{ github.workspace }}/.runtime/bin/ffprobe
           WHISPER_PROVIDER: cpp
           WHISPER_CPP_COMMAND: ${{ github.workspace }}/.runtime/bin/whisper-cli
           WHISPER_CPP_MODEL_PATH: ${{ github.workspace }}/.runtime/models/ggml-tiny.bin
