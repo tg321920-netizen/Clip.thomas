@@ -5,6 +5,7 @@ import {
   constantTimeTextEqual,
   createOwnerSessionToken,
   getOwnerAuthConfig,
+  getPublicRequestOrigin,
   shouldRequireOwnerAuth,
 } from "@/lib/owner-auth.mjs";
 
@@ -77,6 +78,6 @@ async function readAccessKey(request: NextRequest, wantsJson: boolean) {
 }
 
 function redirectTo(request: NextRequest, destination: string) {
-  const url = new URL(destination, request.url);
+  const url = new URL(destination, getPublicRequestOrigin(request));
   return NextResponse.redirect(url, 303);
 }
