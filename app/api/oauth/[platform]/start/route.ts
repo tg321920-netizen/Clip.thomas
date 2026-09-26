@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getPublicRequestOrigin } from "@/lib/owner-auth.mjs";
 import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.mjs";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(
 
     response.cookies.set(cookieName(result.platform), result.stateCookie, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: getPublicRequestOrigin(request).startsWith("https://"),
       sameSite: "lax",
       path: `/api/oauth/${platform.toLowerCase()}/callback`,
       maxAge: result.cookieMaxAge,
@@ -34,11 +35,11 @@ function cookieName(platform: string) {
 }
 
 function oauthErrorRedirect(request: NextRequest, error: unknown, code: string) {
-  const url = new URL("/autopilot", request.url);
+  const url = new URL("/autopilot", getPublicRequestOrigin(request));
   url.searchParams.set("oauth", code);
   url.searchParams.set(
     "message",
     error instanceof Error ? error.message : "No se pudo iniciar OAuth.",
   );
-  return NextResponse.redirect(url);
+  return NextResponse.redirect(url, 303);
 }
