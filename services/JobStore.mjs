@@ -32,6 +32,7 @@ export class JobStore {
   constructor(options = {}) {
     this.maxAttempts = options.maxAttempts ?? 3;
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60 * 1000;
+    this.renderStaleAfterMs = options.renderStaleAfterMs ?? 2 * 60 * 1000;
   }
 
   async enqueueTranscription(projectId, options = {}) {
@@ -182,7 +183,7 @@ export class JobStore {
   }
 
   async claimNext(allowedTypes = null) {
-    await this.#recoverStaleLocks();
+    await this.#recoverStaleJobs();
     await this.#ensureDirectory();
 
     const allowed =
@@ -251,6 +252,21 @@ export class JobStore {
     return updated;
   }
 
+  async heartbeat(id) {
+    const job = await this.get(id);
+    if (!job || job.status !== "PROCESSING") return false;
+
+    const lockPath = this.#lockPath(id);
+    try {
+      await stat(lockPath);
+      await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
+      return true;
+    } catch (error) {
+      if (getErrorCode(error) === "ENOENT") return false;
+      throw error;
+    }
+  }
+
   async complete(job) {
     const completed = {
       ...job,
@@ -306,7 +322,7 @@ export class JobStore {
     }
   }
 
-  async #recoverStaleLocks() {
+  async #recoverStaleJobs() {
     await this.#ensureDirectory();
     const names = await readdir(this.#jobsDir());
 
@@ -315,15 +331,19 @@ export class JobStore {
 
       try {
         const info = await stat(lockPath);
-        if (Date.now() - info.mtimeMs < this.staleAfterMs) continue;
-
         const id = name.slice(0, -5);
         const job = await this.get(id);
+        const staleAfterMs =
+          job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
+
+        if (Date.now() - info.mtimeMs < staleAfterMs) continue;
 
         if (job?.status === "PROCESSING") {
           await this.#write({
             ...job,
             status: "QUEUED",
+            progress: job.type === "RENDER_CLIP" ? 0 : job.progress,
+            startedAt: job.type === "RENDER_CLIP" ? null : job.startedAt,
             updatedAt: new Date().toISOString(),
             nextAttemptAt: new Date().toISOString(),
             error: "Recovered after a stale worker lock.",
@@ -334,6 +354,39 @@ export class JobStore {
       } catch (error) {
         if (getErrorCode(error) !== "ENOENT") throw error;
       }
+    }
+
+    for (const name of names.filter((value) => value.endsWith(".json"))) {
+      const id = name.slice(0, -5);
+      const job = await this.get(id);
+      if (!job || job.type !== "RENDER_CLIP" || job.status !== "PROCESSING") {
+        continue;
+      }
+
+      const lastActivity = Date.parse(job.updatedAt || job.startedAt || job.createdAt);
+      if (
+        Number.isFinite(lastActivity) &&
+        Date.now() - lastActivity < this.renderStaleAfterMs
+      ) {
+        continue;
+      }
+
+      try {
+        await stat(this.#lockPath(id));
+        continue;
+      } catch (error) {
+        if (getErrorCode(error) !== "ENOENT") throw error;
+      }
+
+      await this.#write({
+        ...job,
+        status: "QUEUED",
+        progress: 0,
+        startedAt: null,
+        updatedAt: new Date().toISOString(),
+        nextAttemptAt: new Date().toISOString(),
+        error: "Recovered orphaned render job without an active worker lock.",
+      });
     }
   }
 
