@@ -167,11 +167,14 @@ async function verifyRuntime() {
   await access(modelPath, constants.R_OK);
 
   const espeakDataPath = String(process.env.ESPEAK_DATA_PATH || "").trim();
-  if (!espeakDataPath) throw new Error("ESPEAK_DATA_PATH is not configured.");
-  await access(espeakDataPath, constants.R_OK);
+  if (espeakDataPath) {
+    await access(espeakDataPath, constants.R_OK);
+    console.log(`[free-runtime] eSpeak NG data ready: ${espeakDataPath}`);
+  } else {
+    console.log("[free-runtime] eSpeak NG uses its system-installed data path.");
+  }
 
   console.log(`[free-runtime] whisper.cpp model ready: ${modelPath}`);
-  console.log(`[free-runtime] eSpeak NG data ready: ${espeakDataPath}`);
   console.log("[free-runtime] media runtime check passed.");
 }
 
