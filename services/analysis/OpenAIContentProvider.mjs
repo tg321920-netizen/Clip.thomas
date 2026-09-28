@@ -75,7 +75,7 @@ export class OpenAIContentProvider {
 
     await recordUsageSafely(this.usage, {
       usage: result.usage,
-      provider: this.name,
+      provider: this.apiStyle === "responses" ? "openai" : this.name,
       model: this.model,
       operation: "content-analysis",
       projectId: project?.id || project?.projectId || null,
