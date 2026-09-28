@@ -111,12 +111,14 @@ export class PublishingService {
       let saved = await this.publications.markSubmitted(
         publication.id,
         providerResult.externalPostId,
+        providerResult.externalPostUrl || null,
       );
 
       if (providerResult.providerStatus === "PUBLISHED") {
         saved = await this.publications.markPublished(
           publication.id,
           providerResult.externalPostId,
+          providerResult.externalPostUrl || null,
         );
       }
 
@@ -158,7 +160,11 @@ export class PublishingService {
     let saved = publication;
 
     if (normalized === "PUBLISHED") {
-      saved = await this.publications.markPublished(publication.id);
+      saved = await this.publications.markPublished(
+        publication.id,
+        null,
+        providerStatus.externalPostUrl || null,
+      );
     } else if (normalized === "FAILED") {
       saved = await this.publications.markFailed(
         publication.id,
