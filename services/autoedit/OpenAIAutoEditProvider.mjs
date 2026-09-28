@@ -113,7 +113,7 @@ export class OpenAIAutoEditProvider {
 
     await recordUsageSafely(this.usage, {
       usage: result.usage,
-      provider: this.name,
+      provider: this.apiStyle === "responses" ? "openai" : this.name,
       model: this.model,
       projectId: project?.id || project?.projectId || null,
     });
