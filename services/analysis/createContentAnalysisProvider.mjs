@@ -14,7 +14,7 @@ export function createContentAnalysisProvider(options = {}) {
     return new TranscriptCandidateProvider(options);
   }
 
-  if (providerName === "openai") {
+  if (["openai", "compatible", "openai-compatible"].includes(providerName)) {
     return new OpenAIContentProvider({
       ...options,
       model: options.model || process.env.CLIPFORGE_AI_MODEL?.trim(),
@@ -22,6 +22,6 @@ export function createContentAnalysisProvider(options = {}) {
   }
 
   throw new Error(
-    `Unsupported content analysis provider: ${providerName}. Expected heuristic or openai.`,
+    `Unsupported content analysis provider: ${providerName}. Expected heuristic, openai, or openai-compatible.`,
   );
 }
