@@ -9,6 +9,7 @@ test("OpenAI Auto Edit uses structured Responses output", async () => {
     apiKey: "test-key",
     model: "test-model",
     baseUrl: "https://example.invalid/v1/",
+    apiStyle: "responses",
     fetchImpl: async (_url, init) => {
       requestBody = JSON.parse(String(init.body));
 
