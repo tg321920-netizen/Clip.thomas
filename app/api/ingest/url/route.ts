@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        job: publicJob(job),
+        job: publicJob(job as Record<string, unknown>),
         statusUrl: `/api/ingest/url/${job.id}`,
       },
       { status: 202 },
@@ -57,10 +57,12 @@ export async function POST(request: Request) {
   }
 }
 
-function publicJob(job: Record<string, any>) {
+function publicJob(job: Record<string, unknown>) {
+  const source = isRecord(job.source) ? job.source : {};
   let displayUrl = "";
   try {
-    const url = new URL(job?.source?.url || "");
+    const rawUrl = typeof source.url === "string" ? source.url : "";
+    const url = new URL(rawUrl);
     displayUrl = `${url.protocol}//${url.host}${url.pathname}`;
   } catch {
     displayUrl = "";
@@ -69,10 +71,14 @@ function publicJob(job: Record<string, any>) {
   return {
     ...job,
     source: {
-      ...job.source,
+      ...source,
       url: displayUrl,
     },
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function safeJson(request: Request): Promise<Record<string, unknown>> {
