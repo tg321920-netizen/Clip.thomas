@@ -17,11 +17,8 @@ const loopDelayMs = clampInteger(
 );
 const bundledEspeakRoot = path.resolve(process.cwd(), ".runtime", "espeak");
 const bundledEspeakCommand = path.join(bundledEspeakRoot, "bin", "espeak-ng");
-const bundledEspeakData = path.join(
-  bundledEspeakRoot,
-  "share",
-  "espeak-ng-data",
-);
+const bundledEspeakData = path.join(bundledEspeakRoot, "share", "espeak-ng-data");
+const bundledYtDlp = path.resolve(process.cwd(), ".runtime", "bin", "yt-dlp");
 
 await mkdir(storageRoot, { recursive: true });
 await mkdir(runtimeHome, { recursive: true });
@@ -33,6 +30,9 @@ if (!process.env.ESPEAK_NG_PATH?.trim() && existsSync(bundledEspeakCommand)) {
 if (!process.env.ESPEAK_DATA_PATH?.trim() && existsSync(bundledEspeakData)) {
   process.env.ESPEAK_DATA_PATH = bundledEspeakData;
 }
+if (!process.env.YTDLP_PATH?.trim() && existsSync(bundledYtDlp)) {
+  process.env.YTDLP_PATH = bundledYtDlp;
+}
 
 if (process.argv.includes("--check")) {
   await verifyRuntime();
@@ -41,6 +41,7 @@ if (process.argv.includes("--check")) {
 
 let shuttingDown = false;
 let webChild = null;
+let ingestChild = null;
 let activeWorker = null;
 
 const workerScripts = [
@@ -54,27 +55,11 @@ const workerScripts = [
   "scripts/analytics-worker.mjs",
 ];
 
-webChild = spawn(
-  process.execPath,
+webChild = spawnNode(
   ["node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", port],
-  {
-    env: process.env,
-    stdio: "inherit",
-    shell: false,
-  },
+  "web",
 );
-
-webChild.on("error", (error) => {
-  console.error("[free-runtime] web failed to start", error);
-  shutdown("SIGTERM", 1);
-});
-webChild.on("exit", (code, signal) => {
-  if (shuttingDown) return;
-  console.error(
-    `[free-runtime] web exited unexpectedly (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
-  );
-  shutdown("SIGTERM", Number.isInteger(code) && code !== 0 ? code : 1);
-});
+ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
@@ -95,6 +80,28 @@ async function workerLoop() {
     }
     await sleep(loopDelayMs);
   }
+}
+
+function spawnNode(args, label) {
+  const child = spawn(process.execPath, args, {
+    env: process.env,
+    stdio: "inherit",
+    shell: false,
+  });
+
+  child.on("error", (error) => {
+    console.error(`[free-runtime] ${label} failed to start`, error);
+    if (!shuttingDown) shutdown("SIGTERM", 1);
+  });
+  child.on("exit", (code, signal) => {
+    if (shuttingDown) return;
+    console.error(
+      `[free-runtime] ${label} exited unexpectedly (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
+    );
+    shutdown("SIGTERM", Number.isInteger(code) && code !== 0 ? code : 1);
+  });
+
+  return child;
 }
 
 function runWorkerOnce(script) {
@@ -123,17 +130,19 @@ function shutdown(signal, exitCode = 0) {
   shuttingDown = true;
   console.log("[free-runtime] shutting down...");
 
-  if (activeWorker && !activeWorker.killed) activeWorker.kill(signal);
-  if (webChild && !webChild.killed) webChild.kill(signal);
+  for (const child of [activeWorker, ingestChild, webChild]) {
+    if (child && !child.killed) child.kill(signal);
+  }
 
   const timer = setTimeout(() => {
-    if (activeWorker && !activeWorker.killed) activeWorker.kill("SIGKILL");
-    if (webChild && !webChild.killed) webChild.kill("SIGKILL");
+    for (const child of [activeWorker, ingestChild, webChild]) {
+      if (child && !child.killed) child.kill("SIGKILL");
+    }
     process.exit(exitCode);
   }, 10_000);
   timer.unref();
 
-  const pending = [activeWorker, webChild]
+  const pending = [activeWorker, ingestChild, webChild]
     .filter(Boolean)
     .map(
       (child) =>
@@ -158,9 +167,7 @@ async function verifyRuntime() {
     ],
   ];
 
-  for (const [command, args, label] of commands) {
-    await runCheck(command, args, label);
-  }
+  for (const [command, args, label] of commands) await runCheck(command, args, label);
 
   const modelPath = String(process.env.WHISPER_CPP_MODEL_PATH || "").trim();
   if (!modelPath) throw new Error("WHISPER_CPP_MODEL_PATH is not configured.");
@@ -172,6 +179,14 @@ async function verifyRuntime() {
     console.log(`[free-runtime] eSpeak NG data ready: ${espeakDataPath}`);
   } else {
     console.log("[free-runtime] eSpeak NG uses its system-installed data path.");
+  }
+
+  const ytdlp = process.env.YTDLP_PATH?.trim() || (existsSync(bundledYtDlp) ? bundledYtDlp : "yt-dlp");
+  try {
+    await runCheck(ytdlp, ["--version"], "yt-dlp");
+    console.log(`[free-runtime] yt-dlp ready: ${ytdlp}`);
+  } catch (error) {
+    console.warn(`[free-runtime] yt-dlp unavailable; only direct media URLs can be imported. ${error.message}`);
   }
 
   console.log(`[free-runtime] whisper.cpp model ready: ${modelPath}`);
@@ -188,12 +203,8 @@ function runCheck(command, args, label) {
 
     let stderr = "";
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      reject(new Error(`${label} is unavailable: ${error.message}`));
-    });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (error) => reject(new Error(`${label} is unavailable: ${error.message}`)));
     child.on("close", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${label} check failed: ${stderr.trim() || `exit ${code}`}`));
