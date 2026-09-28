@@ -43,6 +43,7 @@ test("OpenAI provider keeps model selections tied to real candidate IDs", async 
     apiKey: "test-key",
     model: "test-model",
     baseUrl: "https://example.invalid/v1/",
+    apiStyle: "responses",
     fetchImpl: async (url, init) => {
       capturedUrl = String(url);
       capturedRequest = JSON.parse(String(init.body));
