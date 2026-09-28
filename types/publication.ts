@@ -26,6 +26,7 @@ export type PublicationRecord = {
   publishedAt: string | null;
   status: PublicationStatus;
   externalPostId: string | null;
+  externalPostUrl: string | null;
   error: string | null;
   createdAt: string;
   updatedAt: string;
