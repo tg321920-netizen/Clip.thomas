@@ -9,7 +9,7 @@ const DEFAULTS = {
 
 export class TranscriptCandidateProvider {
   constructor(options = {}) {
-    this.name = "transcript-heuristic-v1";
+    this.name = "transcript-heuristic-v2";
     this.options = normalizeAnalysisOptions(options);
   }
 
@@ -43,7 +43,7 @@ export class TranscriptCandidateProvider {
           a.startTime - b.startTime,
       );
 
-    return dedupe(scored, config.maxCandidates);
+    return selectDistinct(scored, config.maxCandidates);
   }
 }
 
@@ -71,7 +71,7 @@ export function normalizeAnalysisOptions(options = {}) {
       Math.min(Math.max(DEFAULTS.targetDuration, minDuration), maxDuration),
     ),
     maxCandidates: Math.round(
-      boundedNumber(options.maxCandidates, 1, 30, DEFAULTS.maxCandidates),
+      boundedNumber(options.maxCandidates, 1, 50, DEFAULTS.maxCandidates),
     ),
   };
 }
@@ -143,19 +143,38 @@ function buildWindows(segments, config) {
   return windows;
 }
 
-function dedupe(candidates, maxCandidates) {
+function selectDistinct(candidates, maxCandidates) {
   const selected = [];
 
   for (const candidate of candidates) {
-    const tooSimilar = selected.some(
-      (existing) => overlapRatio(existing, candidate) >= 0.72,
+    const overlap = selected.reduce(
+      (max, existing) => Math.max(max, overlapRatio(existing, candidate)),
+      0,
+    );
+    const lexicalSimilarity = selected.reduce(
+      (max, existing) => Math.max(max, tokenSimilarity(existing.text, candidate.text)),
+      0,
     );
 
-    if (tooSimilar) continue;
+    // Nearly identical time windows or transcript content add no value as a
+    // second clip. Less severe similarity is retained but explicitly penalized.
+    if (overlap >= 0.72 || lexicalSimilarity >= 0.9) continue;
+
+    const redundancyPenalty = Math.round(
+      Math.max(overlap * 28, lexicalSimilarity * 18),
+    );
+    const rescored = scoreCandidate(candidate, { redundancyPenalty });
 
     selected.push({
       id: `candidate-${String(selected.length + 1).padStart(4, "0")}`,
       ...omitInternal(candidate),
+      ...rescored,
+      reason: rescored.reasons.join(" "),
+      redundancy: {
+        temporalOverlap: round(overlap),
+        lexicalSimilarity: round(lexicalSimilarity),
+        penalty: rescored.redundancyPenalty,
+      },
     });
 
     if (selected.length >= maxCandidates) break;
@@ -171,6 +190,22 @@ function overlapRatio(a, b) {
   );
   const shortest = Math.min(a.duration, b.duration);
   return shortest > 0 ? overlap / shortest : 0;
+}
+
+function tokenSimilarity(a, b) {
+  const left = new Set(tokenize(a));
+  const right = new Set(tokenize(b));
+  if (left.size === 0 || right.size === 0) return 0;
+  let intersection = 0;
+  for (const token of left) if (right.has(token)) intersection += 1;
+  const union = left.size + right.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function tokenize(value) {
+  return String(value || "")
+    .toLocaleLowerCase()
+    .match(/[\p{L}\p{N}']+/gu) || [];
 }
 
 function makeTitle(text) {
@@ -221,5 +256,5 @@ function omitInternal(candidate) {
 }
 
 function round(value) {
-  return Math.round(value * 1000) / 1000;
+  return Math.round(Number(value) * 1000) / 1000;
 }
