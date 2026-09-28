@@ -111,8 +111,6 @@ export async function requestStructuredJson({
   });
   let body = await readJsonResponse(response);
 
-  // Some OpenAI-compatible providers support JSON objects but not JSON Schema.
-  // Retry once without changing the requested task or inventing output.
   if (!response.ok && [400, 404, 422].includes(response.status)) {
     response = await fetchImpl(endpoint, {
       method: "POST",
@@ -139,7 +137,7 @@ export async function requestStructuredJson({
   return parseStructuredResult(body, "chat-completions");
 }
 
-export function extractCompatibleText(body, style = "auto") {
+export function extractCompatibleText(body) {
   if (typeof body?.output_text === "string" && body.output_text.trim()) {
     return body.output_text.trim();
   }
@@ -176,7 +174,7 @@ export function extractCompatibleUsage(body) {
 }
 
 function parseStructuredResult(body, style) {
-  const text = extractCompatibleText(body, style);
+  const text = extractCompatibleText(body);
   if (!text) throw new Error("The configured AI provider returned no text output.");
 
   let parsed;
