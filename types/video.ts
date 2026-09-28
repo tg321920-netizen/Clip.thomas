@@ -16,4 +16,6 @@ export type UploadedVideo = ProbeMetadata & {
   sizeBytes: number;
   posterUrl: string;
   sourceUrl: string;
+  originUrl?: string;
+  ingestMode?: "IMPORT" | "STREAM";
 };
