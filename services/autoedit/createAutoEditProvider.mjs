@@ -14,11 +14,11 @@ export function createAutoEditProvider(options = {}) {
     return new HeuristicAutoEditProvider(options);
   }
 
-  if (providerName === "openai") {
+  if (["openai", "compatible", "openai-compatible"].includes(providerName)) {
     return new OpenAIAutoEditProvider(options);
   }
 
   throw new Error(
-    `Unsupported Auto Edit provider: ${providerName}. Expected heuristic or openai.`,
+    `Unsupported Auto Edit provider: ${providerName}. Expected heuristic, openai, or openai-compatible.`,
   );
 }
