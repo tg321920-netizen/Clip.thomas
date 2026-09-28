@@ -126,6 +126,7 @@ export class YouTubeProvider {
 
     return {
       externalPostId: videoId,
+      externalPostUrl: buildYouTubeWatchUrl(videoId),
       providerStatus: normalizeYouTubeStatus(body),
       raw: body,
     };
@@ -138,6 +139,7 @@ export class YouTubeProvider {
 
     return {
       status: normalizeYouTubeStatus(video),
+      externalPostUrl: buildYouTubeWatchUrl(videoId),
       privacyStatus: video?.status?.privacyStatus || null,
       statistics: video?.statistics || null,
       raw: video,
@@ -204,6 +206,11 @@ export function normalizeYouTubeStatus(video) {
   if (processingStatus) return processingStatus.toUpperCase();
   if (uploadStatus) return uploadStatus.toUpperCase();
   return "UNKNOWN";
+}
+
+export function buildYouTubeWatchUrl(videoId) {
+  const id = requireVideoId(videoId);
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
 }
 
 function requireVideoId(value) {
