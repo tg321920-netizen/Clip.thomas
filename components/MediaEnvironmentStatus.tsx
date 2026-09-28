@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 type MediaStatusPayload = {
   ready: boolean;
+  durable?: boolean;
   message: string;
   tools: {
     ffmpeg: { available: boolean; version?: string };
@@ -11,6 +12,9 @@ type MediaStatusPayload = {
   };
   storage: {
     writable: boolean;
+    persistence?: "PERSISTENT_PATH" | "EPHEMERAL_PATH" | "UNKNOWN";
+    durable?: boolean;
+    warning?: string | null;
   };
 };
 
@@ -76,28 +80,48 @@ export function MediaEnvironmentStatus() {
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
         <Tool name="FFmpeg" available={status.tools.ffmpeg.available} />
         <Tool name="FFprobe" available={status.tools.ffprobe.available} />
         <Tool name="Storage" available={status.storage.writable} />
+        <Tool name="Persistencia" available={status.storage.durable === true} okLabel="Durable" failLabel="Temporal" />
       </div>
 
-      {!status.ready && (
-        <p className="mt-3 text-xs leading-5 text-amber-200/70">
-          La interfaz puede cargar, pero el procesamiento real requiere FFmpeg,
-          FFprobe y almacenamiento escribible en el mismo entorno o worker.
+      <p
+        className={`mt-3 text-xs leading-5 ${
+          status.ready && status.storage.durable
+            ? "text-emerald-200/70"
+            : "text-amber-200/75"
+        }`}
+      >
+        {status.message}
+      </p>
+
+      {status.storage.warning ? (
+        <p className="mt-2 text-xs leading-5 text-amber-200/70">
+          {status.storage.warning}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function Tool({ name, available }: { name: string; available: boolean }) {
+function Tool({
+  name,
+  available,
+  okLabel = "OK",
+  failLabel = "Falta",
+}: {
+  name: string;
+  available: boolean;
+  okLabel?: string;
+  failLabel?: string;
+}) {
   return (
     <div className="rounded-xl bg-black/20 px-3 py-2 text-zinc-400">
       <span>{name}</span>
       <span className="float-right font-medium text-zinc-200">
-        {available ? "OK" : "Falta"}
+        {available ? okLabel : failLabel}
       </span>
     </div>
   );
