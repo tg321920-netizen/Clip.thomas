@@ -32,6 +32,7 @@ test("content provider records returned token counts against the real project", 
     apiKey: "test-key",
     model: "test-model",
     baseUrl: "https://example.invalid/v1",
+    apiStyle: "responses",
     usageService: {
       async record(value) {
         recorded = value;
@@ -94,6 +95,7 @@ test("auto edit provider records returned token counts against the real project"
     apiKey: "test-key",
     model: "test-model",
     baseUrl: "https://example.invalid/v1",
+    apiStyle: "responses",
     usageService: {
       async record(value) {
         recorded = value;
