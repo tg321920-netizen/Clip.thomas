@@ -15,6 +15,17 @@ export type TranscriptSegment = {
 
 export type TranscriptStatus = "PROCESSING" | "COMPLETED" | "FAILED";
 
+export type TranscriptChunk = {
+  index: number;
+  startTime: number;
+  endTime: number;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  attempts: number;
+  segmentCount: number;
+  error: string | null;
+  completedAt: string | null;
+};
+
 export type TranscriptRecord = {
   id: string;
   projectId: string;
@@ -28,6 +39,9 @@ export type TranscriptRecord = {
   segments: TranscriptSegment[];
   sourceKey: string;
   audioRelativePath: string;
+  progress?: number;
+  chunkDurationSeconds?: number;
+  chunks?: TranscriptChunk[];
   createdAt: string;
   startedAt: string;
   completedAt: string | null;
