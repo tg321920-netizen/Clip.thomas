@@ -9,6 +9,7 @@ WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggm
 ESPEAK_SRC="$RUNTIME_ROOT/src/espeak-ng"
 ESPEAK_PREFIX="$RUNTIME_ROOT/espeak"
 ESPEAK_COMMIT="4870adfa25b1a32b4361592f1be8a40337c58d6c"
+YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
 TOOLING_ROOT="$RUNTIME_ROOT/tooling"
 
 cd "$ROOT"
@@ -36,17 +37,23 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
   cp "$FFPROBE_STATIC" "$RUNTIME_ROOT/bin/ffprobe"
   chmod +x "$RUNTIME_ROOT/bin/ffmpeg" "$RUNTIME_ROOT/bin/ffprobe"
 else
-  # The start command intentionally points at .runtime/bin. A host binary may
-  # exist during the build but not at that path in the deployed artifact, so
-  # always copy it into the runtime bundle instead of assuming PATH will match.
   cp "$(command -v ffmpeg)" "$RUNTIME_ROOT/bin/ffmpeg"
   cp "$(command -v ffprobe)" "$RUNTIME_ROOT/bin/ffprobe"
   chmod +x "$RUNTIME_ROOT/bin/ffmpeg" "$RUNTIME_ROOT/bin/ffprobe"
 fi
 
+# A normal YouTube/Twitch/web page is not itself a media stream. Bundle the
+# official standalone yt-dlp Linux executable so URL ingestion can resolve
+# supported public pages without adding a paid service.
+curl --fail --location --retry 3 \
+  "$YTDLP_URL" \
+  --output "$RUNTIME_ROOT/bin/yt-dlp"
+chmod +x "$RUNTIME_ROOT/bin/yt-dlp"
+
 export PATH="$RUNTIME_ROOT/bin:$PATH"
 "$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null
 "$RUNTIME_ROOT/bin/ffprobe" -version >/dev/null
+"$RUNTIME_ROOT/bin/yt-dlp" --version >/dev/null
 
 # cmake is not guaranteed by Render's native runtime. Install its Python wheel
 # only for the build if necessary; the built media tools are copied into the
@@ -108,8 +115,10 @@ rm -rf "$TOOLING_ROOT"
 "$RUNTIME_ROOT/bin/whisper-cli" --help >/dev/null 2>&1 || true
 "$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null
 "$RUNTIME_ROOT/bin/ffprobe" -version >/dev/null
+"$RUNTIME_ROOT/bin/yt-dlp" --version >/dev/null
 ESPEAK_DATA_PATH="$ESPEAK_PREFIX/share/espeak-ng-data" \
   "$ESPEAK_PREFIX/bin/espeak-ng" --version >/dev/null
 
 echo "[render-native] eSpeak NG bundled; News Mode local narration is available."
-echo "[render-native] build completed with FFmpeg, FFprobe, whisper.cpp tiny model and eSpeak NG."
+echo "[render-native] yt-dlp bundled; supported normal video URLs can be imported."
+echo "[render-native] build completed with FFmpeg, FFprobe, whisper.cpp tiny model, yt-dlp and eSpeak NG."
