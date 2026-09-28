@@ -249,21 +249,23 @@ export function ManualLiveCapture() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-300">
-            Live · captura manual
+            Grabación local · pantalla / cámara
           </p>
-          <h2 className="mt-2 text-xl font-semibold">Marca el inicio y final de un momento</h2>
+          <h2 className="mt-2 text-xl font-semibold">Graba desde este dispositivo</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-            En computadora puedes capturar una pantalla, ventana o pestaña. En móvil,
-            cuando el navegador no permite compartir pantalla, puedes grabar cámara y
-            micrófono. Al terminar, ClipForge lo guarda como proyecto real y lo envía al
-            mismo flujo de Whisper, Auto Edit y render.
+            Este módulo NO captura un stream remoto. En computadora graba una pantalla,
+            ventana o pestaña autorizada; en móvil, si el navegador no permite compartir
+            pantalla, graba cámara y micrófono. Para Twitch, YouTube Live, TikTok Live,
+            HLS o RTMP usa “Conectar stream” arriba. Al terminar una grabación local,
+            ClipForge la guarda como proyecto real y la envía al mismo flujo de Whisper,
+            Auto Edit y render.
           </p>
         </div>
         <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">
           {screenSupported
-            ? "CAPTURA DE PANTALLA DISPONIBLE"
+            ? "CAPTURA LOCAL DE PANTALLA"
             : cameraSupported
-              ? "MODO MÓVIL DISPONIBLE"
+              ? "GRABACIÓN LOCAL MÓVIL"
               : "NO DISPONIBLE EN ESTE NAVEGADOR"}
         </span>
       </div>
@@ -280,7 +282,7 @@ export function ManualLiveCapture() {
               >
                 {state === "requesting" && source === "screen"
                   ? "Esperando permiso…"
-                  : "● CAPTURAR PANTALLA"}
+                  : "● GRABAR PANTALLA LOCAL"}
               </button>
             ) : null}
 
@@ -331,8 +333,8 @@ export function ManualLiveCapture() {
       {!screenSupported && cameraSupported ? (
         <p className="mt-3 text-xs leading-5 text-amber-200/70">
           Este navegador móvil no permite que una web grabe otra app o la pantalla completa.
-          Para Twitch, YouTube Live o TikTok Live hace falta el módulo de entrada de streaming
-          por URL/servidor; la grabación móvil disponible aquí usa cámara y micrófono reales.
+          La grabación disponible aquí usa cámara y micrófono reales. Para un LIVE remoto,
+          usa el módulo de streaming por URL/servidor.
         </p>
       ) : null}
 
