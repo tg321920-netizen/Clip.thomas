@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutopilotControlPanel } from "@/components/AutopilotControlPanel";
 import { AnalyticsService } from "@/services/analytics/AnalyticsService.mjs";
 import { PerformanceAnalyzer } from "@/services/analytics/PerformanceAnalyzer.mjs";
 import { ChannelService } from "@/services/channels/ChannelService.mjs";
@@ -107,10 +108,14 @@ export default async function AutopilotDashboard() {
           >
             <p className="text-sm font-semibold text-emerald-200">Capturar streaming</p>
             <p className="mt-1 text-xs leading-5 text-zinc-500">
-              Usa la entrada HLS/RTMP del panel principal.
+              Usa la entrada de URL/HLS/RTMP del panel principal.
             </p>
           </Link>
         </section>
+
+        <div className="mt-6">
+          <AutopilotControlPanel />
+        </div>
 
         <section className="grid gap-3 py-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Canales listos" value={connectedChannels.length} />
