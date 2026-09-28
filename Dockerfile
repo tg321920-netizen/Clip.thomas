@@ -5,6 +5,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV WHISPER_COMMAND=/opt/clipforge-venv/bin/whisper
 ENV ESPEAK_NG_PATH=/usr/bin/espeak-ng
+ENV YTDLP_PATH=/opt/clipforge-venv/bin/yt-dlp
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -18,7 +19,7 @@ RUN apt-get update \
 
 RUN python3 -m venv /opt/clipforge-venv \
   && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-  && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir openai-whisper
+  && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir openai-whisper yt-dlp
 
 WORKDIR /app
 
