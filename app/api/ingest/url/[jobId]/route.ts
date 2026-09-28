@@ -16,7 +16,7 @@ export async function GET(
     if (!job) {
       return NextResponse.json({ error: "Trabajo de ingesta no encontrado." }, { status: 404 });
     }
-    return NextResponse.json({ job: publicJob(job) });
+    return NextResponse.json({ job: publicJob(job as Record<string, unknown>) });
   } catch {
     return NextResponse.json({ error: "Identificador de ingesta inválido." }, { status: 400 });
   }
@@ -37,7 +37,10 @@ export async function POST(
     if (!job) {
       return NextResponse.json({ error: "Trabajo de ingesta no encontrado." }, { status: 404 });
     }
-    return NextResponse.json({ job: publicJob(job) }, { status: 202 });
+    return NextResponse.json(
+      { job: publicJob(job as Record<string, unknown>) },
+      { status: 202 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "No se pudo reintentar." },
@@ -46,15 +49,21 @@ export async function POST(
   }
 }
 
-function publicJob(job: Record<string, any>) {
+function publicJob(job: Record<string, unknown>) {
+  const source = isRecord(job.source) ? job.source : {};
   let displayUrl = "";
   try {
-    const url = new URL(job?.source?.url || "");
+    const rawUrl = typeof source.url === "string" ? source.url : "";
+    const url = new URL(rawUrl);
     displayUrl = `${url.protocol}//${url.host}${url.pathname}`;
   } catch {
     displayUrl = "";
   }
-  return { ...job, source: { ...job.source, url: displayUrl } };
+  return { ...job, source: { ...source, url: displayUrl } };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function safeJson(request: Request): Promise<Record<string, unknown>> {
