@@ -19,12 +19,18 @@ export async function GET() {
   return NextResponse.json(
     {
       ready,
+      durable: ready && storage.durable,
       tools,
       storage: {
         writable: storage.writable,
+        persistence: storage.persistence,
+        durable: storage.durable,
+        warning: storage.warning || null,
       },
       message: ready
-        ? "FFmpeg, FFprobe y almacenamiento están disponibles."
+        ? storage.durable
+          ? "FFmpeg, FFprobe y almacenamiento persistente están disponibles."
+          : "FFmpeg y FFprobe están disponibles, pero el almacenamiento actual es temporal y puede perderse al reemplazar la instancia."
         : "Este entorno todavía no puede procesar y guardar video de extremo a extremo.",
     },
     {
