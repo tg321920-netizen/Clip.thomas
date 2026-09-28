@@ -22,22 +22,34 @@ export function AutopilotControlPanel() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    void loadConfig();
-  }, []);
+    let active = true;
 
-  async function loadConfig() {
-    setError(null);
-    try {
-      const response = await fetch("/api/autopilot/config", { cache: "no-store" });
-      const payload = (await response.json()) as { config?: AutopilotConfig; error?: string };
-      if (!response.ok || !payload.config) {
-        throw new Error(payload.error || "No se pudo leer la configuración de Autopilot.");
+    void (async () => {
+      try {
+        const response = await fetch("/api/autopilot/config", { cache: "no-store" });
+        const payload = (await response.json()) as {
+          config?: AutopilotConfig;
+          error?: string;
+        };
+        if (!response.ok || !payload.config) {
+          throw new Error(payload.error || "No se pudo leer la configuración de Autopilot.");
+        }
+        if (active) setConfig(payload.config);
+      } catch (loadError) {
+        if (active) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "No se pudo leer Autopilot.",
+          );
+        }
       }
-      setConfig(payload.config);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo leer Autopilot.");
-    }
-  }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function saveConfig() {
     if (!config || busy) return;
@@ -50,7 +62,10 @@ export function AutopilotControlPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-      const payload = (await response.json()) as { config?: AutopilotConfig; error?: string };
+      const payload = (await response.json()) as {
+        config?: AutopilotConfig;
+        error?: string;
+      };
       if (!response.ok || !payload.config) {
         throw new Error(payload.error || "No se pudo guardar Autopilot.");
       }
@@ -58,7 +73,9 @@ export function AutopilotControlPanel() {
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar Autopilot.");
+      setError(
+        saveError instanceof Error ? saveError.message : "No se pudo guardar Autopilot.",
+      );
     } finally {
       setBusy(false);
     }
