@@ -15,10 +15,15 @@ on:
       - "scripts/render-runtime.mjs"
       - "scripts/render-runtime-free.mjs"
       - "scripts/whisper-cpp-smoke.mjs"
+      - "scripts/ingest-worker.mjs"
       - "services/transcription/TranscriptionService.mjs"
       - "services/transcription/WhisperCppProvider.mjs"
+      - "services/ingest/**"
+      - "lib/public-source-url.mjs"
       - "tests/whisper-cpp.test.mjs"
+      - "tests/long-stream-capture.test.mjs"
       - "app/api/health/route.ts"
+      - "app/api/ingest/**"
       - "proxy.ts"
       - "eslint.config.mjs"
       - "package.json"
@@ -45,6 +50,7 @@ jobs:
             -e WHISPER_MODEL=tiny \
             clipforge-runtime-ci \
             node scripts/render-runtime.mjs --check
+          docker run --rm clipforge-runtime-ci /opt/clipforge-venv/bin/yt-dlp --version
 
       - name: Boot full runtime and verify health
         run: |
@@ -90,6 +96,7 @@ jobs:
             -e CLIPFORGE_STORAGE_DIR=/tmp/clipforge \
             clipforge-runtime-free-ci \
             node scripts/render-runtime-free.mjs --check
+          docker run --rm clipforge-runtime-free-ci /usr/local/bin/yt-dlp --version
 
       - name: Whisper.cpp real speech smoke test
         run: |
@@ -154,8 +161,10 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/.runtime/bin:$PATH"
           command -v ffmpeg
           command -v ffprobe
+          command -v yt-dlp
           ffmpeg -version >/dev/null
           ffprobe -version >/dev/null
+          yt-dlp --version >/dev/null
           test -x "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli"
           test -s "$GITHUB_WORKSPACE/.runtime/models/ggml-tiny.bin"
           "$GITHUB_WORKSPACE/.runtime/bin/whisper-cli" --help >/dev/null 2>&1 || true
@@ -168,6 +177,7 @@ jobs:
           CLIPFORGE_REQUIRE_OWNER_AUTH: "false"
           FFMPEG_PATH: ${{ github.workspace }}/.runtime/bin/ffmpeg
           FFPROBE_PATH: ${{ github.workspace }}/.runtime/bin/ffprobe
+          YTDLP_PATH: ${{ github.workspace }}/.runtime/bin/yt-dlp
           WHISPER_PROVIDER: cpp
           WHISPER_CPP_COMMAND: ${{ github.workspace }}/.runtime/bin/whisper-cli
           WHISPER_CPP_MODEL_PATH: ${{ github.workspace }}/.runtime/models/ggml-tiny.bin
