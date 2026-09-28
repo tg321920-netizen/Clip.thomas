@@ -1,195 +1,146 @@
-import {
-  extractOpenAIUsage,
-  extractOutputText,
-} from "../analysis/OpenAIContentProvider.mjs";
 import { AIUsageService } from "../usage/AIUsageService.mjs";
+import {
+  requestStructuredJson,
+  resolveOpenAICompatibleConfig,
+} from "../ai/OpenAICompatibleClient.mjs";
 import { HeuristicAutoEditProvider } from "./HeuristicAutoEditProvider.mjs";
 
 export class OpenAIAutoEditProvider {
   constructor(options = {}) {
-    this.name = "openai-autoedit-v1";
-    this.apiKey = options.apiKey ?? process.env.OPENAI_API_KEY?.trim() ?? "";
-    this.model =
-      options.model ??
-      process.env.CLIPFORGE_AUTOEDIT_MODEL?.trim() ??
-      process.env.CLIPFORGE_AI_MODEL?.trim() ??
-      "";
-    this.baseUrl =
-      options.baseUrl ??
-      process.env.OPENAI_BASE_URL?.trim() ??
-      "https://api.openai.com/v1";
+    this.config = resolveOpenAICompatibleConfig({
+      ...options,
+      model:
+        options.model ??
+        process.env.CLIPFORGE_AUTOEDIT_MODEL?.trim() ??
+        process.env.CLIPFORGE_AI_MODEL?.trim(),
+    });
+    this.name = `openai-compatible-autoedit-${this.config.apiStyle}-v1`;
+    this.apiKey = this.config.apiKey;
+    this.model = this.config.model;
+    this.baseUrl = this.config.baseUrl;
+    this.apiStyle = this.config.apiStyle;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.usage = options.usageService ?? new AIUsageService();
+    this.preferredCandidateId = options.candidateId || null;
   }
 
   async prepare({ project, candidates, transcript, options = {} }) {
-    if (!this.apiKey) {
-      throw new Error(
-        "OPENAI_API_KEY is required when CLIPFORGE_AUTOEDIT_PROVIDER=openai.",
-      );
-    }
-    if (!this.model) {
-      throw new Error(
-        "CLIPFORGE_AUTOEDIT_MODEL or CLIPFORGE_AI_MODEL is required for OpenAI Auto Edit.",
-      );
-    }
-    if (typeof this.fetchImpl !== "function") {
-      throw new Error("No fetch implementation is available for OpenAI Auto Edit.");
+    const requestedCandidateId = options.candidateId || this.preferredCandidateId;
+    const eligibleCandidates = requestedCandidateId
+      ? candidates.filter((candidate) => candidate.id === requestedCandidateId)
+      : candidates;
+
+    if (!Array.isArray(eligibleCandidates) || eligibleCandidates.length === 0) {
+      throw new Error("Auto Edit received an unknown or empty candidate selection.");
     }
 
-    const baseline = await new HeuristicAutoEditProvider(options).prepare({
-      candidates,
+    const baseline = await new HeuristicAutoEditProvider({
+      ...options,
+      candidateId: requestedCandidateId,
+    }).prepare({
+      candidates: eligibleCandidates,
       transcript,
-      options,
+      options: { ...options, candidateId: requestedCandidateId },
     });
 
-    const payload = {
-      model: this.model,
-      store: false,
+    const schema = {
+      type: "object",
+      properties: {
+        candidateId: { type: "string" },
+        startTime: { type: "number" },
+        endTime: { type: "number" },
+        title: { type: "string" },
+        hook: { type: "string" },
+        description: { type: "string" },
+        hashtags: { type: "array", items: { type: "string" } },
+        onScreenText: { type: "string" },
+        recommendedPlatforms: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["TIKTOK", "YOUTUBE", "FACEBOOK"],
+          },
+        },
+        subtitleStyle: {
+          type: "string",
+          enum: ["CLEAN", "VIRAL", "KARAOKE"],
+        },
+        framingMode: { type: "string", enum: ["FILL", "FIT"] },
+        quality: { type: "string", enum: ["FAST", "BALANCED", "HIGH"] },
+        reason: { type: "string" },
+      },
+      required: [
+        "candidateId",
+        "startTime",
+        "endTime",
+        "title",
+        "hook",
+        "description",
+        "hashtags",
+        "onScreenText",
+        "recommendedPlatforms",
+        "subtitleStyle",
+        "framingMode",
+        "quality",
+        "reason",
+      ],
+      additionalProperties: false,
+    };
+
+    const result = await requestStructuredJson({
+      config: this.config,
+      name: "clipforge_auto_edit_plan",
+      schema,
       instructions:
-        "You are ClipForge Auto Edit. Choose exactly one supplied candidate ID. Never invent candidate IDs or times outside that candidate. Improve metadata without unsupported clickbait. Keep the clip understandable on its own. Return concise metadata in the video's language.",
-      input: JSON.stringify({
+        "You are ClipForge Auto Edit. Use only a supplied candidate ID. Never invent candidate IDs or times outside that candidate. Improve metadata without unsupported clickbait or fake engagement claims. Keep the clip understandable on its own. If only one candidate is supplied, you must use that candidate. Return concise metadata in the video's language.",
+      input: {
         baseline,
-        candidates: candidates.map((candidate) => ({
+        candidates: eligibleCandidates.map((candidate) => ({
           candidateId: candidate.id,
           startTime: candidate.startTime,
           endTime: candidate.endTime,
           duration: candidate.duration,
           viralScore: candidate.viralScore,
+          scoreComponents: candidate.components,
           title: candidate.title,
           hook: candidate.hook,
           transcript: candidate.text,
           reasons: candidate.reasons,
         })),
-      }),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "clipforge_auto_edit_plan",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              candidateId: { type: "string" },
-              startTime: { type: "number" },
-              endTime: { type: "number" },
-              title: { type: "string" },
-              hook: { type: "string" },
-              description: { type: "string" },
-              hashtags: {
-                type: "array",
-                items: { type: "string" },
-              },
-              onScreenText: { type: "string" },
-              recommendedPlatforms: {
-                type: "array",
-                items: {
-                  type: "string",
-                  enum: ["TIKTOK", "YOUTUBE", "FACEBOOK"],
-                },
-              },
-              subtitleStyle: {
-                type: "string",
-                enum: ["CLEAN", "VIRAL", "KARAOKE"],
-              },
-              framingMode: {
-                type: "string",
-                enum: ["FILL", "FIT"],
-              },
-              quality: {
-                type: "string",
-                enum: ["FAST", "BALANCED", "HIGH"],
-              },
-              reason: { type: "string" },
-            },
-            required: [
-              "candidateId",
-              "startTime",
-              "endTime",
-              "title",
-              "hook",
-              "description",
-              "hashtags",
-              "onScreenText",
-              "recommendedPlatforms",
-              "subtitleStyle",
-              "framingMode",
-              "quality",
-              "reason",
-            ],
-            additionalProperties: false,
-          },
-        },
       },
-    };
-
-    const response = await this.fetchImpl(
-      `${this.baseUrl.replace(/\/$/, "")}/responses`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    const body = await readJsonResponse(response);
-
-    if (!response.ok) {
-      throw new Error(
-        body?.error?.message ||
-          body?.message ||
-          `OpenAI Responses API returned HTTP ${response.status}.`,
-      );
-    }
+      fetchImpl: this.fetchImpl,
+    });
 
     await recordUsageSafely(this.usage, {
-      body,
+      usage: result.usage,
+      provider: this.name,
       model: this.model,
       projectId: project?.id || project?.projectId || null,
     });
 
-    const text = extractOutputText(body);
-    if (!text) {
-      throw new Error("OpenAI returned no structured Auto Edit output.");
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error("OpenAI returned invalid JSON for Auto Edit.");
-    }
+    return result.parsed;
   }
 }
 
 async function recordUsageSafely(service, context) {
   if (!service || typeof service.record !== "function") return;
-  const usage = extractOpenAIUsage(context.body);
-  if (usage.inputTokens === 0 && usage.outputTokens === 0) return;
+  const inputTokens = Number(context.usage?.inputTokens || 0);
+  const outputTokens = Number(context.usage?.outputTokens || 0);
+  if (inputTokens === 0 && outputTokens === 0) return;
 
   try {
     await service.record({
-      provider: "openai",
+      provider: context.provider,
       model: context.model,
       operation: "auto-edit",
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
+      inputTokens,
+      outputTokens,
       projectId: context.projectId,
     });
   } catch (error) {
-    console.warn("ClipForge could not persist OpenAI usage", {
+    console.warn("ClipForge could not persist AI usage", {
       operation: "auto-edit",
       error: error instanceof Error ? error.message : String(error),
     });
-  }
-}
-
-async function readJsonResponse(response) {
-  try {
-    return await response.json();
-  } catch {
-    return {};
   }
 }
