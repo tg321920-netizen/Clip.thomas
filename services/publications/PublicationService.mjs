@@ -75,6 +75,7 @@ export class PublicationService {
       publishedAt: null,
       status: approvalRequired ? "WAITING_APPROVAL" : "APPROVED",
       externalPostId: null,
+      externalPostUrl: null,
       error: null,
       createdAt: now,
       updatedAt: now,
@@ -179,7 +180,7 @@ export class PublicationService {
     return publication;
   }
 
-  async markSubmitted(publicationId, externalPostId) {
+  async markSubmitted(publicationId, externalPostId, externalPostUrl = null) {
     const publication = await this.#require(publicationId);
     if (publication.status !== "PUBLISHING") {
       throw new Error("Publication must be PUBLISHING before provider submission.");
@@ -189,13 +190,14 @@ export class PublicationService {
     if (!externalId) throw new Error("externalPostId is required.");
 
     publication.externalPostId = externalId;
+    publication.externalPostUrl = normalizeExternalUrl(externalPostUrl);
     publication.error = null;
     publication.updatedAt = new Date().toISOString();
     await this.repository.save(publication);
     return publication;
   }
 
-  async markPublished(publicationId, externalPostId = null) {
+  async markPublished(publicationId, externalPostId = null, externalPostUrl = null) {
     const publication = await this.#require(publicationId);
     if (publication.status === "PUBLISHED") return publication;
     if (publication.status !== "PUBLISHING") {
@@ -207,6 +209,8 @@ export class PublicationService {
 
     publication.status = "PUBLISHED";
     publication.externalPostId = externalId;
+    publication.externalPostUrl =
+      normalizeExternalUrl(externalPostUrl) || publication.externalPostUrl || null;
     publication.publishedAt = new Date().toISOString();
     publication.error = null;
     publication.updatedAt = publication.publishedAt;
@@ -328,6 +332,17 @@ function normalizeHashtags(value) {
   }
 
   return output;
+}
+
+function normalizeExternalUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value).trim());
+    if (!new Set(["http:", "https:"]).has(url.protocol)) return null;
+    return url.toString().slice(0, 2000);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeFutureDate(value) {
