@@ -27,14 +27,31 @@ while (!stopping) {
     attempt: job.attempts,
   });
 
+  const heartbeat = setInterval(() => {
+    void store.heartbeat(job.id).catch((error) =>
+      console.warn("Transcription heartbeat failed", {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }, 15_000);
+  heartbeat.unref?.();
+
   try {
-    const result = await transcribeProject(job.projectId, job.payload || {});
+    const result = await transcribeProject(job.projectId, {
+      ...(job.payload || {}),
+      onProgress: async (progress) => {
+        await store.updateProgress(job.id, progress);
+        await store.heartbeat(job.id);
+      },
+    });
     await store.complete(job);
 
     console.log("Transcription completed", {
       projectId: job.projectId,
       reused: result.reused,
       segments: result.transcript?.segments?.length ?? 0,
+      chunks: result.transcript?.chunks?.length ?? 1,
     });
   } catch (error) {
     const failed = await store.fail(job, error);
@@ -45,6 +62,8 @@ while (!stopping) {
       error: failed.error,
       nextAttemptAt: failed.nextAttemptAt,
     });
+  } finally {
+    clearInterval(heartbeat);
   }
 
   if (once) break;
