@@ -1,3 +1,4 @@
+// Domain contracts for the resumable ClipForge marketing workflow engine.
 export type WorkflowStatus =
   | "draft"
   | "queued"
