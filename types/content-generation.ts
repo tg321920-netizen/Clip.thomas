@@ -37,16 +37,27 @@ export type GeneratedContentVariant = {
   evidenceExtractionIds: string[];
 };
 
+export type ContentGenerationStatus =
+  | "DRAFT"
+  | "WAITING_APPROVAL"
+  | "APPROVED"
+  | "CHANGES_REQUESTED"
+  | "REJECTED";
+
 export type ContentGenerationRecord = {
   id: string;
   planId: string;
   projectId: string | null;
   format: string;
   channels: string[];
-  status: "DRAFT";
+  status: ContentGenerationStatus;
   requiresApproval: true;
   generationMode: "DETERMINISTIC";
   variants: GeneratedContentVariant[];
+  approvalId?: string | null;
+  selectedVariantId?: string | null;
+  reviewNote?: string | null;
+  reviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
