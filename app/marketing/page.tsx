@@ -23,6 +23,12 @@ type PublishingSummary = {
   status: string;
 };
 
+type RecipeSummary = {
+  key: string;
+  name: string;
+  description: string;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -45,6 +51,7 @@ export default async function MarketingDashboard() {
   const executions = rawExecutions as ExecutionSummary[];
   const generations = rawGenerations as ContentSummary[];
   const simulations = rawSimulations as PublishingSummary[];
+  const recipeRecords = recipes.listRecipes() as RecipeSummary[];
   const active = executions.filter((item: ExecutionSummary) => !["completed", "cancelled", "failed"].includes(item.status));
   const errors = executions.filter((item: ExecutionSummary) => item.status === "failed");
   const completed = executions.filter((item: ExecutionSummary) => item.status === "completed");
@@ -106,7 +113,7 @@ export default async function MarketingDashboard() {
 
           <Panel title="Recetas">
             <div className="space-y-2">
-              {recipes.listRecipes().map((recipe) => (
+              {recipeRecords.map((recipe: RecipeSummary) => (
                 <div key={recipe.key} className="rounded-xl border border-white/10 px-3 py-2.5">
                   <p className="text-sm font-medium text-zinc-200">{recipe.name}</p>
                   <p className="mt-1 text-xs leading-5 text-zinc-600">{recipe.description}</p>
