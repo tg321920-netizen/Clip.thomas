@@ -3,6 +3,8 @@ import { ApprovalInbox } from "@/components/ApprovalInbox";
 import { ApprovalService } from "@/services/approvals/ApprovalService.mjs";
 import { ContentGenerationRepository } from "@/services/content-generation/ContentGenerationRepository.mjs";
 import { InternalNotificationService } from "@/services/notifications/InternalNotificationService.mjs";
+import type { ApprovalRequest } from "@/types/approval";
+import type { GeneratedContentVariant } from "@/types/content-generation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,13 +20,13 @@ export default async function ApprovalsPage() {
   ]);
 
   const enriched = await Promise.all(
-    pending.map(async (approval) => {
+    (pending as ApprovalRequest[]).map(async (approval: ApprovalRequest) => {
       if (approval.subjectType !== "CONTENT_GENERATION") return approval;
       const generation = await content.get(approval.subjectId);
       return {
         ...approval,
         variants: Array.isArray(generation?.variants)
-          ? generation.variants.map((variant) => ({
+          ? (generation.variants as GeneratedContentVariant[]).map((variant: GeneratedContentVariant) => ({
               id: variant.id,
               label: variant.label,
               angle: variant.angle,
