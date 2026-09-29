@@ -1,4 +1,4 @@
-const CANONICAL_PROJECT_ID = "prj_8rOfWiKDx2N5tWuvt5pfqtnypZwl";
+const CANONICAL_PROJECT_ID = "prj_dU0D8QBQz5PGqD7tsqILqoqaUXqq";
 
 const projectId = String(process.env.VERCEL_PROJECT_ID || "").trim();
 const gitRef = String(process.env.VERCEL_GIT_COMMIT_REF || "").trim();
