@@ -74,13 +74,18 @@ export class PublishingService {
       throw new Error("Channel is not enabled for publishing.");
     }
 
+    const project = await loadProjectFile(publication.projectId);
+    if (!project) throw new Error("Project not found.");
+    if (project?.ownedContent && !ownedContentRealPublishingEnabled()) {
+      throw new Error(
+        "Owned-content real publishing is OFF. Set CLIPFORGE_CONTENT_REAL_PUBLISHING=true only after explicit activation.",
+      );
+    }
+
     const credentials = await this.#credentialsFor(channel.id);
     if (!credentials) {
       throw new Error("OAuth credentials are not configured for this channel.");
     }
-
-    const project = await loadProjectFile(publication.projectId);
-    if (!project) throw new Error("Project not found.");
 
     const clip = Array.isArray(project.clips)
       ? project.clips.find((entry) => entry.id === publication.clipId)
@@ -211,4 +216,10 @@ export function classifyProviderStatus(platform, result = {}) {
   }
 
   return "PENDING";
+}
+
+function ownedContentRealPublishingEnabled() {
+  return String(process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING || "")
+    .trim()
+    .toLowerCase() === "true";
 }
