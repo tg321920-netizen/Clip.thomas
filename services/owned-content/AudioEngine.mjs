@@ -11,6 +11,7 @@ const PROFILES = Object.freeze({
   LATAM_NEWS_ES: { language: "es-419", voice: "es", speed: 165, tone: "neutral-latam" },
   ENTERTAINMENT_ES: { language: "es-419", voice: "es", speed: 182, tone: "energetic-clear" },
 });
+const MODES = new Set(["TTS_FREE", "TTS_PREMIUM"]);
 
 export class AudioEngine {
   constructor(options = {}) {
@@ -25,6 +26,7 @@ export class AudioEngine {
     if (!script?.narration) throw new Error("Narration script is required.");
     const profile = getVoiceProfile(input.voiceProfile);
     const mode = String(input.mode || "TTS_FREE").trim().toUpperCase();
+    if (!MODES.has(mode)) throw new Error("Unsupported TTS mode.");
     const contentId = String(input.contentId || script.id || "").trim();
     if (!contentId) throw new Error("Audio contentId is required.");
 
@@ -32,7 +34,11 @@ export class AudioEngine {
     if (mode === "TTS_PREMIUM") {
       if (input.authorizedPremium !== true) throw new Error("TTS_PREMIUM requires explicit authorization. No paid TTS was consumed.");
       if (!this.premiumProvider?.synthesize) throw new Error("TTS_PREMIUM provider is not configured.");
-      await this.costs.assertBudget(input.channelId, budget, Number(input.estimatedPremiumCostUsd || 0));
+      const estimate = Number(input.estimatedPremiumCostUsd);
+      if (!Number.isFinite(estimate) || estimate < 0) {
+        throw new Error("TTS_PREMIUM requires a known non-negative cost estimate before any paid call.");
+      }
+      await this.costs.assertBudget(input.channelId, budget, estimate);
     }
 
     const outputDir = path.join(getStorageRoot(), "owned-content", "audio", contentId);
@@ -47,6 +53,9 @@ export class AudioEngine {
     let musicAsset = null;
     if (input.musicAssetId) {
       musicAsset = await this.rights.assertUsable(input.musicAssetId);
+      if (musicAsset.channelId !== input.channelId) {
+        throw new Error("Audio asset belongs to another channel and cannot cross Content Factory channel boundaries.");
+      }
       if (musicAsset.mediaType !== "MUSIC" && musicAsset.mediaType !== "AUDIO") throw new Error("Selected background asset is not audio/music.");
       if (!musicAsset.localRelativePath) throw new Error("Permitted music asset does not have a local file.");
       musicPath = resolveStoragePath(musicAsset.localRelativePath);
@@ -61,7 +70,7 @@ export class AudioEngine {
       await this.costs.record({ channelId: input.channelId, contentId: input.contentId || null, category: "TTS", provider: provider.name || "espeak-ng", operation: "narration", amountUsd: 0, note: "Local/free TTS." });
     } else {
       const actual = input.actualPremiumCostUsd;
-      await this.costs.record({ channelId: input.channelId, contentId: input.contentId || null, category: "TTS", provider: provider.name || "premium", operation: "narration", amountUsd: actual === undefined ? null : actual, note: "Premium TTS used only after explicit authorization." });
+      await this.costs.record({ channelId: input.channelId, contentId: input.contentId || null, category: "TTS", provider: provider.name || "premium", operation: "narration", amountUsd: actual === undefined ? null : actual, note: "Premium TTS used only after explicit authorization and budget validation." });
     }
 
     return {
