@@ -4,6 +4,7 @@ import { MarketingWorkflowRunner } from "@/services/workflows/MarketingWorkflowR
 import { WorkflowService } from "@/services/workflows/WorkflowService.mjs";
 
 type Context = { params: Promise<{ executionId: string }> };
+type WorkflowStep = { type?: string };
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,9 @@ export async function POST(request: NextRequest, context: Context) {
     const workflow = await workflows.getWorkflow(execution.workflowId);
     if (!workflow) throw new Error("Workflow definition not found.");
 
-    const isOwnedContent = workflow.steps?.some((step) => String(step.type || "").startsWith("OWNED_"));
+    const isOwnedContent = workflow.steps?.some((step: WorkflowStep) =>
+      String(step.type || "").startsWith("OWNED_"),
+    );
     const runner = isOwnedContent
       ? new OwnedContentWorkflowRunner({ workflows })
       : new MarketingWorkflowRunner({ workflows });
