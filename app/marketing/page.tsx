@@ -7,6 +7,22 @@ import { MarketingPublishingHub } from "@/services/publishing/MarketingPublishin
 import { WorkflowRecipeService } from "@/services/workflows/WorkflowRecipeService.mjs";
 import { WorkflowService } from "@/services/workflows/WorkflowService.mjs";
 
+type ExecutionSummary = {
+  id: string;
+  status: string;
+  currentStepId: string | null;
+  retries?: number;
+};
+
+type ContentSummary = {
+  status: string;
+};
+
+type PublishingSummary = {
+  dryRun?: boolean;
+  status: string;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -18,7 +34,7 @@ export default async function MarketingDashboard() {
   const publishing = new MarketingPublishingHub();
   const recipes = new WorkflowRecipeService();
 
-  const [executions, pending, generations, brandRecords, simulations] = await Promise.all([
+  const [rawExecutions, pending, rawGenerations, brandRecords, rawSimulations] = await Promise.all([
     workflows.listExecutions(),
     approvals.list({ status: "PENDING" }),
     content.list(),
@@ -26,9 +42,12 @@ export default async function MarketingDashboard() {
     publishing.list(),
   ]);
 
-  const active = executions.filter((item) => !["completed", "cancelled", "failed"].includes(item.status));
-  const errors = executions.filter((item) => item.status === "failed");
-  const completed = executions.filter((item) => item.status === "completed");
+  const executions = rawExecutions as ExecutionSummary[];
+  const generations = rawGenerations as ContentSummary[];
+  const simulations = rawSimulations as PublishingSummary[];
+  const active = executions.filter((item: ExecutionSummary) => !["completed", "cancelled", "failed"].includes(item.status));
+  const errors = executions.filter((item: ExecutionSummary) => item.status === "failed");
+  const completed = executions.filter((item: ExecutionSummary) => item.status === "completed");
 
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100">
@@ -57,7 +76,7 @@ export default async function MarketingDashboard() {
 
         <section className="mt-7 grid gap-4 lg:grid-cols-2">
           <Panel title="Automatizaciones">
-            {active.length === 0 ? <Empty text="No hay automatizaciones activas." /> : active.slice(0, 8).map((item) => (
+            {active.length === 0 ? <Empty text="No hay automatizaciones activas." /> : active.slice(0, 8).map((item: ExecutionSummary) => (
               <div key={item.id} className="rounded-xl border border-white/10 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">{item.currentStepId || "Finalizando"}</p>
@@ -71,16 +90,16 @@ export default async function MarketingDashboard() {
           <Panel title="Contenido">
             <div className="grid grid-cols-2 gap-3">
               <Mini label="Piezas" value={generations.length} />
-              <Mini label="Aprobadas" value={generations.filter((item) => item.status === "APPROVED").length} />
-              <Mini label="Esperando" value={generations.filter((item) => item.status === "WAITING_APPROVAL").length} />
-              <Mini label="Rechazadas" value={generations.filter((item) => item.status === "REJECTED").length} />
+              <Mini label="Aprobadas" value={generations.filter((item: ContentSummary) => item.status === "APPROVED").length} />
+              <Mini label="Esperando" value={generations.filter((item: ContentSummary) => item.status === "WAITING_APPROVAL").length} />
+              <Mini label="Rechazadas" value={generations.filter((item: ContentSummary) => item.status === "REJECTED").length} />
             </div>
           </Panel>
 
           <Panel title="Publishing Hub">
             <div className="grid grid-cols-2 gap-3">
-              <Mini label="Simulaciones" value={simulations.filter((item) => item.dryRun).length} />
-              <Mini label="Esperando aprobación" value={simulations.filter((item) => item.status === "WAITING_APPROVAL").length} />
+              <Mini label="Simulaciones" value={simulations.filter((item: PublishingSummary) => item.dryRun).length} />
+              <Mini label="Esperando aprobación" value={simulations.filter((item: PublishingSummary) => item.status === "WAITING_APPROVAL").length} />
             </div>
             <p className="mt-4 text-xs leading-5 text-zinc-500">Las automatizaciones nuevas trabajan en DRY RUN. La publicación real exige aprobación y conexión autorizada.</p>
           </Panel>
