@@ -10,10 +10,6 @@ const runtimeHome = path.resolve(
   process.env.CLIPFORGE_RUNTIME_HOME?.trim() || path.join(storageRoot, ".runtime-home"),
 );
 const port = String(process.env.PORT || "10000");
-// The free service intentionally runs heavyweight workers sequentially to stay
-// within 512 MB. Do not respawn the full worker set every 2-3 seconds while
-// idle: that burns CPU/RAM and can make the web process less responsive. Ten
-// seconds is still a short pickup delay for this personal asynchronous tool.
 const loopDelayMs = Math.max(
   10_000,
   clampInteger(
@@ -58,6 +54,7 @@ const workerScripts = [
   "scripts/autoedit-worker.mjs",
   "scripts/render-worker.mjs",
   "scripts/news-worker.mjs",
+  "scripts/owned-content-worker.mjs",
   "scripts/publishing-worker.mjs",
   "scripts/analytics-worker.mjs",
 ];
