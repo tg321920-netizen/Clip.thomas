@@ -84,11 +84,20 @@ export async function prepareAutoEdit(projectId, options = {}) {
     options,
   });
 
-  const plan = normalizeAutoEditPlan(rawPlan, project, {
-    providerName,
-    providerModel,
-    sourceKey,
-  });
+  const plan = normalizeAutoEditPlan(
+    {
+      ...rawPlan,
+      ...(options.subtitleStyle ? { subtitleStyle: options.subtitleStyle } : {}),
+      ...(options.framingMode ? { framingMode: options.framingMode } : {}),
+      ...(options.quality ? { quality: options.quality } : {}),
+    },
+    project,
+    {
+      providerName,
+      providerModel,
+      sourceKey,
+    },
+  );
 
   const created = await createClipFromCandidate(
     projectId,
