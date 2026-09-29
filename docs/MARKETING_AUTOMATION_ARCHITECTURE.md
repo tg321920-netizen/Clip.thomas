@@ -30,7 +30,8 @@ El repositorio raíz ya contiene la aplicación canónica de ClipForge. Hoy exis
 - frontend Vercel separado del procesamiento pesado;
 - motor genérico de workflows y executions de marketing;
 - Sources/Extraction inicial para texto, páginas web autorizadas y proyectos existentes de ClipForge;
-- Marketing Brain con planificación basada en evidencia y fallback determinista sin IA.
+- Marketing Brain con planificación basada en evidencia y fallback determinista sin IA;
+- generación determinista de contenido A/B/C lista para revisión humana.
 
 ## 2. Qué se puede reutilizar
 
@@ -52,7 +53,7 @@ Reutilizar owner auth, CredentialVault, variables de entorno, validación de IDs
 
 ### IA y costos
 
-Reutilizar `OpenAICompatibleClient` y `AIUsageService`. El Marketing Brain funciona en modo `AUTO`, `AI` o `DETERMINISTIC`: `AUTO` usa IA solo cuando existe proveedor configurado; si no, continúa sin costo de IA.
+Reutilizar `OpenAICompatibleClient` y `AIUsageService`. El Marketing Brain funciona en modo `AUTO`, `AI` o `DETERMINISTIC`: `AUTO` usa IA solo cuando existe proveedor configurado; si no, continúa sin costo de IA. La primera versión del generador de contenido es determinista para producir variantes baratas antes de añadir refinamiento opcional por IA.
 
 ### Analytics y aprendizaje
 
@@ -63,7 +64,6 @@ Reutilizar AnalyticsRepository/Service y PerformanceAnalyzer como base para memo
 - ejecutar automáticamente handlers de nodos sobre el motor de workflows;
 - ampliar Sources a PDF, CSV, Excel, imagen, audio independiente, catálogo y MetaBot;
 - Extraction semántica específica por empresa/producto/servicio;
-- generador de contenido/copy multi-variante;
 - perfiles de marca;
 - bandeja unificada de aprobaciones;
 - notificaciones internas y conectores futuros;
@@ -111,9 +111,10 @@ executions/
   persistidas dentro de workflows en Fase 1
 
 content-generation/
-  copy
-  scripts
-  variants
+  ContentGenerationService
+  ContentGenerationRepository
+  variants A/B/C
+  script/storyboard/subtitles
 
 media-processing/
   reutiliza servicios existentes
@@ -186,7 +187,7 @@ Queda para iteraciones posteriores de Sources: PDF, CSV, Excel, imagen, audio in
 
 ### Fase 3 — Marketing Brain
 
-Implementación actual:
+Implementada e integrada en `main`:
 
 - recibe una o varias extracciones completadas;
 - impide mezclar extracciones de proyectos ClipForge distintos;
@@ -204,7 +205,20 @@ Implementación actual:
 
 ### Fase 4 — Content generation
 
-Título, hook, copy, CTA, guion, storyboard, textos en pantalla y variantes A/B/C.
+Implementación actual:
+
+- toma un Marketing Plan persistido como única entrada estratégica;
+- crea por defecto tres variantes: A `PROBLEM`, B `DEMONSTRATION`, C `BENEFIT`;
+- permite limitar a 1–3 variantes para reducir trabajo cuando no hacen falta tres;
+- prepara título, hook, descripción, copy publicitario, CTA y hashtags;
+- para `VERTICAL_VIDEO` genera beats de guion, storyboard, subtítulos y textos en pantalla con tiempos relativos;
+- para piezas estáticas no inventa instrucciones temporales de video;
+- referencia los extraction IDs que sustentan el plan;
+- usa únicamente material propio/licenciado como instrucción visual y prohíbe cerrar con marcas ajenas no autorizadas;
+- persiste cada generación como `DRAFT` y siempre establece `requiresApproval: true`;
+- no llama a APIs de publicación ni genera gasto externo;
+- expone APIs para crear/listar/consultar generaciones;
+- pruebas cubren variantes A/B/C, cantidad configurable, video vs pieza estática, persistencia y errores de plan inexistente.
 
 ### Fase 5 — Approvals
 
