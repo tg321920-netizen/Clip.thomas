@@ -15,10 +15,22 @@ export default function Home() {
               ClipForge Multi
             </p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Convierte videos largos en clips listos para publicar.
+              Clips, contenido y automatización de marketing.
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/marketing"
+              className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+            >
+              MARKETING
+            </Link>
+            <Link
+              href="/approvals"
+              className="shrink-0 rounded-xl border border-amber-300/20 px-4 py-2.5 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/[0.06]"
+            >
+              APROBACIONES
+            </Link>
             <Link
               href="/connections"
               className="shrink-0 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-zinc-300 transition hover:bg-white/5"
@@ -41,7 +53,7 @@ export default function Home() {
             </form>
             <a
               href="#nuevo-proyecto"
-              className="shrink-0 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400"
+              className="shrink-0 rounded-xl border border-violet-400/30 px-4 py-2.5 text-sm font-semibold text-violet-200 transition hover:bg-violet-400/[0.08]"
             >
               + NUEVO PROYECTO
             </a>
