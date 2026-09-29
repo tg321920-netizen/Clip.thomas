@@ -15,16 +15,16 @@ export class OwnedContentDuplicateService {
       const project = await loadProjectFile(publication.projectId);
       const previous = project?.ownedContent;
       if (!previous) continue;
-      const similarity = Math.max(
-        similarity(currentTokens, tokens(previous.topic || "")),
-        similarity(currentTokens, tokens(previous.hook || "")),
+      const similarityScore = Math.max(
+        tokenSimilarity(currentTokens, tokens(previous.topic || "")),
+        tokenSimilarity(currentTokens, tokens(previous.hook || "")),
       );
-      if (!best || similarity > best.similarity) {
+      if (!best || similarityScore > best.similarity) {
         best = {
           publicationId: publication.id,
           projectId: publication.projectId,
           previousTopic: previous.topic || null,
-          similarity,
+          similarity: similarityScore,
         };
       }
     }
@@ -41,7 +41,7 @@ export class OwnedContentDuplicateService {
 function tokens(value) {
   return [...new Set(String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{4,}/g) || [])].filter((item) => !STOP.has(item));
 }
-function similarity(a, b) {
+function tokenSimilarity(a, b) {
   if (!a.length || !b.length) return 0;
   const A = new Set(a), B = new Set(b);
   let common = 0;
