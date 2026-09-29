@@ -25,6 +25,7 @@ export class OwnedContentRenderService {
 
     const audioPath = resolveStoragePath(audio.relativePath);
     const posterPath = resolveStoragePath(visualPlan.posterRelativePath);
+    await stat(posterPath);
     const newsRenderer = this.newsRendererFactory(audioPath);
     const brief = {
       narration: script.narration,
