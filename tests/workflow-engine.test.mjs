@@ -21,9 +21,9 @@ async function withStorage(fn) {
   }
 }
 
-async function createMarketingWorkflow(service) {
+async function createMarketingWorkflow(service, name = "MetaBot marketing") {
   return service.createWorkflow({
-    name: "MetaBot marketing",
+    name,
     projectId: PROJECT_ID,
     steps: [
       { type: "SOURCE" },
@@ -97,7 +97,7 @@ test("approval is a hard pause and continues only after explicit approval", asyn
   });
 });
 
-test("idempotency key prevents duplicate executions", async () => {
+test("idempotency key prevents duplicate executions within the same workflow", async () => {
   await withStorage(async () => {
     const service = new WorkflowService();
     const workflow = await createMarketingWorkflow(service);
@@ -112,6 +112,26 @@ test("idempotency key prevents duplicate executions", async () => {
     assert.equal(first.reused, false);
     assert.equal(second.reused, true);
     assert.equal(first.execution.id, second.execution.id);
+  });
+});
+
+test("the same idempotency key can be used by different workflows", async () => {
+  await withStorage(async () => {
+    const service = new WorkflowService();
+    const firstWorkflow = await createMarketingWorkflow(service, "MetaBot hotels");
+    const secondWorkflow = await createMarketingWorkflow(service, "MetaBot restaurants");
+
+    const first = await service.createExecution(firstWorkflow.id, {
+      idempotencyKey: "campaign-2026-09-28",
+    });
+    const second = await service.createExecution(secondWorkflow.id, {
+      idempotencyKey: "campaign-2026-09-28",
+    });
+
+    assert.equal(first.reused, false);
+    assert.equal(second.reused, false);
+    assert.notEqual(first.execution.id, second.execution.id);
+    assert.notEqual(first.execution.workflowId, second.execution.workflowId);
   });
 });
 
