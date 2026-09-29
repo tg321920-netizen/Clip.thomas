@@ -20,6 +20,9 @@ export class VisualAssemblyService {
     const selected = [];
     for (const assetId of [...new Set((input.assetIds || []).map(String))]) {
       const asset = await this.rights.assertUsable(assetId);
+      if (asset.channelId !== channelId) {
+        throw new Error("Visual asset belongs to another channel and cannot cross Content Factory channel boundaries.");
+      }
       selected.push(asset);
     }
 
