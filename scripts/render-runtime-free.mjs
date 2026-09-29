@@ -10,10 +10,17 @@ const runtimeHome = path.resolve(
   process.env.CLIPFORGE_RUNTIME_HOME?.trim() || path.join(storageRoot, ".runtime-home"),
 );
 const port = String(process.env.PORT || "10000");
-const loopDelayMs = clampInteger(
-  process.env.CLIPFORGE_FREE_WORKER_POLL_MS || 2500,
-  1000,
-  60000,
+// The free service intentionally runs heavyweight workers sequentially to stay
+// within 512 MB. Do not respawn the full worker set every 2-3 seconds while
+// idle: that burns CPU/RAM and can make the web process less responsive. Ten
+// seconds is still a short pickup delay for this personal asynchronous tool.
+const loopDelayMs = Math.max(
+  10_000,
+  clampInteger(
+    process.env.CLIPFORGE_FREE_WORKER_POLL_MS || 10_000,
+    1000,
+    60000,
+  ),
 );
 const bundledEspeakRoot = path.resolve(process.cwd(), ".runtime", "espeak");
 const bundledEspeakCommand = path.join(bundledEspeakRoot, "bin", "espeak-ng");
