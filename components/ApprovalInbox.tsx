@@ -21,6 +21,11 @@ type ApprovalItem = {
   message: string;
   createdAt: string;
   variants?: VariantPreview[];
+  details?: {
+    executionId?: string;
+    workflowId?: string;
+    [key: string]: unknown;
+  };
 };
 
 type Props = {
@@ -66,10 +71,27 @@ export function ApprovalInbox({ initialApprovals, unreadNotifications }: Props) 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "No se pudo guardar la decisión.");
 
+      let continuationNote = "";
+      if (action === "approve" && item.details?.executionId) {
+        const continued = await fetch(`/api/executions/${item.details.executionId}/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "CONTINUE_AFTER_APPROVAL" }),
+        });
+        const continuation = await continued.json().catch(() => ({}));
+        if (!continued.ok) {
+          continuationNote = ` La aprobación quedó guardada, pero la automatización necesita atención: ${continuation?.error || "no pudo continuar"}.`;
+        } else if (continuation?.execution?.status === "completed") {
+          continuationNote = " La automatización continuó y completó los pasos disponibles.";
+        } else if (continuation?.execution?.status) {
+          continuationNote = ` La automatización continuó y quedó en estado ${continuation.execution.status}.`;
+        }
+      }
+
       setItems((current) => current.filter((entry) => entry.id !== item.id));
       setMessage(
         action === "approve"
-          ? "Aprobado. El contenido quedó listo para continuar al siguiente paso."
+          ? `Aprobado.${continuationNote || " El contenido quedó listo para continuar al siguiente paso."}`
           : action === "modify"
             ? "Cambios solicitados. La pieza salió de la bandeja pendiente."
             : "Rechazado. No se continuará con esta pieza.",
