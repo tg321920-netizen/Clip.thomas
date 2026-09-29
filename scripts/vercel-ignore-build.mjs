@@ -1,18 +1,28 @@
-const CANONICAL_PROJECT_ID = "prj_dU0D8QBQz5PGqD7tsqILqoqaUXqq";
+const CANONICAL_PROJECT_ID = "prj_8rOfWiKDx2N5tWuvt5pfqtnypZwl";
 
 const projectId = String(process.env.VERCEL_PROJECT_ID || "").trim();
+const gitRef = String(process.env.VERCEL_GIT_COMMIT_REF || "").trim();
+const vercelEnv = String(process.env.VERCEL_ENV || "").trim();
 
 // Vercel's ignoreCommand contract:
 // exit 0 => skip this deployment
 // exit 1 => continue building
-//
-// Fallback guard for duplicate projects. The canonical project is forced to
-// build by vercel.json, while duplicate project IDs remain safe to skip here
-// if this script is reused manually or from project settings in the future.
 if (projectId && projectId !== CANONICAL_PROJECT_ID) {
   console.log(`Skipping duplicate Vercel project ${projectId}; canonical project is ${CANONICAL_PROJECT_ID}.`);
   process.exit(0);
 }
 
-console.log("Building active ClipForge Vercel project.");
-process.exit(1);
+if (vercelEnv === "production" || gitRef === "main") {
+  console.log("Building canonical ClipForge production deployment.");
+  process.exit(1);
+}
+
+if (!projectId) {
+  // Fail open if Vercel ever stops exposing VERCEL_PROJECT_ID so a legitimate
+  // deployment is not silently suppressed.
+  console.log("VERCEL_PROJECT_ID is unavailable; continuing build for safety.");
+  process.exit(1);
+}
+
+console.log(`Skipping non-production preview for branch ${gitRef || "unknown"}.`);
+process.exit(0);
