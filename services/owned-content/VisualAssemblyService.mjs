@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
+import { resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { RightsGuard } from "./RightsGuard.mjs";
 import { ContentCostService } from "./ContentCostService.mjs";
 
