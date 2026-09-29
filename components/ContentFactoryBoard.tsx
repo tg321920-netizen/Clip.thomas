@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 type Brand = { id: string; name: string };
@@ -187,6 +188,6 @@ export default function ContentFactoryBoard({ initialData, brands }: { initialDa
 }
 
 const control = "w-full rounded-xl border border-white/10 bg-[#0c0d12] px-3 py-2 text-sm text-zinc-200 outline-none focus:border-violet-400/50";
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block text-xs font-medium text-zinc-500"><span className="mb-1 block">{label}</span>{children}</label>; }
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block text-xs font-medium text-zinc-500"><span className="mb-1 block">{label}</span>{children}</label>; }
 function Stat({ label, value }: { label: string; value: number }) { return <div className="rounded-xl border border-white/10 p-3"><p className="text-xl font-semibold">{value}</p><p className="text-[11px] text-zinc-500">{label}</p></div>; }
 function Mini({ label, value }: { label: string; value: number }) { return <div className="rounded-lg bg-white/[0.03] px-3 py-2"><p className="text-base font-semibold">{value}</p><p className="text-[10px] text-zinc-500">{label}</p></div>; }
