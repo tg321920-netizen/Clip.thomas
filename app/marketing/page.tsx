@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { ApprovalService } from "@/services/approvals/ApprovalService.mjs";
 import { BrandService } from "@/services/branding/BrandService.mjs";
@@ -108,5 +109,5 @@ function Action({ href, title, text }: { href: string; title: string; text: stri
 }
 function Stat({ label, value }: { label: string; value: number }) { return <div className="rounded-2xl border border-white/10 p-4"><p className="text-2xl font-semibold">{value}</p><p className="mt-1 text-xs text-zinc-500">{label}</p></div>; }
 function Mini({ label, value }: { label: string; value: number }) { return <div className="rounded-xl bg-white/[0.03] p-3"><p className="text-lg font-semibold">{value}</p><p className="text-xs text-zinc-500">{label}</p></div>; }
-function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.015] p-4 sm:p-5"><h2 className="mb-4 text-sm font-semibold text-zinc-200">{title}</h2><div className="space-y-3">{children}</div></section>; }
+function Panel({ title, children }: { title: string; children: ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.015] p-4 sm:p-5"><h2 className="mb-4 text-sm font-semibold text-zinc-200">{title}</h2><div className="space-y-3">{children}</div></section>; }
 function Empty({ text }: { text: string }) { return <p className="text-sm text-zinc-600">{text}</p>; }
