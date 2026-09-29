@@ -70,7 +70,10 @@ export class WorkflowService {
 
     const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
     if (idempotencyKey) {
-      const existing = await this.repository.findExecutionByIdempotencyKey(idempotencyKey);
+      const existing = await this.repository.findExecutionByIdempotencyKey(
+        workflowId,
+        idempotencyKey,
+      );
       if (existing) return { execution: existing, reused: true };
     }
 
