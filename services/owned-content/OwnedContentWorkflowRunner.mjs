@@ -57,7 +57,13 @@ export class OwnedContentWorkflowRunner {
           message: gate?.status === "WAITING_REVIEW"
             ? "Una o más comprobaciones de coherencia/derechos necesitan revisión humana antes de continuar."
             : "La investigación, guion, derechos, narración y render superaron los controles automáticos. Revisa la pieza antes del DRY RUN de publicación.",
-          details: { gate: gate || null, channelId: execution.input?.factoryChannelId, ownedContent: true },
+          details: {
+            executionId: execution.id,
+            workflowId: workflow.id,
+            gate: gate || null,
+            channelId: execution.input?.factoryChannelId,
+            ownedContent: true,
+          },
         });
         execution = await this.workflows.startCurrentStep(execution.id);
         return { execution, approval: request.approval, processedSteps: processed };
