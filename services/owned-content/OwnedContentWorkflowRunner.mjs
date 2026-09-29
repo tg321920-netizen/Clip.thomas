@@ -6,6 +6,8 @@ import { WorkflowService } from "../workflows/WorkflowService.mjs";
 import { AudioEngine } from "./AudioEngine.mjs";
 import { CoherenceGate } from "./CoherenceGate.mjs";
 import { OriginalNewsScriptService } from "./OriginalNewsScriptService.mjs";
+import { OwnedContentDuplicateService } from "./OwnedContentDuplicateService.mjs";
+import { enrichOwnedContentProject } from "./OwnedContentMetadataService.mjs";
 import { OwnedContentPerformanceService } from "./OwnedContentPerformanceService.mjs";
 import { OwnedContentRenderService } from "./OwnedContentRenderService.mjs";
 import { ResearchEngine } from "./ResearchEngine.mjs";
@@ -29,6 +31,7 @@ export class OwnedContentWorkflowRunner {
     this.visuals = options.visuals || new VisualAssemblyService();
     this.renderer = options.renderer || new OwnedContentRenderService();
     this.gate = options.gate || new CoherenceGate();
+    this.duplicates = options.duplicates || new OwnedContentDuplicateService({ publications: this.publications });
     this.performance = options.performance || new OwnedContentPerformanceService({ publications: this.publications });
   }
 
@@ -178,11 +181,13 @@ export class OwnedContentWorkflowRunner {
     }
 
     if (step.type === "OWNED_RENDER") {
+      const trend = findOutput(execution, workflow, "OWNED_TREND")?.trend;
       const dossier = findOutput(execution, workflow, "OWNED_RESEARCH")?.dossier;
       const script = findOutput(execution, workflow, "OWNED_SCRIPT")?.script;
       const audio = findOutput(execution, workflow, "OWNED_AUDIO")?.audio;
       const visualPlan = findOutput(execution, workflow, "OWNED_VISUAL")?.visualPlan;
       const brand = input.brandId ? await this.brands.get(input.brandId) : null;
+      const editTemplate = input.editTemplate || input.profileSnapshot?.editTemplate;
       const render = await this.renderer.render({
         projectId: execution.id,
         channelId,
@@ -194,7 +199,18 @@ export class OwnedContentWorkflowRunner {
         audio,
         visualPlan,
         brand,
-        editTemplate: input.editTemplate || input.profileSnapshot?.editTemplate,
+        editTemplate,
+      });
+      await enrichOwnedContentProject(render.projectId, {
+        topic: dossier?.topic,
+        category: input.category || "GENERAL",
+        hook: script?.hook,
+        format: script?.format,
+        language: script?.language,
+        voiceProfile: audio?.voiceProfile,
+        editStyle: editTemplate?.subtitleStyle,
+        trendId: trend?.id,
+        topicFingerprint: dossier?.topicFingerprint,
       });
       return { projectId: render.projectId, clipId: render.clipId, render };
     }
@@ -203,8 +219,14 @@ export class OwnedContentWorkflowRunner {
       const dossier = findOutput(execution, workflow, "OWNED_RESEARCH")?.dossier;
       const script = findOutput(execution, workflow, "OWNED_SCRIPT")?.script;
       const visualPlan = findOutput(execution, workflow, "OWNED_VISUAL")?.visualPlan;
-      const gate = this.gate.evaluate({ research: dossier, script, visualPlan, nearDuplicate: input.nearDuplicate === true });
-      return gate;
+      const duplicateCheck = await this.duplicates.check(channelId, dossier);
+      const gate = this.gate.evaluate({
+        research: dossier,
+        script,
+        visualPlan,
+        nearDuplicate: input.nearDuplicate === true || duplicateCheck.nearDuplicate,
+      });
+      return { ...gate, duplicateCheck };
     }
 
     if (step.type === "OWNED_DRY_RUN") {
