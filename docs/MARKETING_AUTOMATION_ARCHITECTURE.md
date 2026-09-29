@@ -29,7 +29,8 @@ El repositorio raíz ya contiene la aplicación canónica de ClipForge. Hoy exis
 - runtime persistente Docker y workers separados;
 - frontend Vercel separado del procesamiento pesado;
 - motor genérico de workflows y executions de marketing;
-- Sources/Extraction inicial para texto, páginas web autorizadas y proyectos existentes de ClipForge.
+- Sources/Extraction inicial para texto, páginas web autorizadas y proyectos existentes de ClipForge;
+- Marketing Brain con planificación basada en evidencia y fallback determinista sin IA.
 
 ## 2. Qué se puede reutilizar
 
@@ -49,6 +50,10 @@ Reutilizar `PublicationService`, scheduler, providers OAuth, conexiones y analyt
 
 Reutilizar owner auth, CredentialVault, variables de entorno, validación de IDs/rutas y persistencia atómica. Las APIs nuevas quedan detrás del proxy global de owner auth en despliegues alojados.
 
+### IA y costos
+
+Reutilizar `OpenAICompatibleClient` y `AIUsageService`. El Marketing Brain funciona en modo `AUTO`, `AI` o `DETERMINISTIC`: `AUTO` usa IA solo cuando existe proveedor configurado; si no, continúa sin costo de IA.
+
 ### Analytics y aprendizaje
 
 Reutilizar AnalyticsRepository/Service y PerformanceAnalyzer como base para memoria de marketing basada en evidencia.
@@ -58,7 +63,6 @@ Reutilizar AnalyticsRepository/Service y PerformanceAnalyzer como base para memo
 - ejecutar automáticamente handlers de nodos sobre el motor de workflows;
 - ampliar Sources a PDF, CSV, Excel, imagen, audio independiente, catálogo y MetaBot;
 - Extraction semántica específica por empresa/producto/servicio;
-- Marketing Brain;
 - generador de contenido/copy multi-variante;
 - perfiles de marca;
 - bandeja unificada de aprobaciones;
@@ -95,8 +99,8 @@ extraction/
 
 marketing-brain/
   MarketingBrainService
-  objectives
-  channel-planning
+  MarketingPlanRepository
+  evidence validation
 
 workflows/
   WorkflowRepository
@@ -163,7 +167,7 @@ Implementada e integrada en `main`:
 
 ### Fase 2 — Sources + extraction
 
-Implementación inicial:
+Implementada e integrada en `main`:
 
 - `TEXT`: información escrita por el usuario;
 - `URL`: página web HTTP/HTTPS con confirmación explícita de autorización;
@@ -182,7 +186,21 @@ Queda para iteraciones posteriores de Sources: PDF, CSV, Excel, imagen, audio in
 
 ### Fase 3 — Marketing Brain
 
-Plan estructurado con objetivo, audiencia, canal, formato, mensaje y CTA. Debe separar hechos extraídos de decisiones creativas.
+Implementación actual:
+
+- recibe una o varias extracciones completadas;
+- impide mezclar extracciones de proyectos ClipForge distintos;
+- produce un plan estructurado: objetivo, audiencia, canales, formato, mensaje, CTA, concepto, justificación y duración recomendada;
+- respeta las restricciones explícitas del usuario sobre objetivo, audiencia, canales y formato;
+- separa `evidence`, `assumptions` y `missingInformation`;
+- toda evidencia propuesta por IA se verifica contra el texto real de la extracción; evidencia no verificable se descarta;
+- nunca instruye a inventar precio, descuento, contacto, ubicación, capacidad, disponibilidad, garantía o rendimiento;
+- modo `AUTO`: usa IA solo cuando hay API key + modelo configurados;
+- modo `DETERMINISTIC`: genera un plan base sin llamada a IA;
+- modo `AI`: exige proveedor configurado y falla de forma explícita si falta;
+- reutiliza `OpenAICompatibleClient` y registra tokens con `AIUsageService` sin inventar costos;
+- persiste planes y expone APIs para crear/listar/consultar;
+- pruebas cubren fallback sin IA, restricciones del brief, validación de evidencia, contabilidad de tokens y separación entre proyectos.
 
 ### Fase 4 — Content generation
 
