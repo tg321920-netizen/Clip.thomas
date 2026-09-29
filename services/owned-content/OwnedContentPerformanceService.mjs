@@ -2,6 +2,7 @@ import { loadProjectFile } from "../../lib/project-files.mjs";
 import { AnalyticsService } from "../analytics/AnalyticsService.mjs";
 import { PerformanceAnalyzer } from "../analytics/PerformanceAnalyzer.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
+import { ContentCostService } from "./ContentCostService.mjs";
 
 const DIMENSIONS = ["topic", "category", "hook", "format", "language", "platform", "voiceProfile", "editStyle", "publishHour"];
 
@@ -10,6 +11,7 @@ export class OwnedContentPerformanceService {
     this.publications = options.publications || new PublicationService();
     this.analytics = options.analytics || new AnalyticsService({ publications: this.publications });
     this.baseAnalyzer = options.baseAnalyzer || new PerformanceAnalyzer({ publications: this.publications, analytics: this.analytics });
+    this.costs = options.costs || new ContentCostService();
   }
 
   async analyze(filters = {}) {
@@ -25,11 +27,18 @@ export class OwnedContentPerformanceService {
       const metrics = snapshot.metrics || {};
       const views = finite(metrics.views);
       const engagements = finite(metrics.likes) + finite(metrics.comments) + finite(metrics.shares) + finite(metrics.saves);
+      const costRows = await this.costs.list({ channelId: publication.channelId, contentId: publication.projectId });
+      const knownCostRows = costRows.filter((row) => Number.isFinite(row.amountUsd));
+      const knownCostUsd = knownCostRows.reduce((sum, row) => sum + row.amountUsd, 0);
       samples.push({
         publicationId: publication.id,
+        projectId: publication.projectId,
         views,
         engagementRate: views > 0 ? engagements / views : null,
         averageWatchTimeSeconds: finiteOrNull(metrics.averageWatchTimeSeconds ?? metrics.averageViewDurationSeconds),
+        knownCostUsd,
+        unpricedCostRecords: costRows.length - knownCostRows.length,
+        viewsPerDollar: knownCostUsd > 0 ? views / knownCostUsd : null,
         topic: meta.topic || null,
         category: meta.category || null,
         hook: meta.hook || null,
@@ -44,9 +53,17 @@ export class OwnedContentPerformanceService {
 
     const dimensions = {};
     for (const dimension of DIMENSIONS) dimensions[dimension] = summarize(samples, dimension);
+    const knownCostUsd = samples.reduce((sum, sample) => sum + sample.knownCostUsd, 0);
+    const totalViews = samples.reduce((sum, sample) => sum + sample.views, 0);
     return {
       ...base,
       ownedContentSampleCount: samples.length,
+      costSummary: {
+        knownCostUsd,
+        unpricedRecords: samples.reduce((sum, sample) => sum + sample.unpricedCostRecords, 0),
+        viewsPerDollar: knownCostUsd > 0 ? totalViews / knownCostUsd : null,
+        note: "Cost efficiency uses only recorded costs. Unknown provider prices are never estimated automatically.",
+      },
       dimensions,
       learningPolicy: "Evidence is descriptive. Small samples never change channel rules automatically.",
     };
@@ -59,16 +76,25 @@ function summarize(samples, key) {
     const value = sample[key];
     if (!value) continue;
     const normalized = String(value).slice(0, key === "hook" || key === "topic" ? 160 : 80);
-    const list = groups.get(normalized) || []; list.push(sample); groups.set(normalized, list);
+    const list = groups.get(normalized) || [];
+    list.push(sample);
+    groups.set(normalized, list);
   }
-  return [...groups.entries()].map(([value, list]) => ({
-    value,
-    samples: list.length,
-    totalViews: list.reduce((sum, item) => sum + item.views, 0),
-    averageViews: list.length ? list.reduce((sum, item) => sum + item.views, 0) / list.length : 0,
-    averageEngagementRate: averageNullable(list.map((item) => item.engagementRate)),
-    averageWatchTimeSeconds: averageNullable(list.map((item) => item.averageWatchTimeSeconds)),
-  })).sort((a, b) => b.samples - a.samples || b.totalViews - a.totalViews);
+  return [...groups.entries()].map(([value, list]) => {
+    const knownCostUsd = list.reduce((sum, item) => sum + item.knownCostUsd, 0);
+    const totalViews = list.reduce((sum, item) => sum + item.views, 0);
+    return {
+      value,
+      samples: list.length,
+      totalViews,
+      averageViews: list.length ? totalViews / list.length : 0,
+      averageEngagementRate: averageNullable(list.map((item) => item.engagementRate)),
+      averageWatchTimeSeconds: averageNullable(list.map((item) => item.averageWatchTimeSeconds)),
+      knownCostUsd,
+      viewsPerDollar: knownCostUsd > 0 ? totalViews / knownCostUsd : null,
+      unpricedCostRecords: list.reduce((sum, item) => sum + item.unpricedCostRecords, 0),
+    };
+  }).sort((a, b) => b.samples - a.samples || b.totalViews - a.totalViews);
 }
 function finite(value) { const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : 0; }
 function finiteOrNull(value) { const n = Number(value); return Number.isFinite(n) && n >= 0 ? n : null; }
