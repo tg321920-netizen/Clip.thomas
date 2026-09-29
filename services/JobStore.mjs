@@ -18,6 +18,7 @@ const JOB_PREFIX = {
   AUTO_EDIT: "autoedit",
   RENDER_CLIP: "render",
   RENDER_NEWS: "newsrender",
+  OWNED_CONTENT: "ownedcontent",
   PUBLISH_POST: "publish",
   FETCH_ANALYTICS: "analytics",
 };
@@ -59,10 +60,7 @@ export class JobStore {
   async enqueueRender(projectId, clipId, payload = {}, options = {}) {
     return this.enqueue("RENDER_CLIP", projectId, {
       entityId: clipId,
-      payload: {
-        ...sanitizePayload(payload),
-        clipId,
-      },
+      payload: { ...sanitizePayload(payload), clipId },
       restartCompleted: options.restartCompleted ?? false,
     });
   }
@@ -74,13 +72,17 @@ export class JobStore {
     });
   }
 
+  async enqueueOwnedContent(executionId, payload = {}, options = {}) {
+    return this.enqueue("OWNED_CONTENT", executionId, {
+      payload: { ...sanitizePayload(payload), executionId },
+      restartCompleted: options.restartCompleted ?? false,
+    });
+  }
+
   async enqueuePublish(projectId, publicationId, payload = {}, options = {}) {
     return this.enqueue("PUBLISH_POST", projectId, {
       entityId: publicationId,
-      payload: {
-        ...sanitizePayload(payload),
-        publicationId,
-      },
+      payload: { ...sanitizePayload(payload), publicationId },
       restartCompleted: options.restartCompleted ?? false,
     });
   }
@@ -88,10 +90,7 @@ export class JobStore {
   async enqueueAnalytics(projectId, publicationId, payload = {}, options = {}) {
     return this.enqueue("FETCH_ANALYTICS", projectId, {
       entityId: publicationId,
-      payload: {
-        ...sanitizePayload(payload),
-        publicationId,
-      },
+      payload: { ...sanitizePayload(payload), publicationId },
       restartCompleted: options.restartCompleted ?? false,
     });
   }
@@ -101,23 +100,15 @@ export class JobStore {
     assertJobType(type);
 
     const entityId = options.entityId || null;
-    if (ENTITY_JOB_TYPES.has(type)) {
-      assertProjectId(entityId);
-    }
+    if (ENTITY_JOB_TYPES.has(type)) assertProjectId(entityId);
 
     await this.#ensureDirectory();
-
     const id = jobId(type, projectId, entityId);
     const existing = await this.get(id);
     const restartCompleted = options.restartCompleted === true;
 
-    if (existing && ["QUEUED", "PROCESSING"].includes(existing.status)) {
-      return existing;
-    }
-
-    if (existing?.status === "COMPLETED" && !restartCompleted) {
-      return existing;
-    }
+    if (existing && ["QUEUED", "PROCESSING"].includes(existing.status)) return existing;
+    if (existing?.status === "COMPLETED" && !restartCompleted) return existing;
 
     const now = new Date().toISOString();
     const job = {
@@ -128,10 +119,7 @@ export class JobStore {
       payload: sanitizePayload(options.payload),
       status: "QUEUED",
       progress: 0,
-      attempts:
-        existing?.status === "FAILED" || restartCompleted
-          ? 0
-          : (existing?.attempts ?? 0),
+      attempts: existing?.status === "FAILED" || restartCompleted ? 0 : (existing?.attempts ?? 0),
       maxAttempts: existing?.maxAttempts ?? this.maxAttempts,
       error: null,
       createdAt: existing?.createdAt ?? now,
@@ -140,86 +128,42 @@ export class JobStore {
       completedAt: null,
       nextAttemptAt: now,
     };
-
     await this.#write(job);
     return job;
   }
 
   async get(id) {
-    try {
-      return JSON.parse(await readFile(this.#jobPath(id), "utf8"));
-    } catch (error) {
-      if (getErrorCode(error) === "ENOENT") return null;
-      throw error;
-    }
+    try { return JSON.parse(await readFile(this.#jobPath(id), "utf8")); }
+    catch (error) { if (getErrorCode(error) === "ENOENT") return null; throw error; }
   }
 
-  async getTranscriptionJob(projectId) {
-    return this.get(jobId("TRANSCRIBE_VIDEO", projectId));
-  }
-
-  async getAnalysisJob(projectId) {
-    return this.get(jobId("ANALYZE_VIDEO", projectId));
-  }
-
-  async getAutoEditJob(projectId) {
-    return this.get(jobId("AUTO_EDIT", projectId));
-  }
-
-  async getRenderJob(projectId, clipId) {
-    return this.get(jobId("RENDER_CLIP", projectId, clipId));
-  }
-
-  async getNewsRenderJob(projectId) {
-    return this.get(jobId("RENDER_NEWS", projectId));
-  }
-
-  async getPublishJob(projectId, publicationId) {
-    return this.get(jobId("PUBLISH_POST", projectId, publicationId));
-  }
-
-  async getAnalyticsJob(projectId, publicationId) {
-    return this.get(jobId("FETCH_ANALYTICS", projectId, publicationId));
-  }
+  async getTranscriptionJob(projectId) { return this.get(jobId("TRANSCRIBE_VIDEO", projectId)); }
+  async getAnalysisJob(projectId) { return this.get(jobId("ANALYZE_VIDEO", projectId)); }
+  async getAutoEditJob(projectId) { return this.get(jobId("AUTO_EDIT", projectId)); }
+  async getRenderJob(projectId, clipId) { return this.get(jobId("RENDER_CLIP", projectId, clipId)); }
+  async getNewsRenderJob(projectId) { return this.get(jobId("RENDER_NEWS", projectId)); }
+  async getOwnedContentJob(executionId) { return this.get(jobId("OWNED_CONTENT", executionId)); }
+  async getPublishJob(projectId, publicationId) { return this.get(jobId("PUBLISH_POST", projectId, publicationId)); }
+  async getAnalyticsJob(projectId, publicationId) { return this.get(jobId("FETCH_ANALYTICS", projectId, publicationId)); }
 
   async claimNext(allowedTypes = null) {
     await this.#recoverStaleJobs();
     await this.#ensureDirectory();
-
-    const allowed =
-      Array.isArray(allowedTypes) && allowedTypes.length > 0
-        ? new Set(allowedTypes)
-        : null;
-
+    const allowed = Array.isArray(allowedTypes) && allowedTypes.length > 0 ? new Set(allowedTypes) : null;
     const names = await readdir(this.#jobsDir());
     const now = Date.now();
 
     for (const name of names.filter((value) => value.endsWith(".json")).sort()) {
       const id = name.slice(0, -5);
       const job = await this.get(id);
-
-      if (
-        !job ||
-        job.status !== "QUEUED" ||
-        (allowed && !allowed.has(job.type)) ||
-        Date.parse(job.nextAttemptAt || job.createdAt) > now
-      ) {
-        continue;
-      }
-
+      if (!job || job.status !== "QUEUED" || (allowed && !allowed.has(job.type)) || Date.parse(job.nextAttemptAt || job.createdAt) > now) continue;
       const locked = await this.#tryLock(id);
       if (!locked) continue;
-
       const fresh = await this.get(id);
-      if (
-        !fresh ||
-        fresh.status !== "QUEUED" ||
-        (allowed && !allowed.has(fresh.type))
-      ) {
+      if (!fresh || fresh.status !== "QUEUED" || (allowed && !allowed.has(fresh.type))) {
         await this.release(id);
         continue;
       }
-
       const updated = {
         ...fresh,
         status: "PROCESSING",
@@ -229,25 +173,17 @@ export class JobStore {
         updatedAt: new Date().toISOString(),
         error: null,
       };
-
       await this.#write(updated);
       return updated;
     }
-
     return null;
   }
 
   async updateProgress(id, progress) {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return job;
-
     const normalized = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
-    const updated = {
-      ...job,
-      progress: normalized,
-      updatedAt: new Date().toISOString(),
-    };
-
+    const updated = { ...job, progress: normalized, updatedAt: new Date().toISOString() };
     await this.#write(updated);
     return updated;
   }
@@ -255,7 +191,6 @@ export class JobStore {
   async heartbeat(id) {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return false;
-
     const lockPath = this.#lockPath(id);
     try {
       await stat(lockPath);
@@ -276,7 +211,6 @@ export class JobStore {
       completedAt: new Date().toISOString(),
       error: null,
     };
-
     await this.#write(completed);
     await this.release(job.id);
     return completed;
@@ -287,11 +221,7 @@ export class JobStore {
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
     const terminal = options.retryable === false || attempts >= maxAttempts;
     const now = Date.now();
-    const delayMs = Math.min(
-      5 * 60 * 1000,
-      30_000 * 2 ** Math.max(0, attempts - 1),
-    );
-
+    const delayMs = Math.min(5 * 60 * 1000, 30_000 * 2 ** Math.max(0, attempts - 1));
     const failed = {
       ...job,
       status: terminal ? "FAILED" : "QUEUED",
@@ -300,15 +230,12 @@ export class JobStore {
       nextAttemptAt: terminal ? null : new Date(now + delayMs).toISOString(),
       error: error instanceof Error ? error.message : String(error),
     };
-
     await this.#write(failed);
     await this.release(job.id);
     return failed;
   }
 
-  async release(id) {
-    await rm(this.#lockPath(id), { force: true });
-  }
+  async release(id) { await rm(this.#lockPath(id), { force: true }); }
 
   async #tryLock(id) {
     try {
@@ -325,19 +252,14 @@ export class JobStore {
   async #recoverStaleJobs() {
     await this.#ensureDirectory();
     const names = await readdir(this.#jobsDir());
-
     for (const name of names.filter((value) => value.endsWith(".lock"))) {
       const lockPath = path.join(this.#jobsDir(), name);
-
       try {
         const info = await stat(lockPath);
         const id = name.slice(0, -5);
         const job = await this.get(id);
-        const staleAfterMs =
-          job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
-
+        const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
         if (Date.now() - info.mtimeMs < staleAfterMs) continue;
-
         if (job?.status === "PROCESSING") {
           await this.#write({
             ...job,
@@ -349,7 +271,6 @@ export class JobStore {
             error: "Recovered after a stale worker lock.",
           });
         }
-
         await rm(lockPath, { force: true });
       } catch (error) {
         if (getErrorCode(error) !== "ENOENT") throw error;
@@ -359,25 +280,11 @@ export class JobStore {
     for (const name of names.filter((value) => value.endsWith(".json"))) {
       const id = name.slice(0, -5);
       const job = await this.get(id);
-      if (!job || job.type !== "RENDER_CLIP" || job.status !== "PROCESSING") {
-        continue;
-      }
-
+      if (!job || job.type !== "RENDER_CLIP" || job.status !== "PROCESSING") continue;
       const lastActivity = Date.parse(job.updatedAt || job.startedAt || job.createdAt);
-      if (
-        Number.isFinite(lastActivity) &&
-        Date.now() - lastActivity < this.renderStaleAfterMs
-      ) {
-        continue;
-      }
-
-      try {
-        await stat(this.#lockPath(id));
-        continue;
-      } catch (error) {
-        if (getErrorCode(error) !== "ENOENT") throw error;
-      }
-
+      if (Number.isFinite(lastActivity) && Date.now() - lastActivity < this.renderStaleAfterMs) continue;
+      try { await stat(this.#lockPath(id)); continue; }
+      catch (error) { if (getErrorCode(error) !== "ENOENT") throw error; }
       await this.#write({
         ...job,
         status: "QUEUED",
@@ -392,120 +299,52 @@ export class JobStore {
 
   async #write(job) {
     await this.#ensureDirectory();
-
     const target = this.#jobPath(job.id);
     const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-
-    await writeFile(temp, JSON.stringify(job, null, 2), {
-      encoding: "utf8",
-      flag: "wx",
-    });
-
+    await writeFile(temp, JSON.stringify(job, null, 2), { encoding: "utf8", flag: "wx" });
     await rename(temp, target);
   }
 
-  async #ensureDirectory() {
-    await mkdir(this.#jobsDir(), { recursive: true });
-  }
-
-  #jobsDir() {
-    return path.join(getStorageRoot(), "jobs");
-  }
-
-  #jobPath(id) {
-    return path.join(this.#jobsDir(), `${safeJobId(id)}.json`);
-  }
-
-  #lockPath(id) {
-    return path.join(this.#jobsDir(), `${safeJobId(id)}.lock`);
-  }
+  async #ensureDirectory() { await mkdir(this.#jobsDir(), { recursive: true }); }
+  #jobsDir() { return path.join(getStorageRoot(), "jobs"); }
+  #jobPath(id) { return path.join(this.#jobsDir(), `${safeJobId(id)}.json`); }
+  #lockPath(id) { return path.join(this.#jobsDir(), `${safeJobId(id)}.lock`); }
 }
 
-export function transcriptionJobId(projectId) {
-  return jobId("TRANSCRIBE_VIDEO", projectId);
-}
-
-export function analysisJobId(projectId) {
-  return jobId("ANALYZE_VIDEO", projectId);
-}
-
-export function autoEditJobId(projectId) {
-  return jobId("AUTO_EDIT", projectId);
-}
-
-export function renderJobId(projectId, clipId) {
-  return jobId("RENDER_CLIP", projectId, clipId);
-}
-
-export function newsRenderJobId(projectId) {
-  return jobId("RENDER_NEWS", projectId);
-}
-
-export function publishJobId(projectId, publicationId) {
-  return jobId("PUBLISH_POST", projectId, publicationId);
-}
-
-export function analyticsJobId(projectId, publicationId) {
-  return jobId("FETCH_ANALYTICS", projectId, publicationId);
-}
+export function transcriptionJobId(projectId) { return jobId("TRANSCRIBE_VIDEO", projectId); }
+export function analysisJobId(projectId) { return jobId("ANALYZE_VIDEO", projectId); }
+export function autoEditJobId(projectId) { return jobId("AUTO_EDIT", projectId); }
+export function renderJobId(projectId, clipId) { return jobId("RENDER_CLIP", projectId, clipId); }
+export function newsRenderJobId(projectId) { return jobId("RENDER_NEWS", projectId); }
+export function ownedContentJobId(executionId) { return jobId("OWNED_CONTENT", executionId); }
+export function publishJobId(projectId, publicationId) { return jobId("PUBLISH_POST", projectId, publicationId); }
+export function analyticsJobId(projectId, publicationId) { return jobId("FETCH_ANALYTICS", projectId, publicationId); }
 
 function jobId(type, projectId, entityId = null) {
   assertProjectId(projectId);
   assertJobType(type);
-
   if (ENTITY_JOB_TYPES.has(type)) {
     assertProjectId(entityId);
     return `${JOB_PREFIX[type]}-${projectId}-${entityId}`;
   }
-
   return `${JOB_PREFIX[type]}-${projectId}`;
 }
-
-function assertJobType(type) {
-  if (!Object.hasOwn(JOB_PREFIX, type)) {
-    throw new Error("Unsupported job type.");
-  }
-}
-
+function assertJobType(type) { if (!Object.hasOwn(JOB_PREFIX, type)) throw new Error("Unsupported job type."); }
 function safeJobId(value) {
   const text = String(value);
-
-  for (const prefix of ["transcribe", "analyze", "autoedit", "newsrender"]) {
+  for (const prefix of ["transcribe", "analyze", "autoedit", "newsrender", "ownedcontent"]) {
     const marker = `${prefix}-`;
-    if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) {
-      return text;
-    }
+    if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) return text;
   }
-
   for (const prefix of ["render", "publish", "analytics"]) {
     const marker = `${prefix}-`;
     if (text.startsWith(marker)) {
       const rest = text.slice(marker.length);
-      if (
-        rest.length === 73 &&
-        rest[36] === "-" &&
-        isProjectId(rest.slice(0, 36)) &&
-        isProjectId(rest.slice(37))
-      ) {
-        return text;
-      }
+      if (rest.length === 73 && rest[36] === "-" && isProjectId(rest.slice(0, 36)) && isProjectId(rest.slice(37))) return text;
     }
   }
-
   throw new Error("Invalid job id.");
 }
-
-function sanitizePayload(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return {};
-  }
-  return JSON.parse(JSON.stringify(payload));
-}
-
-function assertProjectId(projectId) {
-  if (!isProjectId(projectId)) throw new Error("Invalid project id.");
-}
-
-function getErrorCode(error) {
-  return error instanceof Error && "code" in error ? error.code : undefined;
-}
+function sanitizePayload(payload) { if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}; return JSON.parse(JSON.stringify(payload)); }
+function assertProjectId(projectId) { if (!isProjectId(projectId)) throw new Error("Invalid project id."); }
+function getErrorCode(error) { return error instanceof Error && "code" in error ? error.code : undefined; }
