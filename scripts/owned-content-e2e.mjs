@@ -70,7 +70,8 @@ try {
   assert.equal(started.reused, false);
   assert.equal(started.run.execution.status, "waiting_approval");
   assert.ok(started.run.approval?.id);
-  assert.equal(started.run.execution.results.gate.status, "PASS");
+  const gate = started.run.execution.results.gate;
+  assert.equal(gate.status, "PASS", `Owned Content Gate failed: ${JSON.stringify(gate)}`);
   assert.equal(started.run.execution.results.render.render.clip.status, "READY");
   assert.equal(started.run.execution.results.render.render.clip.render.width, 1080);
   assert.equal(started.run.execution.results.render.render.clip.render.height, 1920);
