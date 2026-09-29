@@ -161,11 +161,13 @@ export class MarketingWorkflowRunner {
     if (step.type === "EDIT") {
       const generationId = findResultValue(execution, workflow, ["CONTENT"], "generationId");
       if (!generationId) throw new Error("EDIT requires approved generated content.");
+      const template = execution.input?.editTemplate || {};
       const edit = await this.edits.prepare({
         generationId,
         brandId: execution.input?.brandId || step.config?.brandId,
-        quality: step.config?.quality,
-        framingMode: step.config?.framingMode,
+        quality: step.config?.quality || template.quality,
+        framingMode: step.config?.framingMode || template.framingMode,
+        subtitleStyle: step.config?.subtitleStyle || template.subtitleStyle,
       });
       return { editId: edit.id, edit };
     }
