@@ -157,8 +157,14 @@ export class ExtractionService {
 
 export function extractSignals(text) {
   const value = normalizeText(text);
+  const numericAmount = String.raw`\d(?:[\d.,]*\d)?`;
+  const priceExpression = new RegExp(
+    String.raw`(?:₡|\$|€|£)\s?${numericAmount}(?:\s?(?:CRC|USD|EUR))?|\b${numericAmount}\s?(?:CRC|USD|EUR)\b`,
+    "gi",
+  );
+
   return {
-    prices: uniqueMatches(value, /(?:₡|\$|€|£)\s?\d[\d.,]*(?:\s?(?:CRC|USD|EUR))?|\b\d[\d.,]*\s?(?:CRC|USD|EUR)\b/gi, 30),
+    prices: uniqueMatches(value, priceExpression, 30),
     emails: uniqueMatches(value, /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 30),
     phones: uniqueMatches(value, /(?<!\d)(?:\+?\d[\d ()-]{6,}\d)(?!\d)/g, 30),
     urls: uniqueMatches(value, /https?:\/\/[^\s<>"')]+/gi, 30),
