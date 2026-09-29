@@ -52,6 +52,11 @@ export class MarketingEditService {
       renderReady: false,
       mediaPlan: buildMediaPlan(branded.variant),
       brandSnapshot: brand ? snapshotBrand(brand) : null,
+      editTemplate: {
+        quality: input.quality || null,
+        framingMode: input.framingMode || null,
+        subtitleStyle: input.subtitleStyle || null,
+      },
       error: null,
       createdAt: now,
       updatedAt: now,
@@ -68,6 +73,7 @@ export class MarketingEditService {
         generateSubtitles: true,
         quality: input.quality,
         framingMode: input.framingMode,
+        subtitleStyle: input.subtitleStyle,
       });
       record.clipId = result.clip?.id || null;
       record.status = record.clipId ? "CLIP_PREPARED" : "PREPARED";
