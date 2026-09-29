@@ -9,6 +9,14 @@ const VARIANT_BLUEPRINTS = [
   { label: "C", angle: "BENEFIT" },
 ];
 
+const CONTENT_STATUSES = new Set([
+  "DRAFT",
+  "WAITING_APPROVAL",
+  "APPROVED",
+  "CHANGES_REQUESTED",
+  "REJECTED",
+]);
+
 export class ContentGenerationService {
   constructor(options = {}) {
     this.plans = options.plans || new MarketingPlanRepository();
@@ -46,6 +54,10 @@ export class ContentGenerationService {
       variants: VARIANT_BLUEPRINTS.slice(0, variantCount).map((blueprint) =>
         buildVariant(plan, blueprint),
       ),
+      approvalId: null,
+      selectedVariantId: null,
+      reviewNote: null,
+      reviewedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -220,7 +232,7 @@ function normalizeDuration(value) {
 
 function normalizeStatus(value) {
   const status = String(value || "").trim().toUpperCase();
-  if (status !== "DRAFT") throw new Error("Unsupported content generation status.");
+  if (!CONTENT_STATUSES.has(status)) throw new Error("Unsupported content generation status.");
   return status;
 }
 
