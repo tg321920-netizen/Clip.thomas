@@ -41,9 +41,10 @@ export class WorkflowRepository {
     return this.#read(this.#executionPath(executionId));
   }
 
-  async findExecutionByIdempotencyKey(idempotencyKey) {
+  async findExecutionByIdempotencyKey(workflowId, idempotencyKey) {
+    assertId(workflowId, "workflow");
     if (!idempotencyKey) return null;
-    const executions = await this.listExecutions();
+    const executions = await this.listExecutions({ workflowId });
     return executions.find((record) => record.idempotencyKey === idempotencyKey) || null;
   }
 
