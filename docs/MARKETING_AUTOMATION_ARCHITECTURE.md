@@ -27,7 +27,9 @@ El repositorio raíz ya contiene la aplicación canónica de ClipForge. Hoy exis
 - CredentialVault;
 - analytics, PerformanceAnalyzer y AIUsage;
 - runtime persistente Docker y workers separados;
-- frontend Vercel separado del procesamiento pesado.
+- frontend Vercel separado del procesamiento pesado;
+- motor genérico de workflows y executions de marketing;
+- Sources/Extraction inicial para texto, páginas web autorizadas y proyectos existentes de ClipForge.
 
 ## 2. Qué se puede reutilizar
 
@@ -45,7 +47,7 @@ Reutilizar `PublicationService`, scheduler, providers OAuth, conexiones y analyt
 
 ### Seguridad
 
-Reutilizar owner auth, CredentialVault, variables de entorno, validación de IDs/rutas y persistencia atómica.
+Reutilizar owner auth, CredentialVault, variables de entorno, validación de IDs/rutas y persistencia atómica. Las APIs nuevas quedan detrás del proxy global de owner auth en despliegues alojados.
 
 ### Analytics y aprendizaje
 
@@ -53,13 +55,9 @@ Reutilizar AnalyticsRepository/Service y PerformanceAnalyzer como base para memo
 
 ## 3. Qué falta
 
-- una definición general de workflow independiente del pipeline de clips;
-- ejecuciones persistentes por workflow;
-- resultados por paso;
-- historial completo de transición;
-- pausa genérica por aprobación o falta de información;
-- capa Source extensible para texto, URL, documentos, empresa, MetaBot, etc.;
-- Extraction normalizada;
+- ejecutar automáticamente handlers de nodos sobre el motor de workflows;
+- ampliar Sources a PDF, CSV, Excel, imagen, audio independiente, catálogo y MetaBot;
+- Extraction semántica específica por empresa/producto/servicio;
 - Marketing Brain;
 - generador de contenido/copy multi-variante;
 - perfiles de marca;
@@ -86,12 +84,14 @@ Cambios previstos por integración:
 
 ```text
 sources/
-  adapters
   SourceRepository
+  SourceService
+  adapters futuros
 
 extraction/
-  extractors
   ExtractionService
+  WebPageExtractor
+  extractors futuros
 
 marketing-brain/
   MarketingBrainService
@@ -142,7 +142,7 @@ Principio: los nodos de workflow coordinan servicios. No contienen lógica pesad
 
 ### Fase 1 — Workflow + executions
 
-Implementada en la rama `feature/marketing-workflows-phase1`:
+Implementada e integrada en `main`:
 
 - definiciones de workflow;
 - pasos normalizados y extensibles;
@@ -156,14 +156,29 @@ Implementada en la rama `feature/marketing-workflows-phase1`:
 - reintento del paso actual sin reiniciar pasos completados;
 - waiting_approval;
 - waiting_information;
-- idempotency key;
+- idempotency key acotada al workflow;
 - APIs para crear/listar/consultar workflows y ejecuciones;
 - API de acciones de ejecución;
 - pruebas de reanudación, aprobación e idempotencia.
 
 ### Fase 2 — Sources + extraction
 
-Primero: `TEXT`, `URL`, `VIDEO`, `EXISTING_CLIPFORGE_CONTENT`. Después: PDF, CSV, Excel, imagen, audio, catálogo y MetaBot.
+Implementación inicial:
+
+- `TEXT`: información escrita por el usuario;
+- `URL`: página web HTTP/HTTPS con confirmación explícita de autorización;
+- `CLIPFORGE_PROJECT`: reutiliza transcripción, análisis y metadatos de un proyecto existente;
+- persistencia separada de fuentes y extracciones;
+- contenido extraído, metadatos, origen y estado de autorización;
+- extracción web con límites de tamaño, tipo de contenido y validación SSRF en cada redirección;
+- limpieza de HTML sin ejecutar scripts;
+- resumen determinista barato;
+- señales útiles iniciales: precios, emails, teléfonos, URLs, horarios y candidatos de CTA;
+- reutilización de candidatos de clips existentes como evidencia, sin duplicar procesamiento de video;
+- APIs para crear/listar/consultar fuentes y ejecutar/consultar extracciones;
+- pruebas para texto, URL autorizada, proyecto ClipForge y redirecciones web.
+
+Queda para iteraciones posteriores de Sources: PDF, CSV, Excel, imagen, audio independiente, catálogo de productos, información estructurada de empresa y MetaBot.
 
 ### Fase 3 — Marketing Brain
 
