@@ -67,10 +67,11 @@ export default async function MarketingDashboard() {
           </p>
         </header>
 
-        <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Action href="/" title="Crear clip" text="Video, enlace o captura" />
           <Action href="/approvals" title="Necesita tu atención" text={`${pending.length} pendiente(s)`} />
           <Action href="/autopilot" title="Autopilot" text="Canales y rendimiento" />
+          <Action href="/factory" title="Content Factory" text="Administrar multicanal" />
           <Action href="/connections" title="Conexiones" text="Cuentas autorizadas" />
         </section>
 
