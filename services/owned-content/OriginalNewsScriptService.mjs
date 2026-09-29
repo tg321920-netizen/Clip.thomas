@@ -52,7 +52,7 @@ export class OriginalNewsScriptService {
       language,
       title,
       hook,
-      sections: sectionData.map(({ sourceWords, ...section }) => section),
+      sections: sectionData.map(publicSection),
       narration,
       evidenceClaimIds: [...new Set(sectionData.flatMap((section) => section.evidenceClaimIds || []))],
       originality: {
@@ -131,11 +131,20 @@ function section(key, text, claims = [], sourceText = "", assertionType = "FACT"
   };
 }
 
+function publicSection(sectionValue) {
+  return {
+    key: sectionValue.key,
+    text: sectionValue.text,
+    assertionType: sectionValue.assertionType,
+    evidenceClaimIds: sectionValue.evidenceClaimIds,
+  };
+}
+
 function factExcerpt(claim) {
   if (!claim?.text) return "";
   const text = String(claim.text).replace(/[“”"']/g, "").replace(/\s+/g, " ").trim();
   const words = text.split(" ").filter(Boolean);
-  const max = 18;
+  const max = 12;
   return cleanSentence(words.length > max ? `${words.slice(0, max).join(" ")}…` : text);
 }
 
