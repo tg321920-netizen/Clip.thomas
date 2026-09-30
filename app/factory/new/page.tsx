@@ -16,10 +16,7 @@ export default async function NewOwnedStoryPage({ searchParams }: PageProps) {
   const runtimeHref = ownedContentRuntimeHref("/factory/new", params);
   if (runtimeHref) redirect(runtimeHref);
 
-  const dashboard = await Promise.all([
-    new ContentFactoryService().listDashboard(),
-    searchParams,
-  ]);
+  const dashboard = await new ContentFactoryService().listDashboard();
   const channels = dashboard.channels.map((view: {
     channel: { id: string; name: string; platform: string };
     profile: { lineKey: string | null; language: string; defaultFormat: string; enabled: boolean };
