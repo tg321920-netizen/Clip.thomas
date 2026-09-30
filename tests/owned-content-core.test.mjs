@@ -42,6 +42,7 @@ test("Research Engine uses multiple sources and never promotes rumor to FACT", a
     assert.ok(research.unconfirmed.some((claim) => /Rumor/i.test(claim.text)));
     assert.ok(research.unconfirmed.every((claim) => claim.type === "UNCONFIRMED"));
     assert.ok(research.confirmedFacts.every((claim) => claim.supportCount >= 2));
+    assert.equal(research.discrepancies.length, 0);
 
     const script = new OriginalNewsScriptService().create({ research, language: "en-US", format: "SHORT" });
     assert.equal(script.status, "READY");
@@ -80,6 +81,49 @@ test("Research Engine uses multiple sources and never promotes rumor to FACT", a
       nearDuplicate: false,
     });
     assert.equal(gate.status, "PASS");
+  });
+});
+
+test("Research Engine flags like-for-like numeric conflicts and Coherence Gate blocks their use", async () => {
+  await withStorage(async () => {
+    const channelId = crypto.randomUUID();
+    const sources = new SourceService();
+    const first = await sources.create({ type: "TEXT", text: "The new public shelter opened on September 29, 2026. The public shelter has 120 beds available for residents." });
+    const second = await sources.create({ type: "TEXT", text: "The new public shelter opened on September 29, 2026. The public shelter has 100 beds available for residents." });
+    const research = await new ResearchEngine({ sources }).research({
+      channelId,
+      topic: "Public shelter opens with disputed capacity",
+      sourceIds: [first.id, second.id],
+      who: ["City Hall"],
+      where: ["the city"],
+    });
+
+    assert.equal(research.discrepancies.length, 1);
+    const discrepancy = research.discrepancies[0];
+    assert.ok(discrepancy.dimensions.includes("UNIT:bed"));
+    assert.equal(discrepancy.claimIds.length, 2);
+
+    const conflictClaimId = discrepancy.claimIds[0];
+    const script = {
+      id: crypto.randomUUID(),
+      title: "Public shelter opens with disputed capacity",
+      evidenceClaimIds: [conflictClaimId],
+      sections: [{ key: "HOOK", evidenceClaimIds: [conflictClaimId], assertionType: "FACT" }],
+      originality: { directQuoteWords: 0, sourceContributionRatio: 0.4 },
+    };
+    const gate = new CoherenceGate().evaluate({
+      research,
+      script,
+      visualPlan: {
+        generatedOwnedGraphic: true,
+        topicFingerprint: research.topicFingerprint,
+        rightsReady: true,
+        assets: [],
+      },
+      nearDuplicate: false,
+    });
+    assert.equal(gate.status, "WAITING_REVIEW");
+    assert.ok(gate.criticalFailures.includes("NO_UNRESOLVED_CONTRADICTION"));
   });
 });
 
