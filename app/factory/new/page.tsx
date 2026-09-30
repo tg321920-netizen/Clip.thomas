@@ -5,8 +5,15 @@ import { ContentFactoryService } from "@/services/content-factory/ContentFactory
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export default async function NewOwnedStoryPage() {
-  const dashboard = await new ContentFactoryService().listDashboard();
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function NewOwnedStoryPage({ searchParams }: PageProps) {
+  const [dashboard, params] = await Promise.all([
+    new ContentFactoryService().listDashboard(),
+    searchParams,
+  ]);
   const channels = dashboard.channels.map((view: {
     channel: { id: string; name: string; platform: string };
     profile: { lineKey: string | null; language: string; defaultFormat: string; enabled: boolean };
@@ -20,6 +27,19 @@ export default async function NewOwnedStoryPage() {
     enabled: view.profile.enabled,
   }));
 
+  const initial = {
+    channelId: single(params.channelId),
+    topic: single(params.topic),
+    category: single(params.category) || "GENERAL",
+    trendId: single(params.trendId),
+    trendSignal: {
+      sourceCount: numberParam(params.sourceCount),
+      growthScore: numberParam(params.growthScore),
+      saturationScore: numberParam(params.saturationScore),
+      originalityPotential: numberParam(params.originalityPotential),
+    },
+  };
+
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100">
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-7 sm:py-8">
@@ -30,13 +50,25 @@ export default async function NewOwnedStoryPage() {
               <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Nueva historia</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">Inicia una investigación multifuente para uno de tus canales propios. El flujo se detiene antes de cualquier publicación real.</p>
             </div>
-            <Link href="/factory" className="rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300">Volver a canales</Link>
+            <div className="flex gap-2">
+              <Link href="/factory/trends" className="rounded-xl border border-violet-400/20 px-3 py-2 text-sm text-violet-300">Trend Hunter</Link>
+              <Link href="/factory" className="rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300">Volver a canales</Link>
+            </div>
           </div>
         </header>
         <section className="mt-5">
-          <OwnedStoryStarter channels={channels} />
+          <OwnedStoryStarter channels={channels} initial={initial} />
         </section>
       </div>
     </main>
   );
+}
+
+function single(value: string | string[] | undefined) {
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+function numberParam(value: string | string[] | undefined) {
+  const number = Number(single(value));
+  return Number.isFinite(number) ? number : undefined;
 }
