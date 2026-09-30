@@ -17,6 +17,19 @@ const QUALITY = new Set(["FAST", "BALANCED", "HIGH"]);
 const SUBTITLES = new Set(["CLEAN", "VIRAL", "KARAOKE"]);
 const FORMATS = new Set(["SHORT", "MEDIUM", "LONG"]);
 
+const OWNED_CHANNEL_TEMPLATES = Object.freeze([
+  { id: "10000000-0000-4000-8000-000000000001", lineKey: "US_NEWS_EN", platform: "YOUTUBE", name: "US NEWS EN · YouTube", timezone: "America/New_York" },
+  { id: "10000000-0000-4000-8000-000000000002", lineKey: "US_NEWS_EN", platform: "TIKTOK", name: "US NEWS EN · TikTok", timezone: "America/New_York" },
+  { id: "10000000-0000-4000-8000-000000000003", lineKey: "US_NEWS_EN", platform: "FACEBOOK", name: "US NEWS EN · Facebook", timezone: "America/New_York" },
+  { id: "20000000-0000-4000-8000-000000000001", lineKey: "LATAM_NEWS_ES", platform: "YOUTUBE", name: "LATAM NEWS ES · YouTube", timezone: "America/Mexico_City" },
+  { id: "20000000-0000-4000-8000-000000000002", lineKey: "LATAM_NEWS_ES", platform: "TIKTOK", name: "LATAM NEWS ES · TikTok", timezone: "America/Mexico_City" },
+  { id: "20000000-0000-4000-8000-000000000003", lineKey: "LATAM_NEWS_ES", platform: "FACEBOOK", name: "LATAM NEWS ES · Facebook", timezone: "America/Mexico_City" },
+  { id: "30000000-0000-4000-8000-000000000001", lineKey: "ENTERTAINMENT_GOSSIP_ES", platform: "YOUTUBE", name: "ENTERTAINMENT ES · YouTube", timezone: "America/Mexico_City" },
+  { id: "30000000-0000-4000-8000-000000000002", lineKey: "ENTERTAINMENT_GOSSIP_ES", platform: "TIKTOK", name: "ENTERTAINMENT ES · TikTok", timezone: "America/Mexico_City" },
+  { id: "30000000-0000-4000-8000-000000000003", lineKey: "ENTERTAINMENT_GOSSIP_ES", platform: "FACEBOOK", name: "ENTERTAINMENT ES · Facebook", timezone: "America/Mexico_City" },
+]);
+
+
 export class ContentFactoryService {
   constructor(options = {}) {
     this.repository = options.repository || new ContentFactoryRepository();
@@ -30,6 +43,7 @@ export class ContentFactoryService {
     this.scheduler = options.scheduler || new SchedulerService({ publications: this.publications, channels: this.channels });
     this.costs = options.costs || new ContentCostService();
     this.performance = options.performance || new OwnedContentPerformanceService({ publications: this.publications, analytics: this.analytics });
+    this.bootstrapDefaults = options.bootstrapDefaults ?? shouldBootstrapOwnedChannels();
   }
 
   listPresets() {
@@ -37,7 +51,8 @@ export class ContentFactoryService {
   }
 
   async listDashboard() {
-    const channels = await this.channels.listChannels();
+    if (this.bootstrapDefaults) await this.ensureDefaultOwnedChannels();
+    const channels = await this.channels.listChannels({ scope: "OWNED_CONTENT" });
     const rows = await Promise.all(channels.map((channel) => this.getChannelView(channel.id)));
     return {
       scope: "OWNED_CONTENT",
@@ -50,6 +65,7 @@ export class ContentFactoryService {
 
   async getChannelView(channelId) {
     assertId(channelId);
+    if (this.bootstrapDefaults) await this.ensureDefaultOwnedChannel(channelId);
     const channel = await this.channels.getChannel(channelId);
     if (!channel) throw new Error("Channel not found.");
 
@@ -79,10 +95,55 @@ export class ContentFactoryService {
     };
   }
 
+  async ensureDefaultOwnedChannels() {
+    for (const template of OWNED_CHANNEL_TEMPLATES) {
+      await this.ensureDefaultOwnedChannel(template.id);
+    }
+    return this.channels.listChannels({ scope: "OWNED_CONTENT" });
+  }
+
+  async ensureDefaultOwnedChannel(channelId) {
+    const template = OWNED_CHANNEL_TEMPLATES.find((item) => item.id === channelId);
+    if (!template) return null;
+
+    const preset = getContentLinePreset(template.lineKey);
+    const channel = await this.channels.ensureSystemChannel({
+      id: template.id,
+      platform: template.platform,
+      name: template.name,
+      timezone: template.timezone,
+      dailyLimit: 0,
+      scope: "OWNED_CONTENT",
+      strategy: {
+        name: preset.name,
+        description: preset.niche,
+        systemPrompt: preset.strategy,
+        dailyPostLimit: 0,
+      },
+    });
+
+    const stored = await this.repository.get(template.id);
+    if (!stored) {
+      const now = new Date().toISOString();
+      const seeded = applyContentLinePreset(defaultProfile(template.id), template.lineKey);
+      await this.repository.save({
+        ...seeded,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return channel;
+  }
+
   async configure(channelId, input = {}) {
     assertId(channelId);
     let channel = await this.channels.getChannel(channelId);
     if (!channel) throw new Error("Channel not found.");
+    if ((channel.scope || "MARKETING") !== "OWNED_CONTENT") {
+      channel = await this.channels.updateChannel(channelId, { scope: "OWNED_CONTENT" });
+    }
 
     const stored = migrateProfile((await this.repository.get(channelId)) || defaultProfile(channelId));
     let current = stored;
@@ -276,6 +337,12 @@ function normalizeFormats(value) { const items = Array.isArray(value) ? value.ma
 function normalizeLineKey(value) { if (value === null || value === undefined || value === "") return null; return getContentLinePreset(value).key; }
 function normalizeList(value, maxItems, maxLength) { return Array.isArray(value) ? [...new Set(value.map((item) => cleanText(item, maxLength)).filter(Boolean))].slice(0, maxItems) : []; }
 function realPublishingEnabled() { return String(process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING || "").trim().toLowerCase() === "true"; }
+function shouldBootstrapOwnedChannels() {
+  const explicit = String(process.env.CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS || "").trim().toLowerCase();
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+  return Boolean(process.env.VERCEL);
+}
 function enumValue(value, allowed, fallback) { const normalized = String(value || "").trim().toUpperCase(); return allowed.has(normalized) ? normalized : fallback; }
 function cleanText(value, maxLength) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength); }
 function cleanOptional(value, maxLength) { const text = cleanText(value, maxLength); return text || null; }
