@@ -279,11 +279,12 @@ function wordNumber(value) { return WORD_NUMBERS[String(value || "").toLowerCase
 function normalizeDate(value) { const parsed = Date.parse(String(value)); return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : String(value).toLowerCase().replace(/\s+/g, " ").trim(); }
 function currencyFromSymbol(value) { return value === "$" ? "USD" : value === "€" ? "EUR" : value === "₡" ? "CRC" : value === "£" ? "GBP" : "UNKNOWN"; }
 function normalizeCurrency(value) { const key = String(value || "").toLowerCase(); if (key === "usd" || key.startsWith("dollar")) return "USD"; if (key === "eur" || key.startsWith("euro")) return "EUR"; if (key === "crc" || key.startsWith("colon")) return "CRC"; return key.toUpperCase(); }
-function normalizeUnit(value) { const key = String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (key.endsWith("ies") && key.length > 4) return `${key.slice(0, -3)}y`; if (key.endsWith("s") && key.length > 4) return key.slice(0, -1); return key; }
+function normalizeUnit(value) { const key = String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (key.endsWith("ies") && key.length > 4) return `${key.slice(0, -3)}y`; if (key.endsWith("s") && key.length > 3 && !UNIT_SINGULAR_EXCEPTIONS.has(key)) return key.slice(0, -1); return key; }
 async function save(record) { await mkdir(directory(), { recursive: true }); const target = recordPath(record.id); const temp = path.join(directory(), `.${record.id}.${process.pid}.${Date.now()}.tmp`); await writeFile(temp, JSON.stringify(record, null, 2), { encoding: "utf8", flag: "wx" }); try { await rename(temp, target); } catch (error) { await rm(temp, { force: true }).catch(() => undefined); throw error; } }
 function directory() { return path.join(getStorageRoot(), "owned-content", "research"); }
 function recordPath(id) { return path.join(directory(), `${id}.json`); }
 function assertId(value, label) { if (!isProjectId(String(value || ""))) throw new Error(`Invalid ${label} id.`); }
 const STOP = new Set(["this","that","with","from","have","will","would","about","para","como","esta","este","esto","entre","sobre","desde","hasta","porque","segun"]);
 const UNIT_STOP = new Set(["after","before","since","during","while","that","this","from","with","into","over","under","about","para","como","desde","hasta","entre","sobre","tras","despues","antes","million","billion","thousand","millon","millones"]);
+const UNIT_SINGULAR_EXCEPTIONS = new Set(["news", "series", "species"]);
 const WORD_NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
