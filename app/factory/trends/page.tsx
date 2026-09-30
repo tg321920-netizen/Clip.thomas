@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import TrendHunterBoard from "@/components/TrendHunterBoard";
+import { ownedContentRuntimeHref } from "@/lib/owned-content-runtime.mjs";
 import { ContentFactoryService } from "@/services/content-factory/ContentFactoryService.mjs";
 import { TrendHunterService } from "@/services/owned-content/TrendHunterService.mjs";
 
@@ -7,6 +9,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function TrendHunterPage() {
+  const runtimeHref = ownedContentRuntimeHref("/factory/trends");
+  if (runtimeHref) redirect(runtimeHref);
+
   const factory = new ContentFactoryService();
   const trends = new TrendHunterService();
   const [dashboard, initialTrends] = await Promise.all([
