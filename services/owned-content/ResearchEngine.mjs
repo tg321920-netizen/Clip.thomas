@@ -41,7 +41,7 @@ export class ResearchEngine {
         extractionId: extraction.id,
         text,
         tokens: meaningfulTokens(text),
-        numbers: numericTokens(text),
+        numericFacts: extractNumericFacts(text),
       })),
     );
 
@@ -63,13 +63,15 @@ export class ResearchEngine {
         text: compact(row.text, 420),
         sourceIds: [...supporters],
         primarySourceId: row.sourceId,
+        sourceSentenceId: row.id,
         supportCount: supporters.size,
+        numericFacts: row.numericFacts,
         attribution: type === "FACT" ? null : sourceLabel(materials, row.sourceId),
       };
     });
 
     const deduped = dedupeClaims(claims);
-    const discrepancies = findDiscrepancies(sentenceRows);
+    const discrepancies = findDiscrepancies(sentenceRows, deduped);
     const facts = deduped.filter((claim) => claim.type === "FACT");
     const dates = extractDates(deduped);
     const topic = compact(input.topic || facts[0]?.text || deduped[0]?.text || "Untitled story", 240);
@@ -139,33 +141,111 @@ function dedupeClaims(claims) {
   const output = [];
   for (const claim of claims) {
     const tokens = meaningfulTokens(claim.text);
-    if (output.some((existing) => tokenSimilarity(tokens, meaningfulTokens(existing.text)) >= 0.82)) continue;
+    const duplicate = output.some((existing) => {
+      if (tokenSimilarity(tokens, meaningfulTokens(existing.text)) < 0.82) return false;
+      return numericConflicts(claim.numericFacts, existing.numericFacts).length === 0;
+    });
+    if (duplicate) continue;
     output.push(claim);
     if (output.length >= 180) break;
   }
   return output;
 }
 
-function findDiscrepancies(rows) {
+function findDiscrepancies(rows, claims) {
   const output = [];
+  const claimBySentence = new Map((claims || []).map((claim) => [claim.sourceSentenceId, claim]));
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
       const a = rows[i], b = rows[j];
       if (a.sourceId === b.sourceId) continue;
       const similarity = tokenSimilarity(a.tokens, b.tokens);
       if (similarity < 0.34) continue;
-      if (a.numbers.length === 0 || b.numbers.length === 0) continue;
-      if (a.numbers.join("|") === b.numbers.join("|")) continue;
+      const conflicts = numericConflicts(a.numericFacts, b.numericFacts);
+      if (conflicts.length === 0) continue;
+      const claimIds = [claimBySentence.get(a.id)?.id, claimBySentence.get(b.id)?.id].filter(Boolean);
       output.push({
         id: randomUUID(),
         type: "NUMERIC_DISCREPANCY",
         sourceIds: [a.sourceId, b.sourceId],
+        sentenceIds: [a.id, b.id],
+        claimIds,
+        dimensions: conflicts.map((item) => item.dimension),
         descriptions: [compact(a.text, 220), compact(b.text, 220)],
       });
       if (output.length >= 20) return output;
     }
   }
   return output;
+}
+
+function numericConflicts(first = [], second = []) {
+  const output = [];
+  for (const a of first) {
+    for (const b of second) {
+      if (a.dimension !== b.dimension) continue;
+      if (String(a.value) === String(b.value)) continue;
+      output.push({ dimension: a.dimension, first: a.value, second: b.value });
+    }
+  }
+  return output;
+}
+
+function extractNumericFacts(text) {
+  const value = String(text || "");
+  const facts = [];
+
+  const datePattern = /\b(?:20\d{2}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}[\/-]20\d{2}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+\d{1,2}(?:,?\s+20\d{2})?)\b/gi;
+  for (const match of value.matchAll(datePattern)) {
+    facts.push({ dimension: "DATE", value: normalizeDate(match[0]) });
+  }
+
+  const percentagePattern = /\b(\d+(?:[.,]\d+)?)\s*%/g;
+  for (const match of value.matchAll(percentagePattern)) {
+    facts.push({ dimension: "PERCENT", value: normalizeNumber(match[1]) });
+  }
+
+  const symbolMoneyPattern = /([$€£₡])\s*(\d+(?:[.,]\d+)?)(?:\s*(thousand|million|billion|mil|mill[oó]n(?:es)?))?/gi;
+  for (const match of value.matchAll(symbolMoneyPattern)) {
+    facts.push({
+      dimension: `MONEY:${currencyFromSymbol(match[1])}`,
+      value: scaleNumber(match[2], match[3]),
+    });
+  }
+
+  const namedMoneyPattern = /\b(\d+(?:[.,]\d+)?)\s*(thousand|million|billion|mil|mill[oó]n(?:es)?)?\s*(USD|EUR|CRC|dollars?|euros?|colones?)\b/gi;
+  for (const match of value.matchAll(namedMoneyPattern)) {
+    facts.push({
+      dimension: `MONEY:${normalizeCurrency(match[3])}`,
+      value: scaleNumber(match[1], match[2]),
+    });
+  }
+
+  const wordMoneyPattern = /\b(one|two|three|four|five|six|seven|eight|nine|ten|un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(thousand|million|billion|mil|mill[oó]n(?:es)?)\s+(dollars?|euros?|colones?)\b/gi;
+  for (const match of value.matchAll(wordMoneyPattern)) {
+    facts.push({
+      dimension: `MONEY:${normalizeCurrency(match[3])}`,
+      value: scaleNumber(wordNumber(match[1]), match[2]),
+    });
+  }
+
+  const unitPattern = /\b(\d+(?:[.,]\d+)?)\s+([a-záéíóúñ]{3,24})\b/gi;
+  for (const match of value.matchAll(unitPattern)) {
+    const rawNumber = normalizeNumber(match[1]);
+    const unit = normalizeUnit(match[2]);
+    if (!unit || UNIT_STOP.has(unit)) continue;
+    if (rawNumber >= 1900 && rawNumber <= 2100) continue;
+    if (["percent", "porcentaje"].includes(unit)) continue;
+    facts.push({ dimension: `UNIT:${unit}`, value: rawNumber });
+  }
+
+  const seen = new Set();
+  return facts.filter((fact) => {
+    const key = `${fact.dimension}:${fact.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildTimeline(claims) {
@@ -189,13 +269,21 @@ function sourceLabel(materials, sourceId) {
 }
 function splitSentences(text) { return String(text || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).map((item) => item.trim()).filter((item) => item.length >= 18); }
 function meaningfulTokens(text) { return [...new Set(String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{4,}/g) || [])].filter((t) => !STOP.has(t)); }
-function numericTokens(text) { return String(text || "").match(/\b\d+(?:[.,]\d+)?%?\b/g) || []; }
 function tokenSimilarity(a, b) { if (!a?.length || !b?.length) return 0; const B = new Set(b); const common = a.filter((t) => B.has(t)).length; return common / Math.max(a.length, b.length); }
 function fingerprint(value) { return createHash("sha256").update(String(value).toLowerCase().replace(/\W+/g, " ").trim()).digest("hex"); }
 function compact(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function normalizeTextList(value) { return Array.isArray(value) ? [...new Set(value.map((v) => compact(v, 160)).filter(Boolean))].slice(0, 30) : []; }
+function normalizeNumber(value) { const parsed = Number(String(value).replace(/,/g, "")); return Number.isFinite(parsed) ? parsed : String(value); }
+function scaleNumber(value, scale) { const base = typeof value === "number" ? value : normalizeNumber(value); if (typeof base !== "number") return base; const key = String(scale || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); const multiplier = key.startsWith("billion") ? 1_000_000_000 : key.startsWith("million") || key.startsWith("millon") ? 1_000_000 : key === "thousand" || key === "mil" ? 1_000 : 1; return base * multiplier; }
+function wordNumber(value) { return WORD_NUMBERS[String(value || "").toLowerCase()] || 0; }
+function normalizeDate(value) { const parsed = Date.parse(String(value)); return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : String(value).toLowerCase().replace(/\s+/g, " ").trim(); }
+function currencyFromSymbol(value) { return value === "$" ? "USD" : value === "€" ? "EUR" : value === "₡" ? "CRC" : value === "£" ? "GBP" : "UNKNOWN"; }
+function normalizeCurrency(value) { const key = String(value || "").toLowerCase(); if (key === "usd" || key.startsWith("dollar")) return "USD"; if (key === "eur" || key.startsWith("euro")) return "EUR"; if (key === "crc" || key.startsWith("colon")) return "CRC"; return key.toUpperCase(); }
+function normalizeUnit(value) { const key = String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (key.endsWith("ies") && key.length > 4) return `${key.slice(0, -3)}y`; if (key.endsWith("s") && key.length > 4) return key.slice(0, -1); return key; }
 async function save(record) { await mkdir(directory(), { recursive: true }); const target = recordPath(record.id); const temp = path.join(directory(), `.${record.id}.${process.pid}.${Date.now()}.tmp`); await writeFile(temp, JSON.stringify(record, null, 2), { encoding: "utf8", flag: "wx" }); try { await rename(temp, target); } catch (error) { await rm(temp, { force: true }).catch(() => undefined); throw error; } }
 function directory() { return path.join(getStorageRoot(), "owned-content", "research"); }
 function recordPath(id) { return path.join(directory(), `${id}.json`); }
 function assertId(value, label) { if (!isProjectId(String(value || ""))) throw new Error(`Invalid ${label} id.`); }
 const STOP = new Set(["this","that","with","from","have","will","would","about","para","como","esta","este","esto","entre","sobre","desde","hasta","porque","segun"]);
+const UNIT_STOP = new Set(["after","before","since","during","while","that","this","from","with","into","over","under","about","para","como","desde","hasta","entre","sobre","tras","despues","antes","million","billion","thousand","millon","millones"]);
+const WORD_NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
