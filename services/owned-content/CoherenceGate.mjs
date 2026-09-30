@@ -51,10 +51,21 @@ function timelineSane(timeline = []) {
 function contradictionsHandled(script, research) {
   const used = new Set(script.evidenceClaimIds || []);
   for (const discrepancy of research.discrepancies || []) {
-    const related = (research.claims || []).filter((claim) => discrepancy.sourceIds?.includes(claim.primarySourceId)).map((claim) => claim.id);
-    if (related.filter((id) => used.has(id)).length >= 2) return false;
+    const related = discrepancyClaimIds(discrepancy, research.claims || []);
+    if (related.some((id) => used.has(id))) return false;
   }
   return true;
+}
+function discrepancyClaimIds(discrepancy, claims) {
+  if (Array.isArray(discrepancy.claimIds) && discrepancy.claimIds.length > 0) {
+    return [...new Set(discrepancy.claimIds.filter(Boolean))];
+  }
+
+  const descriptions = (discrepancy.descriptions || []).map(meaningful).filter((tokens) => tokens.length > 0);
+  return claims
+    .filter((claim) => discrepancy.sourceIds?.includes(claim.primarySourceId))
+    .filter((claim) => descriptions.some((tokens) => tokenSimilarity(meaningful(claim.text), tokens) >= 0.5))
+    .map((claim) => claim.id);
 }
 function noRumorAsFact(script, research) {
   const unconfirmed = new Set((research.unconfirmed || []).map((claim) => claim.id));
@@ -74,4 +85,5 @@ function originalityReady(script, research) {
 }
 function check(key, passed, severity, message) { return { key, passed: Boolean(passed), severity, message }; }
 function meaningful(value) { return [...new Set(String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{4,}/g) || [])].filter((token) => !STOP.has(token)); }
+function tokenSimilarity(a, b) { if (!a?.length || !b?.length) return 0; const B = new Set(b); const common = a.filter((token) => B.has(token)).length; return common / Math.max(a.length, b.length); }
 const STOP = new Set(["what","confirmed","about","this","that","with","from","esto","esta","este","confirmado","sobre","para","como","hasta"]);
