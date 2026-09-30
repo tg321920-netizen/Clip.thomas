@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import OwnedStoryStarter from "@/components/OwnedStoryStarter";
+import { ownedContentRuntimeHref } from "@/lib/owned-content-runtime.mjs";
 import { ContentFactoryService } from "@/services/content-factory/ContentFactoryService.mjs";
 
 export const runtime = "nodejs";
@@ -10,7 +12,11 @@ type PageProps = {
 };
 
 export default async function NewOwnedStoryPage({ searchParams }: PageProps) {
-  const [dashboard, params] = await Promise.all([
+  const params = await searchParams;
+  const runtimeHref = ownedContentRuntimeHref("/factory/new", params);
+  if (runtimeHref) redirect(runtimeHref);
+
+  const dashboard = await Promise.all([
     new ContentFactoryService().listDashboard(),
     searchParams,
   ]);
