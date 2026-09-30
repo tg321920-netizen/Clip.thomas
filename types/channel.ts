@@ -5,6 +5,7 @@ export type ChannelStatus =
   | "PAUSED"
   | "ERROR";
 export type OAuthProfile = "DEFAULT" | "SECONDARY";
+export type ChannelScope = "MARKETING" | "OWNED_CONTENT";
 
 export type ChannelStrategy = {
   channelId: string;
@@ -26,6 +27,8 @@ export type ChannelRecord = {
   platform: ChannelPlatform;
   name: string;
   oauthProfile: OAuthProfile;
+  scope: ChannelScope;
+  systemManaged: boolean;
   externalAccountId: string | null;
   status: ChannelStatus;
   publishingEnabled: boolean;
