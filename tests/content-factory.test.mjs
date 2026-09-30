@@ -28,7 +28,7 @@ test("Content Factory keeps owned channel configuration independent while reusin
   await withStorage(async () => {
     const channels = new ChannelService();
     const brands = new BrandService();
-    const factory = new ContentFactoryService({ channels, brands });
+    const factory = new ContentFactoryService({ channels, brands, bootstrapDefaults: false });
 
     const us = await channels.createChannel({
       platform: "YOUTUBE",
@@ -104,7 +104,7 @@ test("Content Factory keeps owned channel configuration independent while reusin
 test("Content Factory does not fall back to the business-marketing workflow", async () => {
   await withStorage(async () => {
     const channels = new ChannelService();
-    const factory = new ContentFactoryService({ channels });
+    const factory = new ContentFactoryService({ channels, bootstrapDefaults: false });
     const channel = await channels.createChannel({
       platform: "TIKTOK",
       name: "Owned Entertainment",
