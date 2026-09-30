@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import ContentFactoryBoard from "@/components/ContentFactoryBoard";
+import { ownedContentRuntimeHref } from "@/lib/owned-content-runtime.mjs";
 import { BrandService } from "@/services/branding/BrandService.mjs";
 import { ContentFactoryService } from "@/services/content-factory/ContentFactoryService.mjs";
 
@@ -7,6 +9,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function ContentFactoryPage() {
+  const runtimeHref = ownedContentRuntimeHref("/factory");
+  if (runtimeHref) redirect(runtimeHref);
+
   const factory = new ContentFactoryService();
   const brands = new BrandService();
   const [dashboard, brandRecords] = await Promise.all([
