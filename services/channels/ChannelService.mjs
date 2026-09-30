@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
+import { isProjectId } from "../../lib/project-id.mjs";
 import { ChannelRepository } from "./ChannelRepository.mjs";
 
 const PLATFORMS = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
 const STATUSES = new Set(["DISCONNECTED", "CONNECTED", "PAUSED", "ERROR"]);
 const OAUTH_PROFILES = new Set(["DEFAULT", "SECONDARY"]);
+const SCOPES = new Set(["MARKETING", "OWNED_CONTENT"]);
 
 export class ChannelService {
   constructor(options = {}) {
     this.repository = options.repository || new ChannelRepository();
   }
 
-  async listChannels() {
-    return this.repository.list();
+  async listChannels(filters = {}) {
+    const records = await this.repository.list();
+    if (!filters.scope) return records;
+    const scope = normalizeChannelScope(filters.scope);
+    return records.filter((record) => normalizeChannelScope(record.scope || "MARKETING") === scope);
   }
 
   async getChannel(channelId) {
@@ -26,6 +31,7 @@ export class ChannelService {
     const status = normalizeStatus(input.status || "DISCONNECTED");
     const publishingEnabled = Boolean(input.publishingEnabled);
     const oauthProfile = normalizeOAuthProfile(input.oauthProfile || "DEFAULT");
+    const scope = normalizeChannelScope(input.scope || "MARKETING");
     const now = new Date().toISOString();
     const id = randomUUID();
 
@@ -41,9 +47,46 @@ export class ChannelService {
       platform,
       name,
       oauthProfile,
+      scope,
+      systemManaged: false,
       externalAccountId: cleanOptional(input.externalAccountId, 180),
       status,
       publishingEnabled,
+      dailyLimit,
+      timezone,
+      strategy: normalizeStrategy(id, input.strategy || {}, dailyLimit, now),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.repository.save(record);
+    return record;
+  }
+
+  async ensureSystemChannel(input = {}) {
+    const id = String(input.id || "").trim();
+    if (!isProjectId(id)) throw new Error("Invalid system channel id.");
+
+    const existing = await this.repository.get(id);
+    if (existing) return existing;
+
+    const platform = normalizePlatform(input.platform);
+    const name = cleanRequired(input.name, "Channel name", 100);
+    const timezone = normalizeTimezone(input.timezone || "UTC");
+    const dailyLimit = boundedInteger(input.dailyLimit, 0, 50, 0);
+    const scope = normalizeChannelScope(input.scope || "OWNED_CONTENT");
+    const now = new Date().toISOString();
+    const record = {
+      id,
+      userId: null,
+      platform,
+      name,
+      oauthProfile: "DEFAULT",
+      scope,
+      systemManaged: true,
+      externalAccountId: null,
+      status: "DISCONNECTED",
+      publishingEnabled: false,
       dailyLimit,
       timezone,
       strategy: normalizeStrategy(id, input.strategy || {}, dailyLimit, now),
@@ -66,11 +109,15 @@ export class ChannelService {
     const updated = {
       ...current,
       oauthProfile: normalizeOAuthProfile(current.oauthProfile || "DEFAULT"),
+      scope: normalizeChannelScope(current.scope || "MARKETING"),
       ...(Object.hasOwn(input, "name")
         ? { name: cleanRequired(input.name, "Channel name", 100) }
         : {}),
       ...(Object.hasOwn(input, "oauthProfile")
         ? { oauthProfile: normalizeOAuthProfile(input.oauthProfile) }
+        : {}),
+      ...(Object.hasOwn(input, "scope")
+        ? { scope: normalizeChannelScope(input.scope) }
         : {}),
       ...(Object.hasOwn(input, "externalAccountId")
         ? { externalAccountId: cleanOptional(input.externalAccountId, 180) }
@@ -177,6 +224,12 @@ export function normalizeTimezone(value) {
   }
 
   return timezone;
+}
+
+export function normalizeChannelScope(value) {
+  const scope = String(value || "").trim().toUpperCase();
+  if (!SCOPES.has(scope)) throw new Error("Invalid channel scope.");
+  return scope;
 }
 
 export function normalizeOAuthProfile(value) {
