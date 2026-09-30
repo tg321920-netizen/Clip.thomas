@@ -108,7 +108,9 @@ ESPEAK_DATA_PATH="$ESPEAK_PREFIX/share/espeak-ng-data" \
 
 cd "$ROOT"
 npm ci --include=dev
-npm run build
+# Production bootstrap belongs to the running service, not to build-time tests.
+# Keep tests deterministic even when Render injects runtime environment values.
+CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS=false npm run build
 npm prune --omit=dev
 rm -rf "$TOOLING_ROOT"
 
