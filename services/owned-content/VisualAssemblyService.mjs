@@ -84,7 +84,7 @@ async function renderPosterFromAsset(inputPath, outputPath, mediaType) {
 function runFfmpeg(args) {
   const command = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(/* turbopackIgnore: true */ command, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
     let stderr = ""; child.stderr.setEncoding("utf8"); child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", (error) => reject(error?.code === "ENOENT" ? new Error("FFmpeg is not installed or FFMPEG_PATH is invalid.") : error));
     child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr.trim() || `FFmpeg visual preparation failed with code ${code ?? "?"}.`)));
