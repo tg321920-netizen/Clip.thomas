@@ -19,12 +19,28 @@ type SourceDraft = {
   authorized: boolean;
 };
 
-export default function OwnedStoryStarter({ channels }: { channels: ChannelOption[] }) {
+type InitialStory = {
+  channelId?: string;
+  topic?: string;
+  category?: string;
+  trendId?: string;
+  trendSignal?: {
+    sourceCount?: number;
+    growthScore?: number;
+    saturationScore?: number;
+    originalityPotential?: number;
+  };
+};
+
+export default function OwnedStoryStarter({ channels, initial }: { channels: ChannelOption[]; initial?: InitialStory }) {
   const enabled = useMemo(() => channels.filter((channel) => channel.enabled && channel.lineKey), [channels]);
-  const [channelId, setChannelId] = useState(enabled[0]?.id || "");
+  const initialChannelId = initial?.channelId && enabled.some((channel) => channel.id === initial.channelId)
+    ? initial.channelId
+    : enabled[0]?.id || "";
+  const [channelId, setChannelId] = useState(initialChannelId);
   const selected = enabled.find((channel) => channel.id === channelId) || enabled[0] || null;
-  const [topic, setTopic] = useState("");
-  const [category, setCategory] = useState("GENERAL");
+  const [topic, setTopic] = useState(initial?.topic || "");
+  const [category, setCategory] = useState(initial?.category || "GENERAL");
   const [format, setFormat] = useState(selected?.defaultFormat || "SHORT");
   const [first, setFirst] = useState<SourceDraft>({ type: "TEXT", value: "", title: "Fuente 1", authorized: false });
   const [second, setSecond] = useState<SourceDraft>({ type: "TEXT", value: "", title: "Fuente 2", authorized: false });
@@ -59,10 +75,13 @@ export default function OwnedStoryStarter({ channels }: { channels: ChannelOptio
           idempotencyKey: `owned:${selected.id}:${topic.trim().toLowerCase().replace(/\s+/g, "-").slice(0, 80)}:${new Date().toISOString().slice(0, 10)}`,
           sources: [source1, source2],
           ttsMode: "TTS_FREE",
+          trendId: initial?.trendId || null,
           trendSignal: {
             observedAt: new Date().toISOString(),
-            sourceCount: 2,
-            originalityPotential: 70,
+            sourceCount: Math.max(2, Number(initial?.trendSignal?.sourceCount || 2)),
+            growthScore: Number(initial?.trendSignal?.growthScore || 0),
+            saturationScore: Number(initial?.trendSignal?.saturationScore || 0),
+            originalityPotential: Number(initial?.trendSignal?.originalityPotential || 70),
           },
         }),
       });
@@ -94,6 +113,7 @@ export default function OwnedStoryStarter({ channels }: { channels: ChannelOptio
       <div>
         <p className="text-sm font-semibold text-zinc-100">Nueva historia</p>
         <p className="mt-1 text-xs leading-5 text-zinc-500">Este formulario inicia investigación con dos fuentes. No publica nada automáticamente y usa TTS gratuito por defecto.</p>
+        {initial?.trendId ? <p className="mt-1 text-xs text-violet-300">Origen: tendencia seleccionada en Trend Hunter.</p> : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
