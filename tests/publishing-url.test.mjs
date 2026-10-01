@@ -13,7 +13,9 @@ const CLIP_ID = "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b";
 test("PublishingService persists a real provider post URL alongside the external id", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-publish-url-"));
   const previous = process.env.CLIPFORGE_STORAGE_DIR;
+  const previousRealPublishing = process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
   process.env.CLIPFORGE_STORAGE_DIR = root;
+  process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "true";
 
   try {
     const relativePath = `clips/${PROJECT_ID}/${CLIP_ID}/render.mp4`;
@@ -88,6 +90,8 @@ test("PublishingService persists a real provider post URL alongside the external
   } finally {
     if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
     else process.env.CLIPFORGE_STORAGE_DIR = previous;
+    if (previousRealPublishing === undefined) delete process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
+    else process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = previousRealPublishing;
     await rm(root, { recursive: true, force: true });
   }
 });
