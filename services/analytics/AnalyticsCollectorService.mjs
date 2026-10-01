@@ -150,6 +150,8 @@ export function normalizeProviderMetrics(value = {}) {
     "followersGained",
     "impressions",
     "reach",
+    "clicks",
+    "ctr",
   ];
   const metrics = {};
 

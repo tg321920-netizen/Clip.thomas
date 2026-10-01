@@ -104,6 +104,7 @@ export class MarketingMemoryService {
       usedCtas: unique(selected.map((item) => item.cta).filter(Boolean)).slice(0, 100),
       usedAngles: unique(selected.map((item) => item.angle).filter(Boolean)),
       latestPerformanceRecommendations: performance[0]?.report?.recommendations || [],
+      latestPerformanceSignals: performance[0]?.report?.signals || [],
       latestPerformanceSampleNotice: performance[0]?.report?.sampleNotice || null,
       note: "La memoria registra historial y evidencia. No cambia automáticamente una estrategia solo por una muestra pequeña.",
     };
