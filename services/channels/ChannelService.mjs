@@ -204,6 +204,9 @@ export function normalizeStrategy(
       50,
       fallbackDailyLimit,
     ),
+    agentAutonomyMode: normalizeAgentAutonomyMode(
+      input.agentAutonomyMode ?? input.autonomyMode ?? "MANUAL",
+    ),
     preferredTopics: normalizeTopics(input.preferredTopics),
     avoidTopics: normalizeTopics(input.avoidTopics),
     createdAt,
@@ -238,6 +241,15 @@ export function normalizeOAuthProfile(value) {
     throw new Error("Invalid OAuth profile. Use DEFAULT or SECONDARY.");
   }
   return profile;
+}
+
+function normalizeAgentAutonomyMode(value) {
+  const mode = String(value || "MANUAL").trim().toUpperCase();
+  if (mode === "AUTOPILOT") return "AUTO";
+  if (!["MANUAL", "SEMI_AUTO", "AUTO"].includes(mode)) {
+    throw new Error("Invalid agent autonomy mode.");
+  }
+  return mode;
 }
 
 function normalizePlatform(value) {
