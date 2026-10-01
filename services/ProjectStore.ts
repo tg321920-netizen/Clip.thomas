@@ -69,14 +69,12 @@ export class ProjectStore {
       else throw error;
     }
 
-    await Promise.all(
-      ["uploads", "clips", "transcripts", "news"].map((directory) =>
-        rm(path.join(root, directory, projectId), {
-          recursive: true,
-          force: true,
-        }),
-      ),
-    );
+    await Promise.all([
+      rm(path.join(root, "uploads", projectId), { recursive: true, force: true }),
+      rm(path.join(root, "clips", projectId), { recursive: true, force: true }),
+      rm(path.join(root, "transcripts", projectId), { recursive: true, force: true }),
+      rm(path.join(root, "news", projectId), { recursive: true, force: true }),
+    ]);
 
     return existed;
   }
