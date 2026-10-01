@@ -306,6 +306,21 @@ export class AgentOrchestrator {
       });
     }
 
+    if (source === "provider") {
+      const now = this.#nowIso();
+      return this.#save({
+        ...execution,
+        status: "WAITING_INFORMATION",
+        error: message,
+        history: append(execution, "provider_fallback_wait", {
+          code,
+          message,
+          reason: "The model provider could not produce a safe decision.",
+        }, now),
+        updatedAt: now,
+      });
+    }
+
     return this.#fail(execution, code, message, source);
   }
 

@@ -77,7 +77,7 @@ export class PlatformConnector {
       publishingReady:
         channel.status === "CONNECTED" &&
         channel.publishingEnabled === true &&
-        oauth.state === "VALID",
+        (oauth.state === "VALID" || oauth.state === "REFRESHABLE"),
     };
   }
 
@@ -165,10 +165,11 @@ function oauthStatus(credentials, vaultConfigured) {
   const expiresAt = credentials.expiresAt || null;
   const expires = Date.parse(expiresAt || "");
   if (Number.isFinite(expires) && expires <= Date.now()) {
+    const refreshAvailable = Boolean(credentials.refreshToken);
     return {
-      state: "EXPIRED",
+      state: refreshAvailable ? "REFRESHABLE" : "EXPIRED",
       expiresAt,
-      refreshAvailable: Boolean(credentials.refreshToken),
+      refreshAvailable,
     };
   }
   return {
