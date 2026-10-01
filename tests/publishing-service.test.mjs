@@ -7,6 +7,7 @@ import { ChannelService } from "../services/channels/ChannelService.mjs";
 import { JobStore } from "../services/JobStore.mjs";
 import { PublicationService } from "../services/publications/PublicationService.mjs";
 import { PublishingService, classifyProviderStatus } from "../services/publishing/PublishingService.mjs";
+import { PublishingProviderError } from "../services/publishing/PublishingProvider.mjs";
 
 const PROJECT_ID = "8e56073f-ae3a-4c2c-a73d-b11085dbd1b6";
 const CLIP_ID = "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b";
@@ -206,5 +207,60 @@ test("PUBLISH_POST jobs are unique per publication and preserve News Mode jobs",
     const claimed = await store.claimNext(["PUBLISH_POST"]);
     assert.equal(claimed?.type, "PUBLISH_POST");
     assert.ok([publicationA, publicationB].includes(claimed?.entityId));
+  });
+});
+
+
+test("retryable provider failures requeue the publication for bounded worker retry", async () => {
+  await withStorage(async (root) => {
+    await seedProject(root);
+    const channels = new ChannelService();
+    const channel = await channels.createChannel({
+      platform: "YOUTUBE",
+      name: "YouTube retry",
+      timezone: "UTC",
+      status: "CONNECTED",
+      publishingEnabled: true,
+    });
+    const publications = new PublicationService({ channels });
+    const created = await publications.createForClip({
+      projectId: PROJECT_ID,
+      clipId: CLIP_ID,
+      channelId: channel.id,
+      approvalRequired: false,
+    });
+    await publications.schedule(created.publication.id, "2030-01-01T09:00:00.000Z");
+
+    const service = new PublishingService({
+      publications,
+      channels,
+      credentials: {
+        isConfigured() { return true; },
+        async get() { return { accessToken: "test-token" }; },
+      },
+      providerFactory() {
+        return {
+          requirements() { return {}; },
+          async publish() {
+            throw new PublishingProviderError("Provider rate limited", {
+              code: "YOUTUBE_HTTP_429",
+              retryable: true,
+            });
+          },
+        };
+      },
+    });
+
+    await assert.rejects(
+      () => service.publishPublication(created.publication.id, {
+        now: new Date("2030-01-01T09:01:00.000Z"),
+      }),
+      (error) => error?.retryable === true,
+    );
+
+    const saved = await publications.get(created.publication.id);
+    assert.equal(saved.status, "SCHEDULED");
+    assert.match(saved.error, /rate limited/i);
+    assert.ok(saved.scheduledAt);
   });
 });

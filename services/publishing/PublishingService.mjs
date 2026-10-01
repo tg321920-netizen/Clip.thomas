@@ -133,7 +133,11 @@ export class PublishingService {
         providerResult,
       };
     } catch (error) {
-      await this.publications.markFailed(publication.id, error);
+      if (error?.retryable === true) {
+        await this.publications.markRetryableFailure(publication.id, error);
+      } else {
+        await this.publications.markFailed(publication.id, error);
+      }
       throw error;
     }
   }

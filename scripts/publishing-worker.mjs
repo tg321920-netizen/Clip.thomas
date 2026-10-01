@@ -88,9 +88,13 @@ async function processOnePublishJob() {
       status: result.publication?.status,
     });
   } catch (error) {
-    await jobs.fail(job, error, { retryable: false });
-    console.error("Publish job failed without automatic resubmission", {
+    const retryable = error?.retryable === true;
+    const savedJob = await jobs.fail(job, error, { retryable });
+    console.error(retryable ? "Publish job failed; retry scheduled" : "Publish job failed", {
       publicationId,
+      retryable,
+      jobStatus: savedJob.status,
+      nextAttemptAt: savedJob.nextAttemptAt,
       error: error instanceof Error ? error.message : String(error),
     });
   }

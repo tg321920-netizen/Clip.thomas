@@ -218,6 +218,23 @@ export class PublicationService {
     return publication;
   }
 
+  async markRetryableFailure(publicationId, error) {
+    const publication = await this.#require(publicationId);
+    if (publication.status === "PUBLISHED") return publication;
+    if (!["PUBLISHING", "SCHEDULED"].includes(publication.status)) {
+      throw new Error(`Publication cannot be requeued from ${publication.status}.`);
+    }
+
+    publication.status = "SCHEDULED";
+    publication.error = cleanText(
+      error instanceof Error ? error.message : String(error || "Temporary publishing failure."),
+      1000,
+    );
+    publication.updatedAt = new Date().toISOString();
+    await this.repository.save(publication);
+    return publication;
+  }
+
   async markFailed(publicationId, error) {
     const publication = await this.#require(publicationId);
     if (publication.status === "PUBLISHED") return publication;
