@@ -1,6 +1,7 @@
 import { AnalyticsService } from "../analytics/AnalyticsService.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
 import { MarketingMemoryService } from "../marketing-memory/MarketingMemoryService.mjs";
+import { ProductProfileService } from "../marketing-brain/ProductProfileService.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
 import { OriginalNewsScriptService } from "../owned-content/OriginalNewsScriptService.mjs";
 import { AudioEngine } from "../owned-content/AudioEngine.mjs";
@@ -27,6 +28,7 @@ export class AgentToolRegistry {
       publications: this.publications,
     });
     this.memory = options.memory || new MarketingMemoryService();
+    this.products = options.products || new ProductProfileService();
     this.social = options.social || new SocialPublishingRouter({
       channels: this.channels,
       publications: this.publications,
@@ -187,6 +189,20 @@ export class AgentToolRegistry {
       description: "Consultar analytics persistidos; no inventa métricas faltantes.",
       inputHint: { channelId: "uuid?", projectId: "uuid?" },
       execute: (input) => this.analytics.summarize(input),
+    });
+
+    this.register({
+      name: "marketing.product.list",
+      description: "Listar perfiles de productos configurados en ClipForge.",
+      inputHint: { country: "string?", active: "boolean?" },
+      execute: (input) => this.products.list(input),
+    });
+
+    this.register({
+      name: "marketing.product.read",
+      description: "Leer un perfil de producto configurado en ClipForge.",
+      inputHint: { productId: "uuid" },
+      execute: (input) => this.products.get(input.productId),
     });
 
     this.register({
