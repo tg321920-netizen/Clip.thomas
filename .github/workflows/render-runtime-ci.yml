@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "chatgpt/**"
+      - "codex/**"
     paths:
       - "Dockerfile"
       - "Dockerfile.free"
