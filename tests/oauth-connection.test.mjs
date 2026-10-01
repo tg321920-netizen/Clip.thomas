@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  OAuthConnectionService,
   buildAuthorizationUrl,
   createSignedOAuthState,
   getOAuthConfig,
@@ -112,4 +113,287 @@ test("OAuth config rejects missing secrets and accepts explicit HTTPS callbacks"
   assert.equal(config.clientId, "client-key-1234567890");
   assert.equal(config.redirectUri, "https://clip.example/api/oauth/tiktok/callback");
   assert.ok(config.scopes.includes("video.publish"));
+});
+
+
+function youtubeEnv(overrides = {}) {
+  return {
+    CLIPFORGE_OAUTH_STATE_KEY: secret,
+    GOOGLE_CLIENT_ID: "google-client-id-for-tests",
+    GOOGLE_CLIENT_SECRET: "google-client-secret-for-tests",
+    GOOGLE_REDIRECT_URI: "https://clip.example/api/oauth/youtube/callback",
+    GOOGLE_YOUTUBE_SCOPES:
+      "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+    CLIPFORGE_AGENT_REAL_PUBLISHING: "false",
+    ...overrides,
+  };
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function youtubeChannel() {
+  return {
+    id: channelId,
+    platform: "YOUTUBE",
+    oauthProfile: "DEFAULT",
+    status: "DISCONNECTED",
+    publishingEnabled: false,
+    externalAccountId: null,
+  };
+}
+
+test("YouTube OAuth callback stores access/refresh tokens, connects the channel and never uploads", async () => {
+  let channel = youtubeChannel();
+  let stored = null;
+  const requests = [];
+  const service = new OAuthConnectionService({
+    channels: {
+      async getChannel() { return channel; },
+      async updateChannel(_id, input) {
+        channel = { ...channel, ...input };
+        return channel;
+      },
+    },
+    vault: {
+      isConfigured() { return true; },
+      async get() { return null; },
+      async set(id, value) {
+        assert.equal(id, channelId);
+        stored = value;
+      },
+    },
+    now: () => now,
+    fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(String(url));
+      requests.push(parsed.toString());
+      if (parsed.hostname === "oauth2.googleapis.com") {
+        const form = new URLSearchParams(String(init.body || ""));
+        assert.equal(form.get("grant_type"), "authorization_code");
+        assert.equal(form.get("code"), "google-code");
+        assert.equal(
+          form.get("redirect_uri"),
+          "https://clip.example/api/oauth/youtube/callback",
+        );
+        return jsonResponse({
+          access_token: "youtube-access-token",
+          refresh_token: "youtube-refresh-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+          scope:
+            "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+        });
+      }
+      assert.equal(parsed.hostname, "www.googleapis.com");
+      assert.equal(parsed.pathname, "/youtube/v3/channels");
+      assert.equal(parsed.searchParams.get("mine"), "true");
+      return jsonResponse({ items: [{ id: "UC_clipforge_test" }] });
+    },
+  });
+  const signed = createSignedOAuthState({
+    channelId,
+    platform: "YOUTUBE",
+    secret,
+    now,
+  });
+
+  const result = await service.completeAuthorization(
+    "YOUTUBE",
+    {
+      code: "google-code",
+      state: signed.state,
+      stateCookie: signed.cookieValue,
+    },
+    { env: youtubeEnv() },
+  );
+
+  assert.equal(result.status, "CONNECTED");
+  assert.equal(result.externalAccountId, "UC_clipforge_test");
+  assert.equal(channel.status, "CONNECTED");
+  assert.equal(channel.publishingEnabled, false);
+  assert.equal(stored.accessToken, "youtube-access-token");
+  assert.equal(stored.refreshToken, "youtube-refresh-token");
+  assert.equal(stored.externalAccountId, "UC_clipforge_test");
+  assert.equal(requests.length, 2);
+  assert.equal(requests.some((value) => value.includes("/upload/youtube/")), false);
+});
+
+test("YouTube OAuth callback rejects an invalid state before network or storage", async () => {
+  let networkCalls = 0;
+  let writes = 0;
+  const service = new OAuthConnectionService({
+    channels: { async getChannel() { return youtubeChannel(); } },
+    vault: {
+      isConfigured() { return true; },
+      async get() { return null; },
+      async set() { writes += 1; },
+    },
+    now: () => now,
+    fetchImpl: async () => {
+      networkCalls += 1;
+      throw new Error("network must not run");
+    },
+  });
+  const signed = createSignedOAuthState({
+    channelId,
+    platform: "YOUTUBE",
+    secret,
+    now,
+  });
+
+  await assert.rejects(
+    () =>
+      service.completeAuthorization(
+        "YOUTUBE",
+        {
+          code: "google-code",
+          state: `${signed.state}-invalid`,
+          stateCookie: signed.cookieValue,
+        },
+        { env: youtubeEnv() },
+      ),
+    /state mismatch/i,
+  );
+  assert.equal(networkCalls, 0);
+  assert.equal(writes, 0);
+});
+
+test("YouTube OAuth requires a refresh token for a new durable connection", async () => {
+  let writes = 0;
+  let updates = 0;
+  const service = new OAuthConnectionService({
+    channels: {
+      async getChannel() { return youtubeChannel(); },
+      async updateChannel() { updates += 1; },
+    },
+    vault: {
+      isConfigured() { return true; },
+      async get() { return null; },
+      async set() { writes += 1; },
+    },
+    now: () => now,
+    fetchImpl: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.hostname === "oauth2.googleapis.com") {
+        return jsonResponse({
+          access_token: "access-without-refresh",
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      return jsonResponse({ items: [{ id: "UC_without_refresh" }] });
+    },
+  });
+  const signed = createSignedOAuthState({
+    channelId,
+    platform: "YOUTUBE",
+    secret,
+    now,
+  });
+
+  await assert.rejects(
+    () =>
+      service.completeAuthorization(
+        "YOUTUBE",
+        {
+          code: "google-code",
+          state: signed.state,
+          stateCookie: signed.cookieValue,
+        },
+        { env: youtubeEnv() },
+      ),
+    /refresh token/i,
+  );
+  assert.equal(writes, 0);
+  assert.equal(updates, 0);
+});
+
+test("YouTube OAuth automatically refreshes an expiring access token", async () => {
+  let stored = {
+    accessToken: "old-access",
+    refreshToken: "stable-refresh",
+    tokenType: "Bearer",
+    scope:
+      "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+    expiresAt: new Date(now - 1000).toISOString(),
+    externalAccountId: "UC_refresh",
+  };
+  const service = new OAuthConnectionService({
+    channels: {
+      async getChannel() {
+        return { ...youtubeChannel(), status: "CONNECTED" };
+      },
+    },
+    vault: {
+      isConfigured() { return true; },
+      async get() { return stored; },
+      async set(_id, value) { stored = value; },
+    },
+    now: () => now,
+    fetchImpl: async (url, init = {}) => {
+      assert.equal(String(url), "https://oauth2.googleapis.com/token");
+      const form = new URLSearchParams(String(init.body || ""));
+      assert.equal(form.get("grant_type"), "refresh_token");
+      assert.equal(form.get("refresh_token"), "stable-refresh");
+      return jsonResponse({
+        access_token: "new-access",
+        expires_in: 3600,
+        token_type: "Bearer",
+      });
+    },
+  });
+
+  const refreshed = await service.getValidCredentials(channelId, {
+    env: youtubeEnv(),
+  });
+  assert.equal(refreshed.accessToken, "new-access");
+  assert.equal(refreshed.refreshToken, "stable-refresh");
+  assert.equal(refreshed.externalAccountId, "UC_refresh");
+  assert.match(refreshed.scope, /youtube\.readonly/);
+});
+
+test("YouTube OAuth disconnect deletes local credentials and leaves publishing disabled", async () => {
+  let channel = {
+    ...youtubeChannel(),
+    status: "CONNECTED",
+    externalAccountId: "UC_disconnect",
+  };
+  let deleted = null;
+  const service = new OAuthConnectionService({
+    channels: {
+      async getChannel() { return channel; },
+      async updateChannel(_id, input) {
+        channel = { ...channel, ...input };
+        return channel;
+      },
+    },
+    vault: {
+      isConfigured() { return true; },
+      async delete(id) { deleted = id; },
+    },
+  });
+
+  const disconnected = await service.disconnect(channelId);
+  assert.equal(deleted, channelId);
+  assert.equal(disconnected.status, "DISCONNECTED");
+  assert.equal(disconnected.publishingEnabled, false);
+  assert.equal(disconnected.externalAccountId, null);
+});
+
+test("YouTube OAuth start fails closed when Google credentials are missing", async () => {
+  const service = new OAuthConnectionService({
+    channels: { async getChannel() { return youtubeChannel(); } },
+    vault: {},
+  });
+  await assert.rejects(
+    () =>
+      service.createAuthorization(channelId, "YOUTUBE", {
+        env: { CLIPFORGE_OAUTH_STATE_KEY: secret },
+      }),
+    /GOOGLE_CLIENT_ID/i,
+  );
 });

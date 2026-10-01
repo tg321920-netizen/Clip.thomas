@@ -2,6 +2,7 @@ import { AnalyticsService } from "./AnalyticsService.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
 import { CredentialVault } from "../security/CredentialVault.mjs";
+import { OAuthConnectionService } from "../oauth/OAuthConnectionService.mjs";
 import { createPublishingProvider } from "../publishing/createPublishingProvider.mjs";
 
 export class AnalyticsCollectorService {
@@ -9,6 +10,10 @@ export class AnalyticsCollectorService {
     this.publications = options.publications || new PublicationService();
     this.channels = options.channels || new ChannelService();
     this.credentials = options.credentials || new CredentialVault();
+    this.oauth = options.oauth || new OAuthConnectionService({
+      channels: this.channels,
+      vault: this.credentials,
+    });
     this.analytics = options.analytics || new AnalyticsService({
       publications: this.publications,
     });
@@ -65,7 +70,10 @@ export class AnalyticsCollectorService {
       };
     }
 
-    const credentials = await this.credentials.get(channel.id);
+    const credentials =
+      typeof this.oauth?.getValidCredentials === "function"
+        ? await this.oauth.getValidCredentials(channel.id)
+        : await this.credentials.get(channel.id);
     if (!credentials?.accessToken) {
       return {
         publicationId,

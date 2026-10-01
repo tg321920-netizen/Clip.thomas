@@ -41,7 +41,26 @@ export class OAuthConnectionService {
     const config = getOAuthConfig(normalized, env, channel.oauthProfile || "DEFAULT");
     const code = cleanRequired(input.code, "authorization code", 4096);
     const token = await this.#exchangeCode(normalized, code, config);
-    const credentials = normalizeCredentials(normalized, token, this.now());
+    let previousCredentials = {};
+    if (normalized === "YOUTUBE" && this.vault.isConfigured?.() === true) {
+      try {
+        previousCredentials = (await this.vault.get(channel.id)) || {};
+      } catch {
+        previousCredentials = {};
+      }
+    }
+    const credentials = normalizeCredentials(
+      normalized,
+      token,
+      this.now(),
+      previousCredentials,
+    );
+
+    if (normalized === "YOUTUBE" && !credentials.refreshToken) {
+      throw new Error(
+        "Google OAuth did not return a refresh token. Reconnect YouTube and grant offline consent.",
+      );
+    }
 
     if (normalized === "FACEBOOK") {
       const pages = await this.#fetchFacebookPages(credentials.accessToken, config);
@@ -204,7 +223,15 @@ function normalizeCredentials(platform, token, now, previous = {}) {
   const expiresIn = positiveNumber(token?.expires_in ?? token?.expiresIn);
   const refreshToken = cleanOptional(token?.refresh_token || token?.refreshToken, 10000) || previous.refreshToken || null;
   const refreshExpiresIn = positiveNumber(token?.refresh_expires_in ?? token?.refreshExpiresIn);
-  return { accessToken, refreshToken, tokenType: cleanOptional(token?.token_type || token?.tokenType, 80) || "Bearer", scope: cleanOptional(token?.scope, 4000), expiresAt: expiresIn ? new Date(now + expiresIn * 1000).toISOString() : null, refreshExpiresAt: refreshExpiresIn ? new Date(now + refreshExpiresIn * 1000).toISOString() : previous.refreshExpiresAt || null, externalAccountId: cleanOptional(token?.externalAccountId || token?.open_id, 300) || previous.externalAccountId || null };
+  return {
+    accessToken,
+    refreshToken,
+    tokenType: cleanOptional(token?.token_type || token?.tokenType, 80) || previous.tokenType || "Bearer",
+    scope: cleanOptional(token?.scope, 4000) || previous.scope || null,
+    expiresAt: expiresIn ? new Date(now + expiresIn * 1000).toISOString() : previous.expiresAt || null,
+    refreshExpiresAt: refreshExpiresIn ? new Date(now + refreshExpiresIn * 1000).toISOString() : previous.refreshExpiresAt || null,
+    externalAccountId: cleanOptional(token?.externalAccountId || token?.open_id, 300) || previous.externalAccountId || null,
+  };
 }
 function pageCredentials(credentials, page) { return { ...credentials, userAccessToken: credentials.userAccessToken || credentials.accessToken, accessToken: page.accessToken, pageId: page.id, pageName: page.name, externalAccountId: page.id }; }
 async function fetchYouTubeChannelId(fetchImpl, accessToken) { if (!accessToken) return null; const url = new URL("https://www.googleapis.com/youtube/v3/channels"); url.searchParams.set("part", "id"); url.searchParams.set("mine", "true"); const body = await fetchJson(fetchImpl, url, { headers: { Authorization: `Bearer ${accessToken}` } }, "YouTube"); return cleanOptional(body?.items?.[0]?.id, 300); }

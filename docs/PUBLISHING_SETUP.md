@@ -25,13 +25,23 @@ Variables/credenciales reales se obtienen únicamente después de registrar y au
 
 Provider: `YouTubeProvider`.
 
-- API oficial: YouTube Data API `videos.insert` mediante protocolo resumable.
-- Scope requerido: `https://www.googleapis.com/auth/youtube.upload`.
+- Inicio OAuth: `/api/oauth/youtube/start?channelId=<id>`.
+- Callback: `/api/oauth/youtube/callback`.
+- El flujo usa `state` aleatorio firmado y una cookie HttpOnly/SameSite=Lax con expiración corta.
+- El intercambio del authorization code se realiza únicamente en servidor.
+- ClipForge solicita acceso offline y conserva el refresh token cifrado en `CredentialVault`.
+- Después del intercambio consulta `channels.list?mine=true` para identificar el canal autorizado.
+- Scopes actuales: `https://www.googleapis.com/auth/youtube.upload` y `https://www.googleapis.com/auth/youtube.readonly`.
+- `youtube.upload` cubre la subida; `youtube.readonly` permite identificar el canal y las lecturas actuales de YouTube Data API.
+- El refresh automático vive en `OAuthConnectionService.getValidCredentials()` y es utilizado por publishing y analytics.
+- API de publicación: YouTube Data API `videos.insert` mediante protocolo resumable.
 - El worker inicia una sesión resumable y transmite el MP4 desde disco; no carga el video completo en memoria.
 - `UPLOADED` no se considera publicado/terminado: ClipForge espera a que el procesamiento sea `PROCESSED`/exitoso.
 - Privacidad soportada: `private`, `unlisted`, `public`.
+- Desconectar elimina las credenciales locales cifradas y vuelve a dejar `publishingEnabled=false`.
+- El redirect URI registrado en Google debe coincidir exactamente con `GOOGLE_REDIRECT_URI`; en un dominio desplegado su forma es `https://DOMINIO/api/oauth/youtube/callback`.
 
-El cliente OAuth de Google y su secreto pertenecen al entorno de producción, no al repositorio.
+El cliente OAuth de Google y su secreto pertenecen al entorno del runtime, no al repositorio. La conexión puede completarse manteniendo `CLIPFORGE_AGENT_REAL_PUBLISHING=false`; OAuth no habilita publicación real por sí solo.
 
 ## Facebook Reels
 
