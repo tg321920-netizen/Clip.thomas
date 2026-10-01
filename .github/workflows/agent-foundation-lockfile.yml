@@ -1,0 +1,32 @@
+name: Agent Foundation Lockfile
+
+on:
+  push:
+    branches: ["codex/clipforge-agent-foundation"]
+    paths:
+      - "package.json"
+      - ".github/workflows/agent-foundation-lockfile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Generate secure lockfile
+        run: npm install --package-lock-only --ignore-scripts next@16.3.8 eslint-config-next@16.3.8
+      - name: Upload lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-foundation-package-lock
+          path: package-lock.json
+          retention-days: 1
