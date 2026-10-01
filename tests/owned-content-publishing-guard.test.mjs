@@ -12,7 +12,9 @@ async function withStorage(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-owned-publish-"));
   const previous = process.env.CLIPFORGE_STORAGE_DIR;
   const previousSwitch = process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING;
+  const previousGlobalSwitch = process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
   process.env.CLIPFORGE_STORAGE_DIR = root;
+  process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "true";
   delete process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING;
   try { await fn(); }
   finally {
@@ -20,6 +22,8 @@ async function withStorage(fn) {
     else process.env.CLIPFORGE_STORAGE_DIR = previous;
     if (previousSwitch === undefined) delete process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING;
     else process.env.CLIPFORGE_CONTENT_REAL_PUBLISHING = previousSwitch;
+    if (previousGlobalSwitch === undefined) delete process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
+    else process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = previousGlobalSwitch;
     await rm(root, { recursive: true, force: true });
   }
 }

@@ -68,6 +68,8 @@ export class PublishingService {
       throw new Error("Publication is not due yet.");
     }
 
+    assertGlobalRealPublishingEnabled();
+
     const channel = await this.channels.getChannel(publication.channelId);
     if (!channel) throw new Error("Channel not found.");
     if (channel.status !== "CONNECTED" || channel.publishingEnabled !== true) {
@@ -220,6 +222,23 @@ export function classifyProviderStatus(platform, result = {}) {
   }
 
   return "PENDING";
+}
+
+export function globalRealPublishingEnabled(env = process.env) {
+  return String(env.CLIPFORGE_AGENT_REAL_PUBLISHING || "")
+    .trim()
+    .toLowerCase() === "true";
+}
+
+function assertGlobalRealPublishingEnabled() {
+  if (globalRealPublishingEnabled()) return;
+
+  const error = new Error(
+    "Real publishing is disabled. Set CLIPFORGE_AGENT_REAL_PUBLISHING=true only after explicit activation.",
+  );
+  error.code = "REAL_PUBLISHING_DISABLED";
+  error.retryable = false;
+  throw error;
 }
 
 function ownedContentRealPublishingEnabled() {

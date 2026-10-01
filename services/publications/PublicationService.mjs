@@ -269,7 +269,15 @@ export function normalizePlatformSettings(platform, value) {
     : {};
 
   if (platform === "TIKTOK") {
+    const transferMethod = String(input.transferMethod || "FILE_UPLOAD")
+      .trim()
+      .toUpperCase();
+    if (!["FILE_UPLOAD", "PULL_FROM_URL"].includes(transferMethod)) {
+      throw new Error("Invalid TikTok transferMethod.");
+    }
+
     const output = {
+      transferMethod,
       ...(typeof input.privacyLevel === "string"
         ? { privacyLevel: cleanText(input.privacyLevel, 80) }
         : {}),
