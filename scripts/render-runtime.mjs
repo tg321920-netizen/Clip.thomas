@@ -31,6 +31,7 @@ const processes = [
   ["news", ["scripts/news-worker.mjs"]],
   ["owned-content", ["scripts/owned-content-worker.mjs"]],
   ["autopilot", ["scripts/autopilot-worker.mjs"]],
+  ["agent", ["scripts/agent-worker.mjs"]],
   ["publishing", ["scripts/publishing-worker.mjs"]],
   ["analytics", ["scripts/analytics-worker.mjs"]],
   [
