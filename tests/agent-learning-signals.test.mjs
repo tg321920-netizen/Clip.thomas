@@ -5,9 +5,9 @@ import { PerformanceAnalyzer } from "../services/analytics/PerformanceAnalyzer.m
 function publication(index, hour) {
   return {
     id: `pub-${index}`,
-    projectId: `project-${index}`,
-    clipId: `clip-${index}`,
-    channelId: "channel-1",
+    projectId: `00000000-0000-4000-8000-00000000000${index}`,
+    clipId: `10000000-0000-4000-8000-00000000000${index}`,
+    channelId: "20000000-0000-4000-8000-000000000000",
     platform: index < 3 ? "YOUTUBE" : "TIKTOK",
     status: "PUBLISHED",
     publishedAt: `2026-09-20T${String(hour).padStart(2, "0")}:00:00.000Z`,
