@@ -2,7 +2,7 @@ name: ClipForge CI
 
 on:
   push:
-    branches: [main, "chatgpt/**", "work/**"]
+    branches: [main, "chatgpt/**", "work/**", "codex/**"]
     paths:
       - "app/**"
       - "components/**"
