@@ -11,6 +11,7 @@ const PUBLIC_PATHS = new Set([
   "/login",
   "/setup-required",
   "/api/auth/owner/login",
+  "/api/auth/owner/device-login",
 ]);
 
 const PUBLIC_HEALTH_PATH = "/api/health";
