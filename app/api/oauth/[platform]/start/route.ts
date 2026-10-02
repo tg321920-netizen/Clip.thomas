@@ -35,7 +35,7 @@ function cookieName(platform: string) {
 }
 
 function oauthErrorRedirect(request: NextRequest, error: unknown, code: string) {
-  const url = new URL("/autopilot", getPublicRequestOrigin(request));
+  const url = new URL("/connections", getPublicRequestOrigin(request));
   url.searchParams.set("oauth", code);
   url.searchParams.set(
     "message",

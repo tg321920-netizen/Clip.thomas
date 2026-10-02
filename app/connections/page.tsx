@@ -6,7 +6,19 @@ import type { ChannelRecord } from "@/types/channel";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export default async function ConnectionsPage() {
+type ConnectionsSearchParams = {
+  oauth?: string | string[];
+  platform?: string | string[];
+  message?: string | string[];
+};
+
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<ConnectionsSearchParams>;
+}) {
+  const params = await searchParams;
+  const oauthNotice = buildOAuthNotice(params);
   const service = new ChannelService();
   const channels = (await service.listChannels()) as ChannelRecord[];
 
@@ -42,6 +54,18 @@ export default async function ConnectionsPage() {
           </div>
         </header>
 
+        {oauthNotice ? (
+          <div
+            className={`mt-6 rounded-2xl border p-4 text-sm leading-6 ${
+              oauthNotice.kind === "success"
+                ? "border-emerald-400/20 bg-emerald-400/[0.05] text-emerald-100/80"
+                : "border-red-400/20 bg-red-400/[0.05] text-red-100/80"
+            }`}
+          >
+            {oauthNotice.message}
+          </div>
+        ) : null}
+
         <section className="mt-8 rounded-2xl border border-white/10 bg-white/[0.025] p-5">
           <ChannelConnections channels={channels} />
         </section>
@@ -54,4 +78,46 @@ export default async function ConnectionsPage() {
       </div>
     </main>
   );
+}
+
+
+function buildOAuthNotice(params: ConnectionsSearchParams) {
+  const oauth = firstParam(params.oauth);
+  if (!oauth) return null;
+
+  const platform = firstParam(params.platform).toUpperCase();
+  const platformLabel =
+    platform === "YOUTUBE"
+      ? "YouTube"
+      : platform === "TIKTOK"
+        ? "TikTok"
+        : platform === "FACEBOOK"
+          ? "Facebook"
+          : "La cuenta";
+
+  if (oauth === "connected") {
+    return {
+      kind: "success" as const,
+      message: `${platformLabel} quedó conectado correctamente. Verifica abajo el canal autorizado.`,
+    };
+  }
+
+  if (oauth === "page_selection_required") {
+    return {
+      kind: "success" as const,
+      message: "La autorización terminó. Falta seleccionar la página de Facebook.",
+    };
+  }
+
+  const detail = firstParam(params.message).slice(0, 300);
+  return {
+    kind: "error" as const,
+    message: detail
+      ? `No se pudo completar la conexión OAuth: ${detail}`
+      : "No se pudo completar la conexión OAuth. Revisa la configuración del proveedor e inténtalo de nuevo.",
+  };
+}
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
 }

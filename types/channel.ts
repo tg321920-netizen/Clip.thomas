@@ -30,6 +30,7 @@ export type ChannelRecord = {
   scope: ChannelScope;
   systemManaged: boolean;
   externalAccountId: string | null;
+  externalAccountName?: string | null;
   status: ChannelStatus;
   publishingEnabled: boolean;
   dailyLimit: number;

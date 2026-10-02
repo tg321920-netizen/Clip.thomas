@@ -25,6 +25,7 @@ export class OAuthConnectionService {
     if (!channel) throw new Error("Channel not found.");
     if (channel.platform !== normalized) throw new Error("OAuth platform must match the channel platform.");
     const config = getOAuthConfig(normalized, options.env || process.env, channel.oauthProfile || "DEFAULT");
+    assertCredentialVaultConfigured(this.vault);
     const stateBundle = createSignedOAuthState({ channelId, platform: normalized, secret: config.stateSecret, now: this.now() });
     return { platform: normalized, channel, authorizationUrl: buildAuthorizationUrl(normalized, config, stateBundle.state), state: stateBundle.state, stateCookie: stateBundle.cookieValue, cookieMaxAge: STATE_TTL_SECONDS };
   }
@@ -39,6 +40,7 @@ export class OAuthConnectionService {
     if (!channel) throw new Error("Channel not found.");
     if (channel.platform !== normalized) throw new Error("OAuth channel platform changed during authorization.");
     const config = getOAuthConfig(normalized, env, channel.oauthProfile || "DEFAULT");
+    assertCredentialVaultConfigured(this.vault);
     const code = cleanRequired(input.code, "authorization code", 4096);
     const token = await this.#exchangeCode(normalized, code, config);
     let previousCredentials = {};
@@ -76,8 +78,20 @@ export class OAuthConnectionService {
     }
 
     await this.vault.set(channel.id, credentials);
-    await this.channels.updateChannel(channel.id, { status: "CONNECTED", publishingEnabled: false, externalAccountId: credentials.externalAccountId || null });
-    return { channelId: channel.id, platform: normalized, status: "CONNECTED", externalAccountId: credentials.externalAccountId || null, pageSelectionRequired: false };
+    await this.channels.updateChannel(channel.id, {
+      status: "CONNECTED",
+      publishingEnabled: false,
+      externalAccountId: credentials.externalAccountId || null,
+      externalAccountName: credentials.externalAccountName || null,
+    });
+    return {
+      channelId: channel.id,
+      platform: normalized,
+      status: "CONNECTED",
+      externalAccountId: credentials.externalAccountId || null,
+      externalAccountName: credentials.externalAccountName || null,
+      pageSelectionRequired: false,
+    };
   }
 
   async getConnectionStatus(channelId) {
@@ -125,7 +139,12 @@ export class OAuthConnectionService {
     const channel = await this.channels.getChannel(channelId);
     if (!channel) throw new Error("Channel not found.");
     if (this.vault.isConfigured?.() === true) await this.vault.delete(channelId);
-    return this.channels.updateChannel(channelId, { status: "DISCONNECTED", publishingEnabled: false, externalAccountId: null });
+    return this.channels.updateChannel(channelId, {
+      status: "DISCONNECTED",
+      publishingEnabled: false,
+      externalAccountId: null,
+      externalAccountName: null,
+    });
   }
 
   async getValidCredentials(channelId, options = {}) {
@@ -148,8 +167,12 @@ export class OAuthConnectionService {
     if (platform === "TIKTOK") return postForm(this.fetchImpl, "https://open.tiktokapis.com/v2/oauth/token/", { client_key: config.clientId, client_secret: config.clientSecret, code, grant_type: "authorization_code", redirect_uri: config.redirectUri }, "TikTok");
     if (platform === "YOUTUBE") {
       const token = await postForm(this.fetchImpl, "https://oauth2.googleapis.com/token", { client_id: config.clientId, client_secret: config.clientSecret, code, grant_type: "authorization_code", redirect_uri: config.redirectUri }, "Google");
-      const externalAccountId = await fetchYouTubeChannelId(this.fetchImpl, token.access_token);
-      return { ...token, externalAccountId };
+      const identity = await fetchYouTubeChannelIdentity(this.fetchImpl, token.access_token);
+      return {
+        ...token,
+        externalAccountId: identity.id,
+        externalAccountName: identity.title,
+      };
     }
     const url = new URL(`${config.graphBase}/${config.graphVersion}/oauth/access_token`);
     url.searchParams.set("client_id", config.clientId);
@@ -231,12 +254,43 @@ function normalizeCredentials(platform, token, now, previous = {}) {
     expiresAt: expiresIn ? new Date(now + expiresIn * 1000).toISOString() : previous.expiresAt || null,
     refreshExpiresAt: refreshExpiresIn ? new Date(now + refreshExpiresIn * 1000).toISOString() : previous.refreshExpiresAt || null,
     externalAccountId: cleanOptional(token?.externalAccountId || token?.open_id, 300) || previous.externalAccountId || null,
+    externalAccountName: cleanOptional(token?.externalAccountName, 160) || previous.externalAccountName || null,
   };
 }
 function pageCredentials(credentials, page) { return { ...credentials, userAccessToken: credentials.userAccessToken || credentials.accessToken, accessToken: page.accessToken, pageId: page.id, pageName: page.name, externalAccountId: page.id }; }
-async function fetchYouTubeChannelId(fetchImpl, accessToken) { if (!accessToken) return null; const url = new URL("https://www.googleapis.com/youtube/v3/channels"); url.searchParams.set("part", "id"); url.searchParams.set("mine", "true"); const body = await fetchJson(fetchImpl, url, { headers: { Authorization: `Bearer ${accessToken}` } }, "YouTube"); return cleanOptional(body?.items?.[0]?.id, 300); }
+async function fetchYouTubeChannelIdentity(fetchImpl, accessToken) {
+  if (!accessToken) {
+    throw new Error("YouTube access token is required to identify the authorized channel.");
+  }
+  const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+  url.searchParams.set("part", "id,snippet");
+  url.searchParams.set("mine", "true");
+  const body = await fetchJson(
+    fetchImpl,
+    url,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+    "YouTube",
+  );
+  const channel = Array.isArray(body?.items) ? body.items[0] : null;
+  const id = cleanOptional(channel?.id, 300);
+  if (!id) {
+    throw new Error(
+      "No YouTube channel was returned for the authorized Google account.",
+    );
+  }
+  return {
+    id,
+    title: cleanOptional(channel?.snippet?.title, 160),
+  };
+}
 async function postForm(fetchImpl, url, fields, platform) { return fetchJson(fetchImpl, url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() }, platform); }
 async function fetchJson(fetchImpl, url, init, platform) { if (typeof fetchImpl !== "function") throw new Error("No fetch implementation is available."); const response = await fetchImpl(url, init); let body = null; try { body = await response.json(); } catch { body = null; } if (!response.ok || body?.error) { const message = body?.error_description || body?.error?.message || (typeof body?.error === "string" ? body.error : null) || `${platform} OAuth returned HTTP ${response.status}.`; throw new Error(message); } return body || {}; }
+function assertCredentialVaultConfigured(vault) {
+  if (vault?.isConfigured?.() === true) return;
+  throw new Error(
+    "Credential vault is not configured. CLIPFORGE_CREDENTIALS_KEY must be a base64-encoded 32-byte key.",
+  );
+}
 function sign(encoded, secret) { const key = cleanSecret(secret, "OAuth state secret"); return createHmac("sha256", key).update(encoded).digest("base64url"); }
 function cleanSecret(value, label) { const text = String(value || "").trim(); if (text.length < 16) throw new Error(`${label} is not configured.`); return text; }
 function requireHttpsUrl(value, label) { const text = String(value || "").trim(); try { const url = new URL(text); if (url.protocol !== "https:") throw new Error("https required"); return url.toString(); } catch { throw new Error(`${label} must be a registered HTTPS URL.`); } }

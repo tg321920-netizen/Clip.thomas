@@ -30,7 +30,7 @@ export async function GET(
       stateCookie: cookie,
     });
 
-    const url = new URL("/autopilot", publicOrigin);
+    const url = new URL("/connections", publicOrigin);
     url.searchParams.set(
       "oauth",
       result.pageSelectionRequired ? "page_selection_required" : "connected",
@@ -42,7 +42,7 @@ export async function GET(
     response.cookies.delete(cookieName(normalized));
     return response;
   } catch (error) {
-    const url = new URL("/autopilot", publicOrigin);
+    const url = new URL("/connections", publicOrigin);
     url.searchParams.set("oauth", "callback_failed");
     url.searchParams.set("platform", normalized.toLowerCase());
     url.searchParams.set(

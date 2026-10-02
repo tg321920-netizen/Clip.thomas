@@ -50,6 +50,7 @@ export class ChannelService {
       scope,
       systemManaged: false,
       externalAccountId: cleanOptional(input.externalAccountId, 180),
+      externalAccountName: cleanOptional(input.externalAccountName, 160),
       status,
       publishingEnabled,
       dailyLimit,
@@ -85,6 +86,7 @@ export class ChannelService {
       scope,
       systemManaged: true,
       externalAccountId: null,
+      externalAccountName: null,
       status: "DISCONNECTED",
       publishingEnabled: false,
       dailyLimit,
@@ -121,6 +123,9 @@ export class ChannelService {
         : {}),
       ...(Object.hasOwn(input, "externalAccountId")
         ? { externalAccountId: cleanOptional(input.externalAccountId, 180) }
+        : {}),
+      ...(Object.hasOwn(input, "externalAccountName")
+        ? { externalAccountName: cleanOptional(input.externalAccountName, 160) }
         : {}),
       ...(Object.hasOwn(input, "status")
         ? { status: normalizeStatus(input.status) }
