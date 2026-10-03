@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, stat, unlink } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
@@ -23,6 +26,28 @@ const DEFAULT_QUERIES = [
   "podcast español tecnología",
   "charla español entrevista",
 ];
+
+const WIKIMEDIA_FALLBACK = {
+  videoId: "commons-estefania-monroy-2026",
+  url: "https://commons.wikimedia.org/wiki/File:Entrevista_Estefania_Monroy-TecMTY_2026.webm",
+  downloadUrl: "https://commons.wikimedia.org/wiki/Special:Redirect/file/Entrevista_Estefania_Monroy-TecMTY_2026.webm",
+  query: "fallback visual directo con licencia verificada",
+  title: "Entrevista Estefania Monroy-TecMTY 2026",
+  description: "Entrevista en español publicada por su autor en Wikimedia Commons.",
+  channelTitle: "RomanTenorio / Wikimedia Commons",
+  publishedAt: "2026-04-29T00:00:00Z",
+  durationSeconds: 397.381,
+  statusLicense: "CC BY-SA 4.0",
+  license: "Creative Commons Attribution-ShareAlike 4.0 International",
+  licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+  sourcePlatform: "Wikimedia Commons",
+  viewCount: 0,
+  likeCount: 0,
+  commentCount: 0,
+  engagementRate: 0,
+  score: 0,
+  heatmapPeak: null,
+};
 
 const EDITORIAL_SCHEMA = {
   type: "object",
@@ -132,7 +157,7 @@ export class SmartLicensedClipService {
       if (inspected.filter((item) => item.heatmapPeak).length >= 4) break;
     }
 
-    const chosen = chooseSource(inspected.length ? inspected : discovered);
+    let chosen = chooseSource(inspected.length ? inspected : discovered);
     if (!chosen) throw new Error("No usable visual source was found.");
 
     console.log("[smart-clip] selected source", {
@@ -145,17 +170,7 @@ export class SmartLicensedClipService {
       url: chosen.url,
     });
 
-    const peak = chosen.heatmapPeak;
-    const duration = Math.max(1, Number(chosen.durationSeconds || 0));
-    const center = peak
-      ? (Number(peak.start_time || 0) + Number(peak.end_time || peak.start_time || 0)) / 2
-      : Math.min(duration * 0.35, 12 * 60);
-    const windowSeconds = Math.min(300, Math.max(180, Number(options.windowSeconds || 240)));
-    let start = Math.max(0, center - windowSeconds / 2);
-    if (duration > 0 && start + windowSeconds > duration) {
-      start = Math.max(0, duration - windowSeconds);
-    }
-    const end = duration > 0 ? Math.min(duration, start + windowSeconds) : start + windowSeconds;
+    let { start, end } = chooseWindow(chosen, options);
 
     const projectId = randomUUID();
     const videoId = randomUUID();
@@ -167,7 +182,30 @@ export class SmartLicensedClipService {
       start: round(start),
       end: round(end),
     });
-    await downloadYouTubeSection(chosen.url, sourcePath, start, end);
+
+    try {
+      await downloadYouTubeSection(chosen.url, sourcePath, start, end);
+    } catch (error) {
+      console.warn("[smart-clip] YouTube media download failed; switching to verified direct CC fallback", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      chosen = { ...WIKIMEDIA_FALLBACK };
+      ({ start, end } = chooseWindow(chosen, { ...options, windowSeconds: 300 }));
+      console.log("[smart-clip] fallback source selected", {
+        title: chosen.title,
+        license: chosen.license,
+        url: chosen.url,
+        start: round(start),
+        end: round(end),
+      });
+      await downloadDirectLicensedSection(
+        this.fetchImpl,
+        chosen.downloadUrl,
+        sourcePath,
+        start,
+        end,
+      );
+    }
     const probe = await probeVideo(sourcePath);
     const info = await stat(sourcePath);
     const now = new Date().toISOString();
@@ -178,7 +216,7 @@ export class SmartLicensedClipService {
       source: {
         projectId,
         videoId,
-        originalName: `licensed-youtube-${chosen.videoId}.mp4`,
+        originalName: `licensed-source-${chosen.videoId}.mp4`,
         storedName: "source.mp4",
         sizeBytes: info.size,
         durationSeconds: probe.durationSeconds,
@@ -193,9 +231,10 @@ export class SmartLicensedClipService {
         originUrl: chosen.url,
         ingestMode: "SMART_LICENSED_VIDEO",
         rights: {
-          license: "Creative Commons",
+          license: chosen.license || "Creative Commons",
           licenseCode: "creativeCommon",
-          sourcePlatform: "YouTube",
+          licenseUrl: chosen.licenseUrl || null,
+          sourcePlatform: chosen.sourcePlatform || "YouTube",
           sourceVideoId: chosen.videoId,
           sourceTitle: chosen.title,
           sourceChannel: chosen.channelTitle,
@@ -299,7 +338,8 @@ export class SmartLicensedClipService {
         "",
         `Fuente: ${chosen.title} — ${chosen.channelTitle}`,
         `Video original: ${chosen.url}`,
-        "Licencia del video fuente: Creative Commons (verificada mediante YouTube Data API).",
+        `Licencia del video fuente: ${chosen.license || "Creative Commons"}.`,
+        chosen.licenseUrl ? `Licencia: ${chosen.licenseUrl}` : "",
         "",
         ...editorial.hashtags.map((tag) => normalizeHashtag(tag)).filter(Boolean),
       ].join("\n"),
@@ -468,6 +508,9 @@ function normalizeVideo(item, query) {
     publishedAt: item?.snippet?.publishedAt || null,
     durationSeconds: parseIsoDuration(item?.contentDetails?.duration),
     statusLicense: String(item?.status?.license || ""),
+    license: "Creative Commons",
+    licenseUrl: null,
+    sourcePlatform: "YouTube",
     viewCount,
     likeCount,
     commentCount,
@@ -521,6 +564,26 @@ async function inspectWithYtDlp(url) {
   };
 }
 
+function chooseWindow(source, options = {}) {
+  const peak = source?.heatmapPeak;
+  const duration = Math.max(1, Number(source?.durationSeconds || 0));
+  const center = peak
+    ? (Number(peak.start_time || 0) + Number(peak.end_time || peak.start_time || 0)) / 2
+    : Math.min(duration * 0.5, 12 * 60);
+  const windowSeconds = Math.min(
+    300,
+    Math.max(180, Number(options.windowSeconds || 240)),
+  );
+  let start = Math.max(0, center - windowSeconds / 2);
+  if (duration > 0 && start + windowSeconds > duration) {
+    start = Math.max(0, duration - windowSeconds);
+  }
+  const end = duration > 0
+    ? Math.min(duration, start + windowSeconds)
+    : start + windowSeconds;
+  return { start, end };
+}
+
 async function downloadYouTubeSection(url, outputPath, start, end) {
   const ytdlp = process.env.YTDLP_PATH?.trim() || "yt-dlp";
   const ffmpegPath = process.env.FFMPEG_PATH?.trim();
@@ -542,6 +605,48 @@ async function downloadYouTubeSection(url, outputPath, start, end) {
   }
   args.push(url);
   await run(ytdlp, args, 20 * 60 * 1000);
+}
+
+async function downloadDirectLicensedSection(fetchImpl, url, outputPath, start, end) {
+  const temporaryPath = `${outputPath}.source.webm`;
+  const response = await fetchImpl(url, {
+    redirect: "follow",
+    headers: {
+      "User-Agent": "ClipForge/1.0 (licensed-media test)",
+    },
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Direct licensed video download failed with HTTP ${response.status}.`);
+  }
+
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body),
+      createWriteStream(temporaryPath),
+    );
+
+    const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
+    const duration = Math.max(1, end - start);
+    await run(ffmpeg, [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-ss", Math.max(0, start).toFixed(3),
+      "-i", temporaryPath,
+      "-t", duration.toFixed(3),
+      "-map", "0:v:0",
+      "-map", "0:a:0?",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "23",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-movflags", "+faststart",
+      "-y",
+      outputPath,
+    ], 20 * 60 * 1000);
+  } finally {
+    await unlink(temporaryPath).catch(() => {});
+  }
 }
 
 async function probeVideo(filePath) {
