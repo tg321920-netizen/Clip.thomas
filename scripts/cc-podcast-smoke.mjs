@@ -20,7 +20,7 @@ const LICENSE = {
 };
 const MAX_SOURCE_SECONDS = Math.max(
   180,
-  Math.min(Number(process.env.CLIPFORGE_CC_PODCAST_SECONDS || 420), 900),
+  Math.min(Number(process.env.CLIPFORGE_CC_PODCAST_SECONDS || 90), 120),
 );
 
 const marker = process.env.CLIPFORGE_CC_PODCAST_SMOKE_MARKER || "podcastlinux-194-v1";
@@ -183,32 +183,27 @@ async function resolveEpisodeEnclosure(feedUrl, titleNeedle) {
 
 async function createPodcastVideo(audioUrl, outputPath, seconds) {
   const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
-  const filter = [
-    "[1:a]asplit=2[aout][awave]",
-    "[awave]showwaves=s=1100x260:mode=line:rate=30:colors=white[wave]",
-    "[0:v][wave]overlay=(W-w)/2:(H-h)/2[v]",
-  ].join(";");
   await run(ffmpeg, [
     "-hide_banner",
     "-loglevel", "error",
     "-y",
     "-f", "lavfi",
-    "-i", "color=c=0x101820:s=1280x720:r=30",
+    "-i", "color=c=0x101820:s=640x360:r=5",
     "-i", audioUrl,
     "-t", String(seconds),
-    "-filter_complex", filter,
-    "-map", "[v]",
-    "-map", "[aout]",
+    "-map", "0:v:0",
+    "-map", "1:a:0",
     "-c:v", "libx264",
     "-preset", "ultrafast",
-    "-crf", "28",
+    "-tune", "stillimage",
+    "-crf", "32",
     "-pix_fmt", "yuv420p",
     "-c:a", "aac",
-    "-b:a", "128k",
+    "-b:a", "96k",
     "-shortest",
     "-movflags", "+faststart",
     outputPath,
-  ], 20 * 60 * 1000);
+  ], 8 * 60 * 1000);
 }
 
 async function probeVideo(filePath) {
