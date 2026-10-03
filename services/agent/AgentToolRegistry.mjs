@@ -10,6 +10,7 @@ import { ResearchEngine } from "../owned-content/ResearchEngine.mjs";
 import { TrendHunterService } from "../owned-content/TrendHunterService.mjs";
 import { VisualAssemblyService } from "../owned-content/VisualAssemblyService.mjs";
 import { SocialPublishingRouter } from "../publishing/connectors/SocialPublishingRouter.mjs";
+import { SmartLicensedClipService } from "../publishing/SmartLicensedClipService.mjs";
 import { sanitizeAgentValue } from "./AgentContracts.mjs";
 
 export class AgentToolRegistry {
@@ -30,6 +31,10 @@ export class AgentToolRegistry {
     this.memory = options.memory || new MarketingMemoryService();
     this.products = options.products || new ProductProfileService();
     this.social = options.social || new SocialPublishingRouter({
+      channels: this.channels,
+      publications: this.publications,
+    });
+    this.smartClips = options.smartClips || new SmartLicensedClipService({
       channels: this.channels,
       publications: this.publications,
     });
@@ -182,6 +187,24 @@ export class AgentToolRegistry {
       inputHint: { publicationIds: ["uuid"] },
       execute: (input) =>
         this.social.publishContent(input, { allowRealPublishing: true }),
+    });
+
+    this.register({
+      name: "licensed.video.discover",
+      description: "Buscar videos largos en español con licencia Creative Commons, priorizando vistas, engagement y el pico de repetición de YouTube cuando esté disponible.",
+      inputHint: { channelId: "uuid", queries: ["podcast español entrevista?"] },
+      execute: (input) => this.smartClips.discover(input.channelId, {
+        queries: input.queries,
+      }),
+    });
+
+    this.register({
+      name: "licensed.clip.produce",
+      description: "Elegir una fuente visual Creative Commons de alto rendimiento, usar el pico de repetición, crear un short real con video y subtítulos, generar título editorial y publicarlo mediante el conector controlado de YouTube.",
+      inputHint: { channelId: "uuid", queries: ["podcast español entrevista?"] },
+      execute: (input) => this.smartClips.run(input.channelId, {
+        queries: input.queries,
+      }),
     });
 
     this.register({
