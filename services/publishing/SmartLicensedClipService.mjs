@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { mkdir, stat, unlink } from "node:fs/promises";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
@@ -31,6 +28,7 @@ const WIKIMEDIA_FALLBACK = {
   videoId: "commons-estefania-monroy-2026",
   url: "https://commons.wikimedia.org/wiki/File:Entrevista_Estefania_Monroy-TecMTY_2026.webm",
   downloadUrl: "https://commons.wikimedia.org/wiki/Special:Redirect/file/Entrevista_Estefania_Monroy-TecMTY_2026.webm",
+  fileTitle: "File:Entrevista Estefania Monroy-TecMTY 2026.webm",
   query: "fallback visual directo con licencia verificada",
   title: "Entrevista Estefania Monroy-TecMTY 2026",
   description: "Entrevista en español publicada por su autor en Wikimedia Commons.",
@@ -113,6 +111,21 @@ export class SmartLicensedClipService {
   }
 
   async run(channelId, options = {}) {
+    const reportStage = async (stage, detail = {}) => {
+      console.log("[smart-clip] stage", { stage, ...detail });
+      if (typeof options.onStage === "function") {
+        try {
+          await options.onStage({ stage, ...detail });
+        } catch (error) {
+          console.warn("[smart-clip] status callback failed", {
+            stage,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+
+    await reportStage("CHECKING_YOUTUBE_CONNECTION");
     const channel = await this.channels.getChannel(channelId);
     if (!channel || channel.platform !== "YOUTUBE") {
       throw new Error("A connected YouTube channel is required.");
@@ -123,19 +136,14 @@ export class SmartLicensedClipService {
       throw new Error("YouTube must be connected before smart clip discovery.");
     }
 
-    // The previous smoke-test upload was intentionally crude. Hide it before
-    // publishing the replacement so the channel does not keep the bad test.
-    await this.#hidePreviousSmokeUpload(credentials.accessToken).catch((error) => {
-      console.warn("[smart-clip] could not hide previous smoke upload:", error.message);
-    });
-
+    await reportStage("DISCOVERING_POPULAR_CC_VIDEOS");
     const discovered = await this.#discover(credentials.accessToken, options);
     if (discovered.length === 0) {
       throw new Error("No Creative Commons Spanish podcast-style videos were found.");
     }
 
     const inspected = [];
-    for (const candidate of discovered.slice(0, 8)) {
+    for (const candidate of discovered.slice(0, 4)) {
       try {
         const metadata = await inspectWithYtDlp(candidate.url);
         if (!metadata.hasVideo) continue;
@@ -149,12 +157,17 @@ export class SmartLicensedClipService {
           ytDlpViewCount: Number(metadata.viewCount || 0),
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         console.warn("[smart-clip] metadata inspection failed", {
           url: candidate.url,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
+        if (/sign in to confirm you.?re not a bot/i.test(message)) {
+          console.warn("[smart-clip] YouTube media extraction is blocked on this host; skipping remaining yt-dlp inspections.");
+          break;
+        }
       }
-      if (inspected.filter((item) => item.heatmapPeak).length >= 4) break;
+      if (inspected.filter((item) => item.heatmapPeak).length >= 2) break;
     }
 
     let chosen = chooseSource(inspected.length ? inspected : discovered);
@@ -170,6 +183,12 @@ export class SmartLicensedClipService {
       url: chosen.url,
     });
 
+    await reportStage("SOURCE_SELECTED", {
+      title: chosen.title,
+      views: chosen.viewCount,
+      score: chosen.score,
+    });
+
     let { start, end } = chooseWindow(chosen, options);
 
     const projectId = randomUUID();
@@ -182,6 +201,11 @@ export class SmartLicensedClipService {
       start: round(start),
       end: round(end),
     });
+    await reportStage("DOWNLOADING_SOURCE", {
+      source: chosen.sourcePlatform || "YouTube",
+      start: round(start),
+      end: round(end),
+    });
 
     try {
       await downloadYouTubeSection(chosen.url, sourcePath, start, end);
@@ -190,7 +214,7 @@ export class SmartLicensedClipService {
         error: error instanceof Error ? error.message : String(error),
       });
       chosen = { ...WIKIMEDIA_FALLBACK };
-      ({ start, end } = chooseWindow(chosen, { ...options, windowSeconds: 300 }));
+      ({ start, end } = chooseWindow(chosen, { ...options, windowSeconds: 150 }));
       console.log("[smart-clip] fallback source selected", {
         title: chosen.title,
         license: chosen.license,
@@ -198,9 +222,13 @@ export class SmartLicensedClipService {
         start: round(start),
         end: round(end),
       });
+      await reportStage("USING_VERIFIED_CC_FALLBACK", {
+        title: chosen.title,
+        license: chosen.statusLicense,
+      });
       await downloadDirectLicensedSection(
         this.fetchImpl,
-        chosen.downloadUrl,
+        chosen,
         sourcePath,
         start,
         end,
@@ -254,17 +282,19 @@ export class SmartLicensedClipService {
     });
 
     console.log("[smart-clip] transcribing visual source...");
+    await reportStage("TRANSCRIBING");
     await transcribeProject(projectId, {
       language: "es",
       chunkDurationSeconds: 600,
     });
 
     console.log("[smart-clip] analyzing clip candidates...");
+    await reportStage("ANALYZING_HIGHLIGHTS");
     const analysisResult = await analyzeProject(projectId, {
       providerName: process.env.CLIPFORGE_ANALYSIS_PROVIDER || "heuristic",
       minDuration: 95,
-      maxDuration: 180,
-      targetDuration: 120,
+      maxDuration: 140,
+      targetDuration: 110,
       maxCandidates: 7,
     });
 
@@ -285,16 +315,18 @@ export class SmartLicensedClipService {
 
     const prepared = await createClipFromCandidate(projectId, selectedCandidate.id, {
       framingMode: "CONVERSATION",
-      quality: "BALANCED",
+      quality: "FAST",
     });
 
     console.log("[smart-clip] generating large bottom subtitles...");
+    await reportStage("GENERATING_SUBTITLES");
     await generateSubtitleTrack(projectId, prepared.clip.id, {
       style: "VIRAL",
       enabled: true,
     });
 
     console.log("[smart-clip] applying smooth speech zoom...");
+    await reportStage("APPLYING_SMOOTH_ZOOM");
     await applySpeechFocus(projectId, prepared.clip.id, {
       zoom: 1.10,
       attackMs: 700,
@@ -305,12 +337,15 @@ export class SmartLicensedClipService {
     });
 
     console.log("[smart-clip] rendering real visual 9:16 clip with large bottom subtitles and smooth zoom...");
+    await reportStage("RENDERING", { progress: 0 });
     await renderClip(projectId, prepared.clip.id, (progress) => {
       if (progress === 100 || progress % 25 === 0) {
         console.log("[smart-clip] render progress", progress);
+        void reportStage("RENDERING", { progress });
       }
     });
 
+    await reportStage("CREATING_TITLE_AND_METADATA");
     const editorial = await createEditorial({
       source: chosen,
       candidate: selectedCandidate,
@@ -367,9 +402,26 @@ export class SmartLicensedClipService {
       new Date(Date.now() + 1000).toISOString(),
     );
 
+    await reportStage("UPLOADING_TO_YOUTUBE", {
+      title: editorial.title,
+      duration: selectedCandidate.duration,
+    });
     const submitted = await this.publishing.publishPublication(publication.id, {
       now: new Date(Date.now() + 2000),
     });
+
+    await reportStage(
+      submitted.publication?.status === "PUBLISHED" ? "PUBLISHED" : "YOUTUBE_PROCESSING",
+      {
+        title: editorial.title,
+        duration: selectedCandidate.duration,
+        publicationId: submitted.publication?.id || null,
+        externalPostUrl:
+          submitted.providerResult?.externalPostUrl ||
+          submitted.publication?.externalPostUrl ||
+          null,
+      },
+    );
 
     return {
       source: chosen,
@@ -572,7 +624,7 @@ function chooseWindow(source, options = {}) {
     : Math.min(duration * 0.5, 12 * 60);
   const windowSeconds = Math.min(
     300,
-    Math.max(180, Number(options.windowSeconds || 240)),
+    Math.max(150, Number(options.windowSeconds || 180)),
   );
   let start = Math.max(0, center - windowSeconds / 2);
   if (duration > 0 && start + windowSeconds > duration) {
@@ -607,45 +659,74 @@ async function downloadYouTubeSection(url, outputPath, start, end) {
   await run(ytdlp, args, 20 * 60 * 1000);
 }
 
-async function downloadDirectLicensedSection(fetchImpl, url, outputPath, start, end) {
-  const temporaryPath = `${outputPath}.source.webm`;
-  const response = await fetchImpl(url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "ClipForge/1.0 (licensed-media test)",
-    },
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`Direct licensed video download failed with HTTP ${response.status}.`);
+async function downloadDirectLicensedSection(fetchImpl, source, outputPath, start, end) {
+  const mediaUrl = await resolveWikimediaPlayableUrl(fetchImpl, source);
+  const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
+  const duration = Math.max(1, end - start);
+
+  await run(ffmpeg, [
+    "-hide_banner",
+    "-loglevel", "error",
+    "-user_agent", "ClipForge/1.0 (licensed-media test)",
+    "-ss", Math.max(0, start).toFixed(3),
+    "-i", mediaUrl,
+    "-t", duration.toFixed(3),
+    "-map", "0:v:0",
+    "-map", "0:a:0?",
+    "-c:v", "libx264",
+    "-preset", "ultrafast",
+    "-crf", "28",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-b:a", "96k",
+    "-movflags", "+faststart",
+    "-y",
+    outputPath,
+  ], 20 * 60 * 1000);
+}
+
+async function resolveWikimediaPlayableUrl(fetchImpl, source) {
+  const fileTitle = String(source?.fileTitle || "").trim();
+  if (!fileTitle || typeof fetchImpl !== "function") {
+    return source?.downloadUrl;
   }
 
   try {
-    await pipeline(
-      Readable.fromWeb(response.body),
-      createWriteStream(temporaryPath),
-    );
+    const api = new URL("https://commons.wikimedia.org/w/api.php");
+    api.searchParams.set("action", "query");
+    api.searchParams.set("format", "json");
+    api.searchParams.set("origin", "*");
+    api.searchParams.set("prop", "videoinfo");
+    api.searchParams.set("titles", fileTitle);
+    api.searchParams.set("viprop", "url|derivatives");
 
-    const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
-    const duration = Math.max(1, end - start);
-    await run(ffmpeg, [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-ss", Math.max(0, start).toFixed(3),
-      "-i", temporaryPath,
-      "-t", duration.toFixed(3),
-      "-map", "0:v:0",
-      "-map", "0:a:0?",
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "23",
-      "-c:a", "aac",
-      "-b:a", "128k",
-      "-movflags", "+faststart",
-      "-y",
-      outputPath,
-    ], 20 * 60 * 1000);
-  } finally {
-    await unlink(temporaryPath).catch(() => {});
+    const response = await fetchImpl(api, {
+      headers: { "User-Agent": "ClipForge/1.0 (licensed-media test)" },
+    });
+    const body = await response.json().catch(() => ({}));
+    const page = Object.values(body?.query?.pages || {})[0];
+    const info = page?.videoinfo?.[0];
+    const derivatives = Array.isArray(info?.derivatives) ? info.derivatives : [];
+
+    const ranked = derivatives
+      .map((item) => ({
+        src: String(item?.src || "").trim(),
+        type: String(item?.type || "").toLowerCase(),
+        height: Number(item?.height || 0),
+      }))
+      .filter((item) => item.src.startsWith("https://") && item.height > 0 && item.height <= 540)
+      .sort((a, b) => {
+        const aMp4 = a.type.includes("mp4") ? 1 : 0;
+        const bMp4 = b.type.includes("mp4") ? 1 : 0;
+        return bMp4 - aMp4 || b.height - a.height;
+      });
+
+    return ranked[0]?.src || info?.url || source?.downloadUrl;
+  } catch (error) {
+    console.warn("[smart-clip] Wikimedia derivative lookup failed; using original media URL", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return source?.downloadUrl;
   }
 }
 

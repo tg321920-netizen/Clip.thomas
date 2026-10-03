@@ -4,13 +4,12 @@ import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.
 import {
   PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
 } from "@/services/publishing/PublishOncePodcastService.mjs";
-import { SmartLicensedClipService } from "@/services/publishing/SmartLicensedClipService.mjs";
+import { queueSmartPublishJob } from "@/services/publishing/SmartPublishJobService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const oauth = new OAuthConnectionService();
-const smartClips = new SmartLicensedClipService();
 
 export async function GET(
   request: NextRequest,
@@ -40,12 +39,12 @@ export async function GET(
       result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID &&
       String(process.env.CLIPFORGE_PUBLISH_ONCE_SMART || "").trim().toLowerCase() === "true"
     ) {
-      const published = await smartClips.run(result.channelId);
-      if (published.externalPostUrl) {
-        const response = NextResponse.redirect(published.externalPostUrl, 303);
-        response.cookies.delete(cookieName(normalized));
-        return response;
-      }
+      await queueSmartPublishJob(result.channelId);
+      const statusUrl = new URL("/publish-once/status", publicOrigin);
+      statusUrl.searchParams.set("started", "1");
+      const response = NextResponse.redirect(statusUrl, 303);
+      response.cookies.delete(cookieName(normalized));
+      return response;
     }
 
     const url = new URL("/connections", publicOrigin);
@@ -60,7 +59,10 @@ export async function GET(
     response.cookies.delete(cookieName(normalized));
     return response;
   } catch (error) {
-    const url = new URL("/connections", publicOrigin);
+    const usePublicStatus =
+      normalized === "YOUTUBE" &&
+      String(process.env.CLIPFORGE_PUBLISH_ONCE_SMART || "").trim().toLowerCase() === "true";
+    const url = new URL(usePublicStatus ? "/publish-once/status" : "/connections", publicOrigin);
     url.searchParams.set("oauth", "callback_failed");
     url.searchParams.set("platform", normalized.toLowerCase());
     url.searchParams.set(

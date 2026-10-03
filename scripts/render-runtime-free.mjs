@@ -49,6 +49,7 @@ let smokeChild = null;
 let activeWorker = null;
 
 const workerScripts = [
+  "scripts/smart-publish-worker.mjs",
   "scripts/autopilot-worker.mjs",
   "scripts/agent-worker.mjs",
   "scripts/transcription-worker.mjs",
