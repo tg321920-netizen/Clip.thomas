@@ -178,7 +178,7 @@ async function resolveEpisodeEnclosure(feedUrl, titleNeedle) {
   if (!item) throw new Error(`Could not find episode "${titleNeedle}" in podcast feed.`);
   const enclosure = item.match(/<enclosure\b[^>]*\burl=["']([^"']+)["'][^>]*>/i);
   if (!enclosure?.[1]) throw new Error("Podcast episode has no enclosure URL.");
-  return decodeXml(enclosure[1]);
+  return normalizePodcastMediaUrl(decodeXml(enclosure[1]));
 }
 
 async function createPodcastVideo(audioUrl, outputPath, seconds) {
@@ -267,6 +267,23 @@ async function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+function normalizePodcastMediaUrl(value) {
+  const url = String(value || "").trim();
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "op3.dev") {
+      const marker = "/archive.org/";
+      const index = parsed.pathname.indexOf(marker);
+      if (index >= 0) {
+        return `https://archive.org/${parsed.pathname.slice(index + marker.length)}`;
+      }
+    }
+  } catch {
+    // Keep the original URL; FFmpeg will surface a clear error if invalid.
+  }
+  return url;
 }
 
 function decodeXml(value) {
