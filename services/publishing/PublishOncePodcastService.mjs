@@ -117,3 +117,64 @@ async function readSmokeResult() {
   );
   return JSON.parse(await readFile(resultPath, "utf8"));
 }
+
+
+export async function retitlePublishedPodcastSmoke(channelId = PUBLISH_ONCE_YOUTUBE_CHANNEL_ID) {
+  const publications = new PublicationService();
+  const publication = await publications.get("e1ab7111-c996-4e08-8536-5b41016c0085");
+  if (!publication?.externalPostId) {
+    throw new Error("Published YouTube video id was not found.");
+  }
+
+  const publishing = new PublishingService();
+  const credentials = await publishing.oauth.getValidCredentials(channelId);
+  if (!credentials?.accessToken) {
+    throw new Error("YouTube credentials are unavailable. Reconnect YouTube.");
+  }
+
+  const title = "Las distros Linux también tienen ‘madres’ 🤯 | Podcast Linux #Shorts";
+  const description = [
+    "¿De dónde vienen muchas de las distribuciones Linux que usamos hoy?",
+    "",
+    "Fragmento adaptado de Podcast Linux, episodio #194 “Distros Madres II”, por Juan Febles.",
+    "Fuente: https://podcastlinux.com/posts/podcastlinux/194-Podcast-Linux/",
+    "",
+    "Obra original y adaptación compartidas bajo Creative Commons Reconocimiento-CompartirIgual 4.0 Internacional (CC BY-SA 4.0).",
+    "Licencia: https://creativecommons.org/licenses/by-sa/4.0/",
+    "",
+    "#Linux #SoftwareLibre #PodcastLinux #Shorts",
+  ].join("\n");
+
+  const response = await fetch(
+    "https://www.googleapis.com/youtube/v3/videos?part=snippet",
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: publication.externalPostId,
+        snippet: {
+          title,
+          description,
+          categoryId: "28",
+          tags: ["Linux", "Podcast Linux", "software libre", "distros Linux", "Shorts"],
+        },
+      }),
+    },
+  );
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      body?.error?.message || `YouTube metadata update failed with HTTP ${response.status}.`,
+    );
+  }
+
+  return {
+    videoId: publication.externalPostId,
+    url: `https://www.youtube.com/watch?v=${encodeURIComponent(publication.externalPostId)}`,
+    title,
+  };
+}
