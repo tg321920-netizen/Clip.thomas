@@ -45,6 +45,7 @@ if (process.argv.includes("--check")) {
 let shuttingDown = false;
 let webChild = null;
 let ingestChild = null;
+let smokeChild = null;
 let activeWorker = null;
 
 const workerScripts = [
@@ -69,7 +70,42 @@ ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-void workerLoop();
+if (String(process.env.CLIPFORGE_CC_PODCAST_SMOKE || "").trim().toLowerCase() === "true") {
+  void runCcPodcastSmoke().finally(() => {
+    if (!shuttingDown) void workerLoop();
+  });
+} else {
+  void workerLoop();
+}
+
+function runCcPodcastSmoke() {
+  return new Promise((resolve) => {
+    console.log("[free-runtime] starting licensed Spanish podcast smoke test...");
+    smokeChild = spawn(process.execPath, ["scripts/cc-podcast-smoke.mjs"], {
+      env: process.env,
+      stdio: "inherit",
+      shell: false,
+    });
+
+    smokeChild.on("error", (error) => {
+      console.error("[free-runtime] licensed podcast smoke test failed to start", error);
+      smokeChild = null;
+      resolve();
+    });
+
+    smokeChild.on("exit", (code, signal) => {
+      if (code === 0) {
+        console.log("[free-runtime] licensed podcast smoke test finished successfully.");
+      } else {
+        console.error(
+          `[free-runtime] licensed podcast smoke test exited (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
+        );
+      }
+      smokeChild = null;
+      resolve();
+    });
+  });
+}
 
 async function workerLoop() {
   while (!shuttingDown) {
@@ -135,19 +171,19 @@ function shutdown(signal, exitCode = 0) {
   shuttingDown = true;
   console.log("[free-runtime] shutting down...");
 
-  for (const child of [activeWorker, ingestChild, webChild]) {
+  for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
     if (child && !child.killed) child.kill(signal);
   }
 
   const timer = setTimeout(() => {
-    for (const child of [activeWorker, ingestChild, webChild]) {
+    for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
       if (child && !child.killed) child.kill("SIGKILL");
     }
     process.exit(exitCode);
   }, 10_000);
   timer.unref();
 
-  const pending = [activeWorker, ingestChild, webChild]
+  const pending = [activeWorker, smokeChild, ingestChild, webChild]
     .filter(Boolean)
     .map(
       (child) =>
