@@ -3,13 +3,14 @@ import { getPublicRequestOrigin } from "@/lib/owner-auth.mjs";
 import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.mjs";
 import {
   PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
-  publishLicensedPodcastSmokeToYouTube,
 } from "@/services/publishing/PublishOncePodcastService.mjs";
+import { SmartLicensedClipService } from "@/services/publishing/SmartLicensedClipService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const oauth = new OAuthConnectionService();
+const smartClips = new SmartLicensedClipService();
 
 export async function GET(
   request: NextRequest,
@@ -37,9 +38,9 @@ export async function GET(
     if (
       normalized === "YOUTUBE" &&
       result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID &&
-      String(process.env.CLIPFORGE_PUBLISH_ONCE_PODCAST || "").trim().toLowerCase() === "true"
+      String(process.env.CLIPFORGE_PUBLISH_ONCE_SMART || "").trim().toLowerCase() === "true"
     ) {
-      const published = await publishLicensedPodcastSmokeToYouTube(result.channelId);
+      const published = await smartClips.run(result.channelId);
       if (published.externalPostUrl) {
         const response = NextResponse.redirect(published.externalPostUrl, 303);
         response.cookies.delete(cookieName(normalized));
