@@ -222,9 +222,9 @@ export class SmartLicensedClipService {
     console.log("[smart-clip] analyzing clip candidates...");
     const analysisResult = await analyzeProject(projectId, {
       providerName: process.env.CLIPFORGE_ANALYSIS_PROVIDER || "heuristic",
-      minDuration: 22,
-      maxDuration: 55,
-      targetDuration: 38,
+      minDuration: 95,
+      maxDuration: 180,
+      targetDuration: 120,
       maxCandidates: 7,
     });
 
@@ -233,9 +233,15 @@ export class SmartLicensedClipService {
       : [];
     if (candidates.length === 0) throw new Error("No highlight candidates were found.");
 
-    const selectedCandidate = [...candidates].sort(
-      (a, b) => Number(b.viralScore || 0) - Number(a.viralScore || 0),
-    )[0];
+    const selectedCandidate = [...candidates]
+      .filter((candidate) => Number(candidate.duration || 0) > 90)
+      .sort(
+        (a, b) => Number(b.viralScore || 0) - Number(a.viralScore || 0),
+      )[0];
+
+    if (!selectedCandidate) {
+      throw new Error("No candidate longer than 90 seconds passed the highlight analysis.");
+    }
 
     const prepared = await createClipFromCandidate(projectId, selectedCandidate.id, {
       framingMode: "FILL",
