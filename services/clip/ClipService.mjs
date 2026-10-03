@@ -135,7 +135,8 @@ export async function markClipQueued(projectId, clipId) {
 }
 
 function normalizeFraming(value) {
-  return value === "FIT" ? "FIT" : "FILL";
+  if (value === "FIT" || value === "CONVERSATION") return value;
+  return "FILL";
 }
 
 function normalizeQuality(value) {

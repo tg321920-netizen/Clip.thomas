@@ -142,6 +142,16 @@ export class RenderService {
 }
 
 export function buildVideoFilter(mode = "FILL") {
+  if (mode === "CONVERSATION") {
+    return [
+      "split=2[bg][fg]",
+      "[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bgv]",
+      "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgv]",
+      "[bgv][fgv]overlay=(W-w)/2:(H-h)/2",
+      "setsar=1",
+    ].join(";");
+  }
+
   if (mode === "FIT") {
     return [
       "scale=1080:1920:force_original_aspect_ratio=decrease",

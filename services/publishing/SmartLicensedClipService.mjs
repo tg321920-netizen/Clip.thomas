@@ -245,7 +245,7 @@ export class SmartLicensedClipService {
     }
 
     const prepared = await createClipFromCandidate(projectId, selectedCandidate.id, {
-      framingMode: "FILL",
+      framingMode: "CONVERSATION",
       quality: "BALANCED",
     });
 
