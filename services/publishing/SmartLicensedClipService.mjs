@@ -249,9 +249,9 @@ export class SmartLicensedClipService {
       quality: "BALANCED",
     });
 
-    console.log("[smart-clip] generating word-focused subtitles...");
+    console.log("[smart-clip] generating large bottom subtitles...");
     await generateSubtitleTrack(projectId, prepared.clip.id, {
-      style: "KARAOKE",
+      style: "VIRAL",
       enabled: true,
     });
 
@@ -265,7 +265,7 @@ export class SmartLicensedClipService {
       paddingAfterMs: 180,
     });
 
-    console.log("[smart-clip] rendering real visual 9:16 clip with subtitles and smooth zoom...");
+    console.log("[smart-clip] rendering real visual 9:16 clip with large bottom subtitles and smooth zoom...");
     await renderClip(projectId, prepared.clip.id, (progress) => {
       if (progress === 100 || progress % 25 === 0) {
         console.log("[smart-clip] render progress", progress);
