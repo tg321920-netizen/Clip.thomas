@@ -39,7 +39,7 @@ export class RenderService {
     }
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
-    let filter = buildVideoFilter(clip?.edit?.framingMode || "FILL");
+    const postFilters = [];
     let subtitlesBurned = false;
     let autoReframeApplied = false;
 
@@ -53,7 +53,7 @@ export class RenderService {
       );
 
       if (reframeFilter) {
-        filter = `${filter},${reframeFilter}`;
+        postFilters.push(reframeFilter);
         autoReframeApplied = true;
       }
     }
@@ -66,9 +66,14 @@ export class RenderService {
     ) {
       const assPath = path.join(outputDir, "subtitles.ass");
       await writeFile(assPath, buildAssDocument(clip.subtitles), "utf8");
-      filter = `${filter},ass='${escapeFilterPath(assPath)}'`;
+      postFilters.push(`ass='${escapeFilterPath(assPath)}'`);
       subtitlesBurned = true;
     }
+
+    const videoPlan = buildRenderVideoPlan(
+      clip?.edit?.framingMode || "FILL",
+      postFilters,
+    );
 
     const args = [
       "-v",
@@ -80,12 +85,7 @@ export class RenderService {
       startTime.toFixed(3),
       "-t",
       duration.toFixed(3),
-      "-map",
-      "0:v:0",
-      "-map",
-      "0:a?",
-      "-vf",
-      filter,
+      ...videoPlan.args,
       "-c:v",
       "libx264",
       "-preset",
@@ -141,15 +141,55 @@ export class RenderService {
   }
 }
 
-export function buildVideoFilter(mode = "FILL") {
+export function buildRenderVideoPlan(mode = "FILL", postFilters = []) {
+  const normalizedPostFilters = Array.isArray(postFilters)
+    ? postFilters.filter((value) => typeof value === "string" && value.trim())
+    : [];
+
   if (mode === "CONVERSATION") {
-    return [
-      "split=2[bg][fg]",
+    const graph = [
+      "[0:v]split=2[bg][fg]",
       "[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=28[bgv]",
       "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgv]",
-      "[bgv][fgv]overlay=(W-w)/2:(H-h)/2",
-      "setsar=1",
+      "[bgv][fgv]overlay=(W-w)/2:(H-h)/2,setsar=1[basev]",
+      `[basev]${normalizedPostFilters.length ? normalizedPostFilters.join(",") : "null"}[vout]`,
     ].join(";");
+
+    return {
+      mode: "complex",
+      filter: graph,
+      args: [
+        "-filter_complex",
+        graph,
+        "-map",
+        "[vout]",
+        "-map",
+        "0:a?",
+      ],
+    };
+  }
+
+  const base = buildVideoFilter(mode);
+  const filter = [base, ...normalizedPostFilters].join(",");
+  return {
+    mode: "simple",
+    filter,
+    args: [
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-vf",
+      filter,
+    ],
+  };
+}
+
+export function buildVideoFilter(mode = "FILL") {
+  if (mode === "CONVERSATION") {
+    throw new Error(
+      "CONVERSATION framing requires buildRenderVideoPlan() and FFmpeg -filter_complex.",
+    );
   }
 
   if (mode === "FIT") {
