@@ -58,7 +58,11 @@ export class OAuthConnectionService {
       previousCredentials,
     );
 
-    if (normalized === "YOUTUBE" && !credentials.refreshToken) {
+    if (
+      normalized === "YOUTUBE" &&
+      !credentials.refreshToken &&
+      config.allowAccessTokenOnly !== true
+    ) {
       throw new Error(
         "Google OAuth did not return a refresh token. Reconnect YouTube and grant offline consent.",
       );
@@ -207,7 +211,23 @@ export function getOAuthConfig(platform, env = process.env, profile = "DEFAULT")
     const clientSecretKey = `GOOGLE_CLIENT_SECRET${suffix}`;
     const redirectKey = `GOOGLE_REDIRECT_URI${suffix}`;
     const scopesKey = `GOOGLE_YOUTUBE_SCOPES${suffix}`;
-    return { platform: normalized, clientId: cleanSecret(env[clientIdKey], clientIdKey), clientSecret: cleanSecret(env[clientSecretKey], clientSecretKey), redirectUri: requireHttpsUrl(env[redirectKey], redirectKey), scopes: normalizeScopes(env[scopesKey] || env.GOOGLE_YOUTUBE_SCOPES || "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"), stateSecret, oauthProfile };
+    return {
+      platform: normalized,
+      clientId: cleanSecret(env[clientIdKey], clientIdKey),
+      clientSecret: cleanSecret(env[clientSecretKey], clientSecretKey),
+      redirectUri: requireHttpsUrl(env[redirectKey], redirectKey),
+      scopes: normalizeScopes(
+        env[scopesKey] ||
+          env.GOOGLE_YOUTUBE_SCOPES ||
+          "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+      ),
+      stateSecret,
+      oauthProfile,
+      allowAccessTokenOnly:
+        String(env.CLIPFORGE_PUBLISH_ONCE_SMART || "")
+          .trim()
+          .toLowerCase() === "true",
+    };
   }
   const graphVersion = String(env.META_GRAPH_API_VERSION || "").trim();
   if (!/^v\d+\.\d+$/.test(graphVersion)) throw new Error("META_GRAPH_API_VERSION must be configured for Facebook OAuth.");
@@ -218,7 +238,16 @@ export function buildAuthorizationUrl(platform, config, state) {
   const normalized = normalizePlatform(platform);
   let url;
   if (normalized === "TIKTOK") { url = new URL("https://www.tiktok.com/v2/auth/authorize/"); url.searchParams.set("client_key", config.clientId); url.searchParams.set("scope", config.scopes.join(",")); }
-  else if (normalized === "YOUTUBE") { url = new URL("https://accounts.google.com/o/oauth2/v2/auth"); url.searchParams.set("client_id", config.clientId); url.searchParams.set("scope", config.scopes.join(" ")); url.searchParams.set("access_type", "offline"); url.searchParams.set("include_granted_scopes", "true"); url.searchParams.set("prompt", "consent"); }
+  else if (normalized === "YOUTUBE") {
+    url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", config.clientId);
+    url.searchParams.set("scope", config.scopes.join(" "));
+    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("include_granted_scopes", "true");
+    if (config.allowAccessTokenOnly !== true) {
+      url.searchParams.set("prompt", "consent");
+    }
+  }
   else { url = new URL(`https://www.facebook.com/${config.graphVersion}/dialog/oauth`); url.searchParams.set("client_id", config.clientId); url.searchParams.set("scope", config.scopes.join(",")); }
   url.searchParams.set("response_type", "code"); url.searchParams.set("redirect_uri", config.redirectUri); url.searchParams.set("state", state); return url.toString();
 }
