@@ -157,6 +157,18 @@ export class OAuthConnectionService {
     if (!channel) throw new Error("Channel not found.");
     let credentials = await this.vault.get(channelId);
     if (!credentials?.accessToken) return null;
+
+    if (channel.status !== "CONNECTED") {
+      await this.channels.updateChannel(channelId, {
+        status: "CONNECTED",
+        publishingEnabled: false,
+        externalAccountId:
+          credentials.externalAccountId || channel.externalAccountId || null,
+        externalAccountName:
+          credentials.externalAccountName || channel.externalAccountName || null,
+      });
+    }
+
     const expiresAt = Date.parse(credentials.expiresAt || "");
     const refreshSoon = Number.isFinite(expiresAt) && expiresAt - this.now() <= 5 * 60 * 1000;
     if (!refreshSoon || !credentials.refreshToken || !["TIKTOK", "YOUTUBE"].includes(channel.platform)) return credentials;

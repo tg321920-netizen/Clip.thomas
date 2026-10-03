@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
+import { createRedisKvFromEnv } from "../../lib/redis-kv.mjs";
 import { PublishingService } from "./PublishingService.mjs";
 import { SmartLicensedClipService } from "./SmartLicensedClipService.mjs";
 
@@ -9,6 +10,8 @@ const JOB_DIR = "smart-publish";
 const JOB_FILE = "current.json";
 const PROCESSING_POLL_MS = 10_000;
 const PROCESSING_MAX_POLLS = 36;
+const JOB_KV_KEY = "clipforge:smart-publish:v1:current";
+const kv = createRedisKvFromEnv();
 
 export async function queueSmartPublishJob(channelId) {
   const now = new Date().toISOString();
@@ -263,14 +266,32 @@ async function readJob() {
     const raw = await readFile(jobPath(), "utf8");
     return JSON.parse(raw);
   } catch {
+    // Free Render web instances have ephemeral local storage. Fall through to
+    // the shared Key Value store when configured.
+  }
+
+  if (!kv) return null;
+
+  try {
+    const raw = await kv.get(JOB_KV_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("[smart-publish-job] shared state read failed", {
+      error: sanitizeError(error),
+    });
     return null;
   }
 }
 
 async function saveJob(job) {
+  const serialized = JSON.stringify(job, null, 2);
   const directory = path.dirname(jobPath());
   await mkdir(directory, { recursive: true });
-  await writeFile(jobPath(), JSON.stringify(job, null, 2), "utf8");
+  await writeFile(jobPath(), serialized, "utf8");
+
+  if (kv) {
+    await kv.set(JOB_KV_KEY, JSON.stringify(job));
+  }
 }
 
 function jobPath() {

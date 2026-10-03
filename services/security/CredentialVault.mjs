@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isProjectId } from "../../lib/project-id.mjs";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
+import { createRedisKvFromEnv } from "../../lib/redis-kv.mjs";
 
 const VERSION = 1;
 const ALGORITHM = "aes-256-gcm";
@@ -12,6 +13,9 @@ export class CredentialVault {
     this.key = Object.prototype.hasOwnProperty.call(options, "key")
       ? options.key
       : loadMasterKey();
+    this.kv = Object.prototype.hasOwnProperty.call(options, "kv")
+      ? options.kv
+      : createRedisKvFromEnv();
   }
 
   isConfigured() {
@@ -26,11 +30,20 @@ export class CredentialVault {
       const envelope = JSON.parse(await readFile(this.#path(channelId), "utf8"));
       return decryptEnvelope(envelope, this.key, channelId);
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        return null;
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+        throw error;
       }
-      throw error;
     }
+
+    if (!this.kv) return null;
+
+    const raw = await this.kv.get(this.#redisKey(channelId));
+    if (!raw) return null;
+    const envelope = JSON.parse(raw);
+    const credentials = decryptEnvelope(envelope, this.key, channelId);
+
+    await this.#writeLocal(channelId, envelope).catch(() => undefined);
+    return credentials;
   }
 
   async set(channelId, credentials) {
@@ -41,12 +54,30 @@ export class CredentialVault {
       throw new Error("Credentials must be an object.");
     }
 
+    const envelope = encryptCredentials(credentials, this.key, channelId);
+    await this.#writeLocal(channelId, envelope);
+
+    if (this.kv) {
+      await this.kv.set(this.#redisKey(channelId), JSON.stringify(envelope));
+    }
+  }
+
+  async delete(channelId) {
+    assertChannelId(channelId);
+    await rm(this.#path(channelId), { force: true });
+    if (this.kv) {
+      await this.kv.delete(this.#redisKey(channelId));
+    }
+  }
+
+  async #writeLocal(channelId, envelope) {
     const directory = this.#directory();
     await mkdir(directory, { recursive: true });
-
-    const envelope = encryptCredentials(credentials, this.key, channelId);
     const target = this.#path(channelId);
-    const temp = path.join(directory, `.${channelId}.${process.pid}.${Date.now()}.tmp`);
+    const temp = path.join(
+      directory,
+      `.${channelId}.${process.pid}.${Date.now()}.tmp`,
+    );
 
     await writeFile(temp, JSON.stringify(envelope, null, 2), {
       encoding: "utf8",
@@ -62,9 +93,8 @@ export class CredentialVault {
     }
   }
 
-  async delete(channelId) {
-    assertChannelId(channelId);
-    await rm(this.#path(channelId), { force: true });
+  #redisKey(channelId) {
+    return `clipforge:oauth:v1:${channelId}`;
   }
 
   #requireKey() {
