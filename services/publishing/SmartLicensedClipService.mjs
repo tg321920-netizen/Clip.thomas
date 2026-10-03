@@ -8,6 +8,7 @@ import { transcribeProject } from "../transcription/TranscriptionService.mjs";
 import { analyzeProject } from "../analysis/ContentAnalysisService.mjs";
 import { createClipFromCandidate, renderClip } from "../clip/ClipService.mjs";
 import { generateSubtitleTrack } from "../subtitles/SubtitleService.mjs";
+import { applySpeechFocus } from "../reframe/AutoReframeService.mjs";
 import { OAuthConnectionService } from "../oauth/OAuthConnectionService.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
@@ -245,14 +246,26 @@ export class SmartLicensedClipService {
 
     const prepared = await createClipFromCandidate(projectId, selectedCandidate.id, {
       framingMode: "FILL",
-      quality: "FAST",
+      quality: "BALANCED",
     });
+
+    console.log("[smart-clip] generating word-focused subtitles...");
     await generateSubtitleTrack(projectId, prepared.clip.id, {
-      style: "VIRAL",
+      style: "KARAOKE",
       enabled: true,
     });
 
-    console.log("[smart-clip] rendering real visual 9:16 clip...");
+    console.log("[smart-clip] applying smooth speech zoom...");
+    await applySpeechFocus(projectId, prepared.clip.id, {
+      zoom: 1.10,
+      attackMs: 700,
+      releaseMs: 900,
+      mergeGapMs: 250,
+      paddingBeforeMs: 120,
+      paddingAfterMs: 180,
+    });
+
+    console.log("[smart-clip] rendering real visual 9:16 clip with subtitles and smooth zoom...");
     await renderClip(projectId, prepared.clip.id, (progress) => {
       if (progress === 100 || progress % 25 === 0) {
         console.log("[smart-clip] render progress", progress);
