@@ -46,6 +46,46 @@ export class SmartLicensedClipService {
     this.fetchImpl = options.fetchImpl || globalThis.fetch;
   }
 
+  async discover(channelId, options = {}) {
+    const channel = await this.channels.getChannel(channelId);
+    if (!channel || channel.platform !== "YOUTUBE") {
+      throw new Error("A connected YouTube channel is required.");
+    }
+    const credentials = await this.oauth.getValidCredentials(channelId);
+    if (!credentials?.accessToken) {
+      throw new Error("YouTube must be connected before smart clip discovery.");
+    }
+
+    const discovered = await this.#discover(credentials.accessToken, options);
+    const inspected = [];
+    for (const candidate of discovered.slice(0, 8)) {
+      try {
+        const metadata = await inspectWithYtDlp(candidate.url);
+        if (!metadata.hasVideo) continue;
+        inspected.push({
+          ...candidate,
+          heatmap: metadata.heatmap,
+          heatmapPeak: metadata.heatmapPeak,
+          width: metadata.width,
+          height: metadata.height,
+          durationSeconds: metadata.durationSeconds || candidate.durationSeconds,
+          ytDlpViewCount: Number(metadata.viewCount || 0),
+        });
+      } catch (error) {
+        console.warn("[smart-clip] discovery inspection failed", {
+          url: candidate.url,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      if (inspected.filter((item) => item.heatmapPeak).length >= 4) break;
+    }
+
+    return {
+      candidates: inspected.length ? inspected : discovered,
+      selected: chooseSource(inspected.length ? inspected : discovered),
+    };
+  }
+
   async run(channelId, options = {}) {
     const channel = await this.channels.getChannel(channelId);
     if (!channel || channel.platform !== "YOUTUBE") {
