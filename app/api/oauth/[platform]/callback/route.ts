@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPublicRequestOrigin } from "@/lib/owner-auth.mjs";
 import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.mjs";
+import {
+  PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+  publishLicensedPodcastSmokeToYouTube,
+} from "@/services/publishing/PublishOncePodcastService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +33,19 @@ export async function GET(
       state: request.nextUrl.searchParams.get("state") || "",
       stateCookie: cookie,
     });
+
+    if (
+      normalized === "YOUTUBE" &&
+      result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID &&
+      String(process.env.CLIPFORGE_PUBLISH_ONCE_PODCAST || "").trim().toLowerCase() === "true"
+    ) {
+      const published = await publishLicensedPodcastSmokeToYouTube(result.channelId);
+      if (published.externalPostUrl) {
+        const response = NextResponse.redirect(published.externalPostUrl, 303);
+        response.cookies.delete(cookieName(normalized));
+        return response;
+      }
+    }
 
     const url = new URL("/connections", publicOrigin);
     url.searchParams.set(
