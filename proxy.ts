@@ -12,6 +12,9 @@ const PUBLIC_PATHS = new Set([
   "/setup-required",
   "/api/auth/owner/login",
   "/api/auth/owner/device-login",
+  "/api/publish-once/start",
+  "/api/oauth/youtube/start",
+  "/api/oauth/youtube/callback",
 ]);
 
 const PUBLIC_HEALTH_PATH = "/api/health";
