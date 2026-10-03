@@ -13,6 +13,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/owner/login",
   "/api/auth/owner/device-login",
   "/api/publish-once/start",
+  "/api/publish-once/retitle",
   "/api/oauth/youtube/start",
   "/api/oauth/youtube/callback",
 ]);
