@@ -71,12 +71,102 @@ ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-if (String(process.env.CLIPFORGE_CC_PODCAST_SMOKE || "").trim().toLowerCase() === "true") {
-  void runCcPodcastSmoke().finally(() => {
-    if (!shuttingDown) void workerLoop();
-  });
-} else {
-  void workerLoop();
+void startBackgroundWork();
+
+async function startBackgroundWork() {
+  await maybePrepareSmartPublishOnBoot();
+
+  if (String(process.env.CLIPFORGE_CC_PODCAST_SMOKE || "").trim().toLowerCase() === "true") {
+    await runCcPodcastSmoke();
+  }
+
+  if (!shuttingDown) void workerLoop();
+}
+
+async function maybePrepareSmartPublishOnBoot() {
+  const enabled =
+    String(process.env.CLIPFORGE_SMART_PUBLISH_ON_BOOT || "")
+      .trim()
+      .toLowerCase() === "true";
+  if (!enabled) return;
+
+  try {
+    const {
+      ensurePublishOnceYouTubeChannel,
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    } = await import("../services/publishing/PublishOncePodcastService.mjs");
+    const { OAuthConnectionService } = await import(
+      "../services/oauth/OAuthConnectionService.mjs"
+    );
+    const {
+      getSmartPublishJobStatus,
+      queueSmartPublishJob,
+    } = await import("../services/publishing/SmartPublishJobService.mjs");
+
+    await ensurePublishOnceYouTubeChannel();
+
+    const oauth = new OAuthConnectionService();
+    const credentials = await oauth.getValidCredentials(
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    );
+    if (!credentials?.accessToken) {
+      console.log(
+        "[free-runtime] smart publish boot is waiting for YouTube authorization.",
+      );
+      return;
+    }
+
+    const current = await getSmartPublishJobStatus();
+    if (
+      ["QUEUED", "RUNNING", "YOUTUBE_PROCESSING", "PUBLISHING", "PUBLISHED"].includes(
+        current.status,
+      )
+    ) {
+      console.log("[free-runtime] smart publish boot found existing job.", {
+        status: current.status,
+        stage: current.stage,
+        publicationId: current.publicationId || null,
+        externalPostUrl: current.externalPostUrl || null,
+      });
+      return;
+    }
+
+    if (current.status === "FAILED" && current.publicationId) {
+      console.warn(
+        "[free-runtime] smart publish boot found a failed job with a publication id; refusing to queue a duplicate upload.",
+        {
+          publicationId: current.publicationId,
+          externalPostUrl: current.externalPostUrl || null,
+        },
+      );
+      return;
+    }
+
+    const realPublishingEnabled =
+      String(process.env.CLIPFORGE_AGENT_REAL_PUBLISHING || "")
+        .trim()
+        .toLowerCase() === "true";
+
+    if (!realPublishingEnabled) {
+      console.log(
+        "[free-runtime] YouTube credentials recovered; smart publish is ready but real publishing remains disabled.",
+      );
+      return;
+    }
+
+    const queued = await queueSmartPublishJob(
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    );
+    console.log("[free-runtime] smart publish boot queued one job.", {
+      id: queued.id,
+      status: queued.status,
+    });
+  } catch (error) {
+    console.error(
+      "[free-runtime] smart publish boot preparation failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 function runCcPodcastSmoke() {
