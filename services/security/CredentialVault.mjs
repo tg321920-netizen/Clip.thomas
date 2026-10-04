@@ -26,24 +26,31 @@ export class CredentialVault {
     assertChannelId(channelId);
     this.#requireKey();
 
-    try {
-      const envelope = JSON.parse(await readFile(this.#path(channelId), "utf8"));
-      return decryptEnvelope(envelope, this.key, channelId);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+    if (this.kv) {
+      try {
+        const raw = await this.kv.get(this.#redisKey(channelId));
+        if (raw) {
+          const envelope = JSON.parse(raw);
+          const credentials = decryptEnvelope(envelope, this.key, channelId);
+          await this.#writeLocal(channelId, envelope).catch(() => undefined);
+          return credentials;
+        }
+      } catch (error) {
+        const local = await this.#readLocal(channelId);
+        if (local) return decryptEnvelope(local, this.key, channelId);
         throw error;
       }
     }
 
-    if (!this.kv) return null;
+    const local = await this.#readLocal(channelId);
+    if (!local) return null;
 
-    const raw = await this.kv.get(this.#redisKey(channelId));
-    if (!raw) return null;
-    const envelope = JSON.parse(raw);
-    const credentials = decryptEnvelope(envelope, this.key, channelId);
-
-    await this.#writeLocal(channelId, envelope).catch(() => undefined);
-    return credentials;
+    if (this.kv) {
+      await this.kv
+        .set(this.#redisKey(channelId), JSON.stringify(local))
+        .catch(() => undefined);
+    }
+    return decryptEnvelope(local, this.key, channelId);
   }
 
   async set(channelId, credentials) {
@@ -55,18 +62,32 @@ export class CredentialVault {
     }
 
     const envelope = encryptCredentials(credentials, this.key, channelId);
-    await this.#writeLocal(channelId, envelope);
 
     if (this.kv) {
       await this.kv.set(this.#redisKey(channelId), JSON.stringify(envelope));
+      await this.#writeLocal(channelId, envelope).catch(() => undefined);
+      return;
     }
+
+    await this.#writeLocal(channelId, envelope);
   }
 
   async delete(channelId) {
     assertChannelId(channelId);
-    await rm(this.#path(channelId), { force: true });
     if (this.kv) {
       await this.kv.delete(this.#redisKey(channelId));
+    }
+    await rm(this.#path(channelId), { force: true });
+  }
+
+  async #readLocal(channelId) {
+    try {
+      return JSON.parse(await readFile(this.#path(channelId), "utf8"));
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
     }
   }
 
