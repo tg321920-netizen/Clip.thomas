@@ -16,6 +16,12 @@ const RESUMABLE_PUBLICATION_STAGES = new Set([
   "YOUTUBE_PROCESSING",
   "PUBLISHING",
 ]);
+const RUNNABLE_JOB_STATUSES = new Set([
+  "QUEUED",
+  "RUNNING",
+  "YOUTUBE_PROCESSING",
+  "PUBLISHING",
+]);
 const kv = createRedisKvFromEnv();
 
 export async function queueSmartPublishJob(channelId) {
@@ -72,7 +78,13 @@ export async function getSmartPublishJobStatus() {
     };
   }
 
-  if (job.publicationId && ["YOUTUBE_PROCESSING", "PUBLISHING"].includes(job.status)) {
+  if (
+    job.publicationId &&
+    (
+      ["YOUTUBE_PROCESSING", "PUBLISHING"].includes(job.status) ||
+      ["UPLOADING_TO_YOUTUBE", "YOUTUBE_PROCESSING", "PUBLISHING"].includes(job.stage)
+    )
+  ) {
     try {
       const publishing = new PublishingService();
       const refreshed = await publishing.refreshPublicationStatus(job.publicationId);
@@ -101,7 +113,7 @@ export async function getSmartPublishJobStatus() {
 
 export async function runQueuedSmartPublishJob() {
   const job = await readJob();
-  if (!job || !["QUEUED", "RUNNING"].includes(job.status)) {
+  if (!job || !RUNNABLE_JOB_STATUSES.has(job.status)) {
     return { handled: false, job: job ? publicJob(job) : null };
   }
 
@@ -197,12 +209,33 @@ export async function runQueuedSmartPublishJob() {
       }
     }
 
-    if (publication?.status !== "PUBLISHED") {
+    if (publication?.status === "FAILED") {
       throw new Error(
-        publication?.status === "FAILED"
-          ? publication.error || "YouTube rejected the publication."
-          : "YouTube upload finished but processing did not reach PUBLISHED before the verification timeout.",
+        publication.error || "YouTube rejected the publication.",
       );
+    }
+
+    if (publication?.status !== "PUBLISHED") {
+      const processing = {
+        ...((await readJob()) || current),
+        status: "YOUTUBE_PROCESSING",
+        stage: "YOUTUBE_PROCESSING",
+        progress: 98,
+        publicationId: publication?.id || current.publicationId || null,
+        externalPostUrl:
+          publication?.externalPostUrl || result.externalPostUrl || current.externalPostUrl || null,
+        title: result.editorial?.title || current.title || null,
+        duration: Number(result.candidate?.duration || current.duration || 0) || null,
+        updatedAt: new Date().toISOString(),
+        error: null,
+      };
+      await saveJob(processing);
+      console.log("[smart-publish-job] YouTube still processing; job remains resumable", {
+        id: processing.id,
+        publicationId: processing.publicationId,
+        externalPostUrl: processing.externalPostUrl,
+      });
+      return { handled: true, job: publicJob(processing) };
     }
 
     const completed = {
