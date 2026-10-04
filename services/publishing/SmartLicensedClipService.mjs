@@ -405,6 +405,7 @@ export class SmartLicensedClipService {
     await reportStage("UPLOADING_TO_YOUTUBE", {
       title: editorial.title,
       duration: selectedCandidate.duration,
+      publicationId: publication.id,
     });
     const submitted = await this.publishing.publishPublication(publication.id, {
       now: new Date(Date.now() + 2000),
