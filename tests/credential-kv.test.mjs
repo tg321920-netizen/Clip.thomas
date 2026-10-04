@@ -24,8 +24,8 @@ class MemoryKv {
 
 test("credential vault restores encrypted OAuth credentials from shared KV", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-kv-"));
-  const previous = process.env.CLIPFORGE_STORAGE_ROOT;
-  process.env.CLIPFORGE_STORAGE_ROOT = root;
+  const previous = process.env.CLIPFORGE_STORAGE_DIR;
+  process.env.CLIPFORGE_STORAGE_DIR = root;
   const key = randomBytes(32);
   const kv = new MemoryKv();
   const channelId = "7e3c2a01-7d6f-4e9f-b461-8f7f1a3d2c90";
@@ -50,8 +50,8 @@ test("credential vault restores encrypted OAuth credentials from shared KV", asy
     assert.equal(restored.refreshToken, "refresh-test");
     assert.equal(restored.externalAccountId, "youtube-channel");
   } finally {
-    if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_ROOT;
-    else process.env.CLIPFORGE_STORAGE_ROOT = previous;
+    if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
+    else process.env.CLIPFORGE_STORAGE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
