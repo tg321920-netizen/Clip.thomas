@@ -6,6 +6,7 @@ import path from "node:path";
 import { ChannelRepository } from "../services/channels/ChannelRepository.mjs";
 import { PublicationRepository } from "../services/publications/PublicationRepository.mjs";
 import { recoverPersistedYouTubePublication } from "../services/publishing/SmartPublishJobService.mjs";
+import { AgentExecutionRepository } from "../services/agent/AgentExecutionRepository.mjs";
 
 class MemoryKv {
   constructor() {
@@ -30,6 +31,7 @@ const channelId = "7e3c2a01-7d6f-4e9f-b461-8f7f1a3d2c90";
 const publicationId = "11a3245f-3cf6-4c3d-a4fd-f97fc75bdd5a";
 const projectId = "8e56073f-ae3a-4c2c-a73d-b11085dbd1b6";
 const clipId = "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b";
+const agentExecutionId = "6ad751f6-fb4c-4e5d-b071-428fd31ed3ef";
 
 async function withStorage(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-shared-state-"));
@@ -248,4 +250,83 @@ test("smart publish can safely resume before upload when publication is still sc
   assert.equal(uploadCalls, 1);
   assert.equal(refreshCalls, 1);
   assert.equal(publication.status, "PUBLISHED");
+});
+
+
+test("agent execution state recovers from shared KV after local storage disappears", async () => {
+  await withStorage(async (root) => {
+    const kv = new MemoryKv();
+    const repository = new AgentExecutionRepository({ kv });
+    const now = new Date().toISOString();
+
+    await repository.save({
+      id: agentExecutionId,
+      status: "WAITING_APPROVAL",
+      task: {
+        channelId,
+        workflowId: null,
+      },
+      updatedAt: now,
+      createdAt: now,
+    });
+
+    await rm(path.join(root, "agent"), { recursive: true, force: true });
+
+    const restarted = new AgentExecutionRepository({ kv });
+    const restored = await restarted.get(agentExecutionId);
+    const listed = await restarted.list({ status: "WAITING_APPROVAL" });
+
+    assert.equal(restored?.status, "WAITING_APPROVAL");
+    assert.equal(restored?.task?.channelId, channelId);
+    assert.equal(listed.some((item) => item.id === agentExecutionId), true);
+  });
+});
+
+test("persisted YouTube processing remains resumable when processing is not finished yet", async () => {
+  let refreshCalls = 0;
+  const publishing = {
+    publications: {
+      async get(id) {
+        return {
+          id,
+          status: "PUBLISHING",
+          externalPostId: "youtube-video-processing",
+          externalPostUrl:
+            "https://www.youtube.com/watch?v=youtube-video-processing",
+        };
+      },
+    },
+    async refreshPublicationStatus(id) {
+      refreshCalls += 1;
+      return {
+        publication: {
+          id,
+          status: "PUBLISHING",
+          externalPostId: "youtube-video-processing",
+          externalPostUrl:
+            "https://www.youtube.com/watch?v=youtube-video-processing",
+        },
+      };
+    },
+  };
+
+  const publication = await recoverPersistedYouTubePublication(
+    {
+      publicationId,
+      stage: "YOUTUBE_PROCESSING",
+    },
+    publishing,
+    {
+      maxPolls: 2,
+      pollMs: 0,
+      sleepFn: async () => undefined,
+    },
+  );
+
+  assert.equal(refreshCalls, 2);
+  assert.equal(publication.status, "PUBLISHING");
+  assert.equal(
+    publication.externalPostUrl,
+    "https://www.youtube.com/watch?v=youtube-video-processing",
+  );
 });

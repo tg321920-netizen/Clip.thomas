@@ -135,7 +135,7 @@ export async function runQueuedSmartPublishJob() {
       running,
       publishing,
     );
-    if (recoveredPublication) {
+    if (recoveredPublication?.status === "PUBLISHED") {
       const completed = {
         ...running,
         status: "PUBLISHED",
@@ -155,6 +155,28 @@ export async function runQueuedSmartPublishJob() {
         externalPostUrl: completed.externalPostUrl,
       });
       return { handled: true, job: publicJob(completed) };
+    }
+
+    if (recoveredPublication?.status === "PUBLISHING") {
+      const processing = {
+        ...running,
+        status: "YOUTUBE_PROCESSING",
+        stage: "YOUTUBE_PROCESSING",
+        progress: 98,
+        publicationId: recoveredPublication.id,
+        externalPostUrl:
+          recoveredPublication.externalPostUrl || running.externalPostUrl || null,
+        updatedAt: new Date().toISOString(),
+        completedAt: null,
+        error: null,
+      };
+      await saveJob(processing);
+      console.log("[smart-publish-job] recovered upload is still processing", {
+        id: processing.id,
+        publicationId: processing.publicationId,
+        externalPostUrl: processing.externalPostUrl,
+      });
+      return { handled: true, job: publicJob(processing) };
     }
 
     const result = await service.run(running.channelId, {
@@ -347,9 +369,7 @@ export async function recoverPersistedYouTubePublication(
     }
   }
 
-  throw new Error(
-    "Persisted YouTube upload is still processing after the verification timeout.",
-  );
+  return publication;
 }
 
 async function updateJobStage(stage, patch = {}) {
