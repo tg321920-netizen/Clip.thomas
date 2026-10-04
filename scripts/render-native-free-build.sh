@@ -129,7 +129,10 @@ cd "$ROOT"
 npm ci --include=dev
 # Production bootstrap belongs to the running service, not to build-time tests.
 # Keep tests deterministic even when Render injects runtime environment values.
-CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS=false npm run build
+CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS=false \
+CLIPFORGE_REDIS_URL= \
+REDIS_URL= \
+npm run build
 npm prune --omit=dev
 rm -rf "$TOOLING_ROOT"
 
