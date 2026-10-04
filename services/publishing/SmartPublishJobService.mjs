@@ -11,6 +11,11 @@ const JOB_FILE = "current.json";
 const PROCESSING_POLL_MS = 10_000;
 const PROCESSING_MAX_POLLS = 36;
 const JOB_KV_KEY = "clipforge:smart-publish:v1:current";
+const RESUMABLE_PUBLICATION_STAGES = new Set([
+  "UPLOADING_TO_YOUTUBE",
+  "YOUTUBE_PROCESSING",
+  "PUBLISHING",
+]);
 const kv = createRedisKvFromEnv();
 
 export async function queueSmartPublishJob(channelId) {
@@ -114,6 +119,32 @@ export async function runQueuedSmartPublishJob() {
   const publishing = new PublishingService();
 
   try {
+    const recoveredPublication = await recoverPersistedYouTubePublication(
+      running,
+      publishing,
+    );
+    if (recoveredPublication) {
+      const completed = {
+        ...running,
+        status: "PUBLISHED",
+        stage: "PUBLISHED",
+        progress: 100,
+        publicationId: recoveredPublication.id,
+        externalPostUrl:
+          recoveredPublication.externalPostUrl || running.externalPostUrl || null,
+        updatedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        error: null,
+      };
+      await saveJob(completed);
+      console.log("[smart-publish-job] recovered published job", {
+        id: completed.id,
+        publicationId: completed.publicationId,
+        externalPostUrl: completed.externalPostUrl,
+      });
+      return { handled: true, job: publicJob(completed) };
+    }
+
     const result = await service.run(running.channelId, {
       onStage: async (update) => {
         const current = (await readJob()) || running;
@@ -205,6 +236,89 @@ export async function runQueuedSmartPublishJob() {
   }
 }
 
+export async function recoverPersistedYouTubePublication(
+  job,
+  publishing,
+  options = {},
+) {
+  if (
+    !job?.publicationId ||
+    !RESUMABLE_PUBLICATION_STAGES.has(String(job.stage || ""))
+  ) {
+    return null;
+  }
+
+  const maxPolls = Math.max(
+    1,
+    Number(options.maxPolls || PROCESSING_MAX_POLLS),
+  );
+  const pollMs = Math.max(0, Number(options.pollMs ?? PROCESSING_POLL_MS));
+  const sleepFn = options.sleepFn || sleep;
+
+  let publication = await publishing.publications.get(job.publicationId);
+  if (!publication) {
+    throw new Error(
+      "Persisted smart-publish publication is missing after restart; refusing to create a duplicate YouTube upload.",
+    );
+  }
+
+  if (publication.status === "PUBLISHED") return publication;
+  if (publication.status === "FAILED") {
+    throw new Error(
+      publication.error || "YouTube rejected the persisted publication.",
+    );
+  }
+
+  if (publication.status === "SCHEDULED") {
+    const submitted = await publishing.publishPublication(publication.id, {
+      now: new Date(Date.now() + 2_000),
+    });
+    publication = submitted.publication;
+  }
+
+  if (
+    publication.status === "PUBLISHING" &&
+    !publication.externalPostId
+  ) {
+    throw new Error(
+      "YouTube upload state is indeterminate after restart and has no external video id; refusing an unsafe duplicate upload.",
+    );
+  }
+
+  if (publication.status === "PUBLISHED") return publication;
+  if (publication.status !== "PUBLISHING") {
+    throw new Error(
+      `Cannot safely resume persisted YouTube publication from ${publication.status}.`,
+    );
+  }
+
+  for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+    if (pollMs > 0) await sleepFn(pollMs);
+
+    try {
+      const refreshed = await publishing.refreshPublicationStatus(publication.id);
+      publication = refreshed.publication;
+    } catch (error) {
+      console.warn("[smart-publish-job] recovered YouTube processing poll failed", {
+        attempt: attempt + 1,
+        error: sanitizeError(error),
+      });
+      continue;
+    }
+
+    if (publication.status === "PUBLISHED") return publication;
+    if (publication.status === "FAILED") {
+      throw new Error(
+        publication.error || "YouTube rejected the persisted publication.",
+      );
+    }
+  }
+
+  throw new Error(
+    "Persisted YouTube upload is still processing after the verification timeout.",
+  );
+}
+
 async function updateJobStage(stage, patch = {}) {
   const current = await readJob();
   if (!current) return null;
@@ -262,36 +376,57 @@ function publicJob(job) {
 }
 
 async function readJob() {
+  if (kv) {
+    try {
+      const raw = await kv.get(JOB_KV_KEY);
+      if (raw) {
+        const job = JSON.parse(raw);
+        await writeLocalJob(job).catch(() => undefined);
+        return job;
+      }
+    } catch (error) {
+      const local = await readLocalJob();
+      if (local) return local;
+      console.warn("[smart-publish-job] shared state read failed", {
+        error: sanitizeError(error),
+      });
+      return null;
+    }
+  }
+
+  const local = await readLocalJob();
+  if (!local) return null;
+
+  if (kv) {
+    await kv.set(JOB_KV_KEY, JSON.stringify(local)).catch(() => undefined);
+  }
+  return local;
+}
+
+async function saveJob(job) {
+  if (kv) {
+    await kv.set(JOB_KV_KEY, JSON.stringify(job));
+    await writeLocalJob(job).catch(() => undefined);
+    return;
+  }
+
+  await writeLocalJob(job);
+}
+
+async function readLocalJob() {
   try {
     const raw = await readFile(jobPath(), "utf8");
     return JSON.parse(raw);
   } catch {
-    // Free Render web instances have ephemeral local storage. Fall through to
-    // the shared Key Value store when configured.
-  }
-
-  if (!kv) return null;
-
-  try {
-    const raw = await kv.get(JOB_KV_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    console.warn("[smart-publish-job] shared state read failed", {
-      error: sanitizeError(error),
-    });
     return null;
   }
 }
 
-async function saveJob(job) {
+async function writeLocalJob(job) {
   const serialized = JSON.stringify(job, null, 2);
   const directory = path.dirname(jobPath());
   await mkdir(directory, { recursive: true });
   await writeFile(jobPath(), serialized, "utf8");
-
-  if (kv) {
-    await kv.set(JOB_KV_KEY, JSON.stringify(job));
-  }
 }
 
 function jobPath() {
