@@ -212,3 +212,96 @@ Antes de activar AUTO con publicación:
 - activación explícita de los flags de publicación real.
 
 Hasta entonces, MANUAL o SEMI_AUTO deben ser los modos de prueba.
+
+
+---
+
+## Cloud Codex handoff: operación sin Termux
+
+Este bloque es la fuente de verdad para continuar ClipForge desde un agente de código en la nube sin depender del teléfono.
+
+### GitHub confirmado
+
+- Repositorio: `tg321920-netizen/Clip.thomas`
+- Rama operativa: `codex/clipforge-agent-foundation`
+- Trabajar sobre la rama existente; no crear un proyecto nuevo ni reconstruir ClipForge desde cero.
+- Leer también `AGENTS.md` antes de modificar.
+- El agente de código puede usar GitHub para inspeccionar, modificar, commitear y hacer push según los permisos de la cuenta conectada.
+
+### Render confirmado
+
+- Workspace: `My Workspace` de `tg321920@gmail.com`
+- Servicio: `clipforge-runtime-free`
+- Service ID: `srv-das0aknlk1mc73dr2lpg`
+- Repositorio conectado: `https://github.com/tg321920-netizen/Clip.thomas`
+- Branch de despliegue: `codex/clipforge-agent-foundation`
+- Auto deploy: habilitado por commit.
+- Runtime: `https://clipforge-runtime-free.onrender.com`
+- Build command: `bash scripts/render-native-free-build.sh`
+- Start command:
+  `FFMPEG_PATH="$PWD/.runtime/bin/ffmpeg" FFPROBE_PATH="$PWD/.runtime/bin/ffprobe" WHISPER_CPP_COMMAND="$PWD/.runtime/bin/whisper-cli" WHISPER_CPP_MODEL_PATH="$PWD/.runtime/models/ggml-tiny.bin" node scripts/render-runtime-free.mjs`
+
+Por lo tanto, Termux NO es requisito para desplegar: un push a la rama operativa dispara Render automáticamente.
+
+### Estado observado del runtime
+
+Los logs observados muestran que los workers de ClipForge arrancan, incluido Agent worker y publishing worker.
+
+También se observó:
+
+`Real publishing gate is OFF; provider submission and provider status refresh are paused.`
+
+No considerar la publicación terminada hasta recibir `PUBLISHED` real y URL remota.
+
+### Z-Code / Z.ai server-side
+
+El CLI de Z-Code en Termux queda como herramienta opcional de desarrollo, no como dependencia operacional.
+
+El camino autónomo debe ser:
+
+`AgentRuntimeService -> ZaiAgentProvider -> AgentToolRegistry -> servicios internos de ClipForge`
+
+Variables esperadas, sin guardar valores en Git:
+
+- `CLIPFORGE_AGENT_ENABLED`
+- `CLIPFORGE_AGENT_REAL_PUBLISHING`
+- `CLIPFORGE_ZAI_API_KEY`
+- `CLIPFORGE_ZAI_BASE_URL`
+- `CLIPFORGE_ZAI_MODEL`
+- `CLIPFORGE_ZAI_API_STYLE`
+- `CLIPFORGE_ZAI_TEMPERATURE`
+- `CLIPFORGE_ZAI_MAX_OUTPUT_TOKENS`
+
+### Google / YouTube y demás secretos
+
+No copiar access tokens, refresh tokens, client secrets, contraseñas, cookies ni API keys a GitHub, archivos, issues, logs o prompts.
+
+El agente debe consumir los secretos ya configurados en Render/ClipForge mediante variables de entorno, vault o almacenamiento seguro existente.
+
+Si falta una variable, reportar únicamente el NOMBRE de la variable faltante. No imprimir ni solicitar que se publique su valor en un chat.
+
+Si Google/YouTube exige consentimiento OAuth humano, detenerse solo en esa acción exacta, entregar la URL oficial generada por ClipForge y continuar después de la autorización.
+
+### Secuencia para el siguiente Codex
+
+1. Leer `AGENTS.md` y este documento completo.
+2. Inspeccionar repo, rama, Render y runtime antes de tocar código.
+3. Confirmar solo presencia/ausencia de variables requeridas; nunca mostrar valores.
+4. Confirmar estado OAuth de YouTube y si el bloqueo actual es únicamente el publishing gate.
+5. Validar el provider Z.ai server-side.
+6. Hacer la primera prueba en `MANUAL` con publicación real OFF.
+7. Corregir únicamente causas reales.
+8. Ejecutar:
+   - `npm run verify`
+   - `npm run build`
+   - `npm run render:e2e`
+   - `npm run reframe:e2e`
+9. Commit + push a `codex/clipforge-agent-foundation`.
+10. Dejar que Render auto-despliegue; no disparar un deploy manual adicional si el commit ya lo activó.
+11. Revisar deploy, health y logs.
+12. Activar publicación real solo cuando canal, OAuth y guardas estén confirmados.
+13. Éxito final de YouTube = `PUBLISHED` + URL real.
+
+### Resultado buscado
+
+ClipForge debe quedar mantenible y operable desde GitHub/Codex + Render, con Z.ai dentro del runtime para la operación autónoma. Termux deja de ser una dependencia crítica.
