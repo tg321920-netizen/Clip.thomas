@@ -114,13 +114,15 @@ export class AgentOrchestrator {
         return this.#pause(execution, "WAITING_APPROVAL", decision.reason, decision);
       }
 
-      const policy = approved
-        ? { allowed: true, requiresApproval: false, reason: null }
-        : evaluateAgentToolPolicy({
-            autonomyMode: execution.task.autonomyMode,
-            toolName: decision.tool,
-            agentRules: execution.task.context?.agentRules || null,
-          });
+      const evaluatedPolicy = evaluateAgentToolPolicy({
+        autonomyMode: execution.task.autonomyMode,
+        toolName: decision.tool,
+        agentRules: execution.task.context?.agentRules || null,
+      });
+      const policy =
+        approved && evaluatedPolicy.requiresApproval
+          ? { ...evaluatedPolicy, allowed: true, requiresApproval: false }
+          : evaluatedPolicy;
 
       if (policy.requiresApproval) {
         return this.#save({
