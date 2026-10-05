@@ -117,3 +117,32 @@ rules. If a hard guard becomes false after an approval request was created, the
 approved action is still blocked safely.
 
 The owner panel never receives the Z.ai API key or social OAuth credentials.
+
+
+## Approval-resume behavior
+
+A model-level `WAITING_APPROVAL` decision is resumable. When the owner approves
+that pause, ClipForge records a bounded `ownerApprovals` entry in task context
+and asks the provider for the next decision instead of replaying the same pause.
+
+In `SEMI_AUTO`, Z.ai is instructed to allow research, creation, rendering and
+`publishing.prepare`, then request owner approval before scheduling or
+publishing. Approval never bypasses the independent real-publishing gate, OAuth
+validity, channel `publishingEnabled`, source/topic rules or other ClipForge
+safety checks.
+
+A mock integrated agent test covers:
+
+`objective -> research -> script -> render -> publishing.prepare -> WAITING_APPROVAL`
+
+and verifies that `publishing.schedule` is not executed before owner approval.
+
+## API key handling
+
+Never commit the Z.ai key. Configure it only as a hosting secret using
+`CLIPFORGE_ZAI_API_KEY` (preferred) or `ZAI_API_KEY`. The model remains
+configurable with `CLIPFORGE_ZAI_MODEL` or `ZAI_MODEL`.
+
+If a key has been pasted into a chat, issue, log or another shared surface,
+rotate it before production use and store only the replacement in the hosting
+secret manager.
