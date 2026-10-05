@@ -316,3 +316,116 @@ test("approval never bypasses a hard publishing guard", async () => {
     assert.equal(tools.calls.length, 0);
   });
 });
+
+
+test("provider WAITING_APPROVAL resumes after owner approval instead of looping", async () => {
+  await withStorage(async () => {
+    const tools = fakeTools();
+    let calls = 0;
+    const provider = {
+      async decide(task) {
+        calls += 1;
+        if (!Array.isArray(task.context?.ownerApprovals) || task.context.ownerApprovals.length === 0) {
+          return {
+            type: "WAITING_APPROVAL",
+            reason: "Owner review required before continuing.",
+          };
+        }
+        return { type: "COMPLETE", output: { approved: true } };
+      },
+    };
+
+    const agent = new AgentOrchestrator({ provider, tools });
+    const created = await agent.createTask({
+      objective: "pause for owner approval",
+      autonomyMode: "SEMI_AUTO",
+    });
+
+    let execution = await agent.run(created.id);
+    assert.equal(execution.status, "WAITING_APPROVAL");
+    assert.equal(calls, 1);
+
+    await agent.approve(created.id);
+    execution = await agent.run(created.id);
+
+    assert.equal(execution.status, "COMPLETED");
+    assert.equal(calls, 2);
+    assert.equal(execution.task.context.ownerApprovals.length, 1);
+    assert.equal(tools.calls.length, 0);
+  });
+});
+
+test("SEMI_AUTO prepares content and pauses before scheduling", async () => {
+  await withStorage(async () => {
+    const calls = [];
+    const tools = {
+      listDefinitions() {
+        return [
+          { name: "research.start", description: "research", inputHint: {} },
+          { name: "script.generate", description: "script", inputHint: {} },
+          { name: "render.create", description: "render", inputHint: {} },
+          { name: "publishing.prepare", description: "prepare", inputHint: {} },
+          { name: "publishing.schedule", description: "schedule", inputHint: {} },
+        ];
+      },
+      async execute(name) {
+        calls.push(name);
+        if (name === "research.start") return { researchId: "research-1" };
+        if (name === "script.generate") return { scriptId: "script-1" };
+        if (name === "render.create") return { clipId: "clip-1", status: "READY" };
+        if (name === "publishing.prepare") {
+          return {
+            publication: {
+              id: "publication-1",
+              status: "WAITING_APPROVAL",
+            },
+          };
+        }
+        throw new Error(`Unexpected execution: ${name}`);
+      },
+    };
+
+    const provider = sequenceProvider([
+      { type: "TOOL", tool: "research.start", input: { topic: "safe topic" } },
+      { type: "TOOL", tool: "script.generate", input: { language: "es" } },
+      { type: "TOOL", tool: "render.create", input: { projectId: "project" } },
+      {
+        type: "TOOL",
+        tool: "publishing.prepare",
+        input: {
+          projectId: "project",
+          clipId: "clip-1",
+          platforms: ["YOUTUBE"],
+          approvalRequired: true,
+        },
+      },
+      {
+        type: "WAITING_APPROVAL",
+        reason: "Content is prepared. Owner approval is required before scheduling.",
+      },
+    ]);
+
+    const agent = new AgentOrchestrator({ provider, tools });
+    const created = await agent.createTask({
+      objective: "research, create, render and prepare one publication",
+      autonomyMode: "SEMI_AUTO",
+      limits: { maxSteps: 8 },
+    });
+
+    const execution = await agent.run(created.id);
+
+    assert.equal(execution.status, "WAITING_APPROVAL");
+    assert.deepEqual(calls, [
+      "research.start",
+      "script.generate",
+      "render.create",
+      "publishing.prepare",
+    ]);
+    assert.equal(execution.stepCount, 4);
+    assert.equal(
+      execution.results.at(-1)?.result?.publication?.status,
+      "WAITING_APPROVAL",
+    );
+    assert.equal(calls.includes("publishing.schedule"), false);
+  });
+});
