@@ -12,6 +12,7 @@ import { VisualAssemblyService } from "../owned-content/VisualAssemblyService.mj
 import { SocialPublishingRouter } from "../publishing/connectors/SocialPublishingRouter.mjs";
 import { SmartLicensedClipService } from "../publishing/SmartLicensedClipService.mjs";
 import { sanitizeAgentValue } from "./AgentContracts.mjs";
+import { assertAgentToolWithinRules } from "./AgentRules.mjs";
 
 export class AgentToolRegistry {
   constructor(options = {}) {
@@ -79,6 +80,11 @@ export class AgentToolRegistry {
     }
 
     try {
+      assertAgentToolWithinRules(
+        name,
+        input || {},
+        context?.task?.context?.agentRules || null,
+      );
       return sanitizeAgentValue(await tool.execute(input || {}, context || {}));
     } catch (error) {
       if (error instanceof AgentToolError) throw error;
