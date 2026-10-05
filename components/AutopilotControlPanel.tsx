@@ -125,7 +125,7 @@ export function AutopilotControlPanel() {
               : "bg-white/5 text-zinc-400"
           }`}
         >
-          {config.enabled && config.mode !== "MANUAL" ? "AUTOPILOT ON" : "AUTOPILOT OFF"}
+          {config.enabled && config.mode !== "MANUAL" ? `${config.mode} ON` : "AUTOPILOT OFF"}
         </button>
       </div>
 
