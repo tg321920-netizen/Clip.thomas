@@ -430,13 +430,13 @@ test("YouTube OAuth start fails closed when Google credentials are missing", asy
 });
 
 
-test("YouTube OAuth reconnect preserves an existing refresh token when Google omits a new one", async () => {
+test("YouTube OAuth reconnect preserves an existing refresh token for the same channel", async () => {
   let channel = youtubeChannel();
   let stored = {
     accessToken: "previous-access",
     refreshToken: "previous-refresh",
     expiresAt: new Date(now - 1000).toISOString(),
-    externalAccountId: "UC_previous",
+    externalAccountId: "UC_reconnected",
     externalAccountName: "Previous Channel",
   };
   const service = new OAuthConnectionService({
@@ -495,6 +495,34 @@ test("YouTube OAuth reconnect preserves an existing refresh token when Google om
   assert.equal(stored.externalAccountId, "UC_reconnected");
   assert.equal(stored.externalAccountName, "Reconnected Channel");
 });
+
+for (const previousIdentity of ["UC_other_channel", null]) {
+  test(`YouTube reconnect cannot inherit a refresh token from ${previousIdentity || "an unknown identity"}`, async () => {
+    let writes = 0;
+    const service = new OAuthConnectionService({
+      channels: {
+        async getChannel() { return youtubeChannel(); },
+        async updateChannel() { writes += 1; },
+      },
+      vault: {
+        isConfigured() { return true; },
+        async get() {
+          return { accessToken: "old-access", refreshToken: "old-refresh", externalAccountId: previousIdentity };
+        },
+        async set() { writes += 1; },
+      },
+      now: () => now,
+      fetchImpl: async (url) => new URL(String(url)).hostname === "oauth2.googleapis.com"
+        ? jsonResponse({ access_token: "new-access", expires_in: 3600 })
+        : jsonResponse({ items: [{ id: "UC_new_channel" }] }),
+    });
+    const signed = createSignedOAuthState({ channelId, platform: "YOUTUBE", secret, now });
+    await assert.rejects(() => service.completeAuthorization("YOUTUBE", {
+      code: "code", state: signed.state, stateCookie: signed.cookieValue,
+    }, { env: youtubeEnv() }), /refresh token/i);
+    assert.equal(writes, 0, "Existing credentials and channel must remain intact");
+  });
+}
 
 test("YouTube OAuth fails closed when the authorized Google account has no YouTube channel", async () => {
   let writes = 0;

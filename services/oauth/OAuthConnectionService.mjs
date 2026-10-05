@@ -50,6 +50,11 @@ export class OAuthConnectionService {
       } catch {
         previousCredentials = {};
       }
+      // Offline grants belong to the authorized YouTube identity. Reusing a
+      // different channel's refresh token would switch identity on renewal.
+      if (!token.externalAccountId || previousCredentials.externalAccountId !== token.externalAccountId) {
+        previousCredentials = {};
+      }
     }
     const credentials = normalizeCredentials(
       normalized,

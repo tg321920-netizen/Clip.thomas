@@ -70,6 +70,9 @@ Los adapters oficiales existen, pero una publicación real requiere apps/cuentas
 
 Consulta:
 
+- `docs/FINAL_EXTERNAL_HANDOFF.md` — verificación del núcleo y límites comprobados (2026-10-05).
+- `docs/ZCODE_EXTERNAL_CONTRACT.md` — contrato y prueba local para ZCode externo.
+- `docs/FUTURE_CHANNELS_AND_MARKETING.md` — separación orgánica/publicidad y evolución segura.
 - `CLIPFORGE_AUTOPILOT_PROGRESS.md`
 - `PROJECT_PLAN.md`
 - `docs/AUTOPILOT_ARCHITECTURE.md`
