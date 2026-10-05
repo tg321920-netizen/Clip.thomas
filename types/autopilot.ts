@@ -1,4 +1,4 @@
-export type AutopilotMode = "MANUAL" | "AUTOPILOT";
+export type AutopilotMode = "MANUAL" | "SEMI_AUTO" | "AUTO";
 export type AutopilotPlatform = "TIKTOK" | "YOUTUBE" | "FACEBOOK";
 
 export type AutopilotConfig = {
