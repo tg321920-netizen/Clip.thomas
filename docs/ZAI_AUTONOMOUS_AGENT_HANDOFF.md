@@ -102,3 +102,18 @@ External account authorization remains owner-controlled: configure the Z.ai
 runtime credential in the hosting environment, complete OAuth consent when a
 platform requires it, and explicitly decide when real publishing may be
 enabled.
+
+
+## Owner approval UI
+
+The Autopilot dashboard at `/autopilot` now includes the server-side agent
+execution panel. It reads `/api/agent/executions` and exposes only controlled
+actions for an existing execution: approve, provide owner information, cancel,
+or run a queued execution.
+
+Approval removes only the human-approval requirement for that pending tool
+decision. It does not bypass the real-publishing gate or the agent publishing
+rules. If a hard guard becomes false after an approval request was created, the
+approved action is still blocked safely.
+
+The owner panel never receives the Z.ai API key or social OAuth credentials.
