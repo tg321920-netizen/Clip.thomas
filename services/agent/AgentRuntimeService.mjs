@@ -102,6 +102,32 @@ export class AgentRuntimeService {
     return { enabled: true, created, reason: "created" };
   }
 
+  async getExecution(executionId) {
+    return this.orchestrator.get(executionId);
+  }
+
+  async listExecutions(filters = {}) {
+    return this.orchestrator.list(filters);
+  }
+
+  async runExecution(executionId) {
+    return this.orchestrator.run(executionId);
+  }
+
+  async approveExecution(executionId) {
+    const execution = await this.orchestrator.approve(executionId);
+    return this.orchestrator.run(execution.id);
+  }
+
+  async provideInformation(executionId, context = {}) {
+    const execution = await this.orchestrator.provideInformation(executionId, context);
+    return this.orchestrator.run(execution.id);
+  }
+
+  async cancelExecution(executionId, reason) {
+    return this.orchestrator.cancel(executionId, reason);
+  }
+
   async createForWorkflowExecution(workflowExecutionId, input = {}) {
     const execution = await this.workflows.getExecution(workflowExecutionId);
     if (!execution) throw new Error("Workflow execution not found.");
