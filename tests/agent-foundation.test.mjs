@@ -286,3 +286,33 @@ test("Z.ai provider without credentials never makes an external request", async 
     assert.equal(fetched, false);
   });
 });
+
+
+test("approval never bypasses a hard publishing guard", async () => {
+  await withStorage(async () => {
+    process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "true";
+    const tools = fakeTools();
+    const agent = new AgentOrchestrator({
+      provider: sequenceProvider([
+        { type: "TOOL", tool: "publishing.publish", input: { publicationIds: [] } },
+      ]),
+      tools,
+    });
+    const created = await agent.createTask({
+      objective: "verify guarded publishing",
+      autonomyMode: "MANUAL",
+    });
+
+    let execution = await agent.run(created.id);
+    assert.equal(execution.status, "WAITING_APPROVAL");
+    assert.equal(tools.calls.length, 0);
+
+    process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "false";
+    await agent.approve(created.id);
+    execution = await agent.run(created.id);
+
+    assert.equal(execution.status, "WAITING_INFORMATION");
+    assert.match(execution.error, /publishing is disabled/i);
+    assert.equal(tools.calls.length, 0);
+  });
+});
