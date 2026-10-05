@@ -19,15 +19,15 @@ while (!stopping) {
     if (result.enabled && result.processed > 0) {
       console.log("Agent worker processed executions", {
         processed: result.processed,
-        states: result.executions.map((execution) => ({
-          id: execution.id,
-          status: execution.status,
-          code: lastAgentCode(execution),
-          error: execution.error
-            ? String(execution.error).slice(0, 500)
-            : null,
-        })),
+        states: result.executions.map(safeExecutionState),
       });
+    } else if (result.enabled) {
+      const paused = await runtime.listExecutions({
+        status: ["WAITING_INFORMATION", "WAITING_APPROVAL"],
+      });
+      if (paused.length > 0) {
+        console.log("Agent worker paused execution", safeExecutionState(paused[0]));
+      }
     }
   } catch (error) {
     console.error("Agent worker cycle failed", {
@@ -53,4 +53,14 @@ function lastAgentCode(execution) {
     if (code) return String(code).slice(0, 120);
   }
   return null;
+}
+
+
+function safeExecutionState(execution) {
+  return {
+    id: execution?.id || null,
+    status: execution?.status || null,
+    code: lastAgentCode(execution),
+    error: execution?.error ? String(execution.error).slice(0, 500) : null,
+  };
 }
