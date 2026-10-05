@@ -67,6 +67,9 @@ export class ZaiAgentProvider extends AgentProvider {
           "Use one tool at a time. Return COMPLETE when the objective is satisfied.",
           "If required information is missing, return WAITING_INFORMATION.",
           "If human approval is appropriate, return WAITING_APPROVAL.",
+          "In SEMI_AUTO, research, creation, rendering and publishing.prepare may proceed, but request WAITING_APPROVAL before scheduling or publishing.",
+          "When task.context.ownerApprovals records approval for the current stage, continue from persisted results instead of asking for the same approval again.",
+          "Never treat approval as permission to bypass ClipForge publishing gates, OAuth checks, channel settings, budgets or source/topic rules.",
           "Do not invent analytics conclusions when evidence is insufficient.",
         ].join("\n"),
         input: {
