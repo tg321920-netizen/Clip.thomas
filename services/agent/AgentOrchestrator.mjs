@@ -204,15 +204,40 @@ export class AgentOrchestrator {
     if (execution.status !== "WAITING_APPROVAL" || !execution.pendingDecision) {
       throw new Error("Agent execution is not waiting for approval.");
     }
+
+    const pending = execution.pendingDecision;
+    const providerPause =
+      pending.type === "WAITING_APPROVAL" && !pending.tool;
     const now = this.#nowIso();
+    const existingApprovals = Array.isArray(execution.task.context?.ownerApprovals)
+      ? execution.task.context.ownerApprovals
+      : [];
+
     return this.#save({
       ...execution,
+      task: providerPause
+        ? {
+            ...execution.task,
+            context: {
+              ...execution.task.context,
+              ownerApprovals: [
+                ...existingApprovals,
+                {
+                  at: now,
+                  stepCount: execution.stepCount,
+                  reason: pending.reason || "Owner approved continuation.",
+                },
+              ].slice(-20),
+            },
+          }
+        : execution.task,
       status: "QUEUED",
-      approvedDecision: execution.pendingDecision,
+      approvedDecision: providerPause ? null : pending,
       pendingDecision: null,
       error: null,
       history: append(execution, "approval_granted", {
-        tool: execution.pendingDecision.tool || null,
+        tool: pending.tool || null,
+        providerPause,
       }, now),
       updatedAt: now,
     });
