@@ -119,6 +119,7 @@ export class AgentOrchestrator {
         : evaluateAgentToolPolicy({
             autonomyMode: execution.task.autonomyMode,
             toolName: decision.tool,
+            agentRules: execution.task.context?.agentRules || null,
           });
 
       if (policy.requiresApproval) {
