@@ -9,6 +9,7 @@ export function evaluateAgentToolPolicy({
   autonomyMode,
   toolName,
   realPublishingEnabled = agentRealPublishingEnabled(),
+  agentRules = null,
 } = {}) {
   const mode = normalizeAutonomyMode(autonomyMode);
   const tool = String(toolName || "").trim();
@@ -26,6 +27,19 @@ export function evaluateAgentToolPolicy({
     };
   }
 
+  if (
+    PUBLICATION_TOOLS.has(tool) &&
+    agentRules &&
+    agentRules.publishingEnabled !== true
+  ) {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      reason: "Agent rules keep publishing disabled.",
+      code: "AGENT_RULES_PUBLISHING_OFF",
+    };
+  }
+
   if (mode === "MANUAL") {
     return {
       allowed: false,
@@ -39,6 +53,18 @@ export function evaluateAgentToolPolicy({
       allowed: false,
       requiresApproval: true,
       reason: "SEMI_AUTO requires human approval before scheduling or publishing.",
+    };
+  }
+
+  if (
+    mode === "AUTO" &&
+    PUBLICATION_TOOLS.has(tool) &&
+    agentRules?.approvalRequired === true
+  ) {
+    return {
+      allowed: false,
+      requiresApproval: true,
+      reason: "Agent rules require human approval before scheduling or publishing.",
     };
   }
 
