@@ -22,6 +22,10 @@ while (!stopping) {
         states: result.executions.map((execution) => ({
           id: execution.id,
           status: execution.status,
+          code: lastAgentCode(execution),
+          error: execution.error
+            ? String(execution.error).slice(0, 500)
+            : null,
         })),
       });
     }
@@ -39,4 +43,14 @@ console.log("ClipForge Agent worker stopped.");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+function lastAgentCode(execution) {
+  const history = Array.isArray(execution?.history) ? execution.history : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const code = history[index]?.data?.code;
+    if (code) return String(code).slice(0, 120);
+  }
+  return null;
 }
