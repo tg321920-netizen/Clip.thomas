@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AutopilotControlPanel } from "@/components/AutopilotControlPanel";
+import { AgentExecutionPanel } from "@/components/AgentExecutionPanel";
 import { AnalyticsService } from "@/services/analytics/AnalyticsService.mjs";
 import { PerformanceAnalyzer } from "@/services/analytics/PerformanceAnalyzer.mjs";
 import { ChannelService } from "@/services/channels/ChannelService.mjs";
@@ -115,6 +116,10 @@ export default async function AutopilotDashboard() {
 
         <div className="mt-6">
           <AutopilotControlPanel />
+        </div>
+
+        <div className="mt-5">
+          <AgentExecutionPanel />
         </div>
 
         <section className="grid gap-3 py-8 sm:grid-cols-2 lg:grid-cols-4">
