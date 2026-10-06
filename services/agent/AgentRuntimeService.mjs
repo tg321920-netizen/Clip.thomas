@@ -1,7 +1,7 @@
 import { AgentOrchestrator } from "./AgentOrchestrator.mjs";
 import { AgentToolRegistry } from "./AgentToolRegistry.mjs";
 import { normalizeAutonomyMode } from "./AgentContracts.mjs";
-import { ZaiAgentProvider } from "./providers/ZaiAgentProvider.mjs";
+import { createAgentProvider } from "./providers/createAgentProvider.mjs";
 import { resolveAgentRules } from "./AgentRules.mjs";
 import { ChannelService } from "../channels/ChannelService.mjs";
 import { WorkflowService } from "../workflows/WorkflowService.mjs";
@@ -13,7 +13,7 @@ export class AgentRuntimeService {
     this.workflows = options.workflows || new WorkflowService();
     this.rules = options.rules || resolveAgentRules(this.env);
     this.tools = options.tools || new AgentToolRegistry({ channels: this.channels });
-    this.provider = options.provider || new ZaiAgentProvider();
+    this.provider = options.provider || createAgentProvider({ env: this.env });
     this.orchestrator = options.orchestrator || new AgentOrchestrator({
       provider: this.provider,
       tools: this.tools,

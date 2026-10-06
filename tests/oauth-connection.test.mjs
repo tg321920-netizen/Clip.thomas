@@ -639,3 +639,34 @@ test("YouTube OAuth start fails closed when the credential vault is unavailable"
     /credential vault|CLIPFORGE_CREDENTIALS_KEY/i,
   );
 });
+
+test("YouTube verification checks Google and retries a rejected token using offline authorization", async () => {
+  const channel = { id: channelId, platform: "YOUTUBE", externalAccountId: "channel-real" };
+  const credentials = [ { accessToken: "expired-test", refreshToken: "refresh-test" }, { accessToken: "renewed-test", refreshToken: "refresh-test" } ];
+  const requests = [];
+  const service = new OAuthConnectionService({
+    channels: { getChannel: async () => channel },
+    fetchImpl: async (_url, init) => {
+      requests.push(init.headers.Authorization);
+      if (requests.length === 1) return { status: 401, ok: false };
+      return { status: 200, ok: true, json: async () => ({ items: [{ id: "channel-real", snippet: { title: "Real channel" } }] }) };
+    },
+  });
+  const options = [];
+  service.getValidCredentials = async (_id, input) => { options.push(input); return credentials.shift(); };
+  const result = await service.verifyYouTubeConnection(channelId);
+  assert.equal(result.valid, true);
+  assert.equal(result.refreshAvailable, true);
+  assert.deepEqual(options[1], { forceRefresh: true });
+  assert.deepEqual(requests, ["Bearer expired-test", "Bearer renewed-test"]);
+  assert.equal(JSON.stringify(result).includes("test"), false);
+});
+
+test("YouTube verification refuses invalid saved credentials without requesting secrets", async () => {
+  const service = new OAuthConnectionService({
+    channels: { getChannel: async () => ({ id: channelId, platform: "YOUTUBE" }) },
+    fetchImpl: async () => ({ status: 401, ok: false }),
+  });
+  service.getValidCredentials = async () => ({ accessToken: "expired-test" });
+  await assert.rejects(() => service.verifyYouTubeConnection(channelId), /Reconnect YouTube/);
+});

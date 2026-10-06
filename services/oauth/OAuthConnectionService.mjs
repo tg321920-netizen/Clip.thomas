@@ -175,13 +175,37 @@ export class OAuthConnectionService {
     }
 
     const expiresAt = Date.parse(credentials.expiresAt || "");
-    const refreshSoon = Number.isFinite(expiresAt) && expiresAt - this.now() <= 5 * 60 * 1000;
+    const refreshSoon = options.forceRefresh === true || (Number.isFinite(expiresAt) && expiresAt - this.now() <= 5 * 60 * 1000);
     if (!refreshSoon || !credentials.refreshToken || !["TIKTOK", "YOUTUBE"].includes(channel.platform)) return credentials;
     const config = getOAuthConfig(channel.platform, options.env || process.env, channel.oauthProfile || "DEFAULT");
     const refreshed = await this.#refresh(channel.platform, credentials, config);
     credentials = { ...credentials, ...normalizeCredentials(channel.platform, refreshed, this.now(), credentials) };
     await this.vault.set(channelId, credentials);
     return credentials;
+  }
+
+  async verifyYouTubeConnection(channelId) {
+    const channel = await this.channels.getChannel(channelId);
+    if (channel?.platform !== "YOUTUBE") throw new Error("A YouTube channel is required.");
+    let credentials = await this.getValidCredentials(channelId);
+    if (!credentials?.accessToken) throw new Error("Reconnect YouTube: no saved authorization is available.");
+    const check = () => this.fetchImpl("https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true", {
+      headers: { Authorization: `Bearer ${credentials.accessToken}` },
+    });
+    let response = await check();
+    if (response.status === 401 && credentials.refreshToken) {
+      credentials = await this.getValidCredentials(channelId, { forceRefresh: true });
+      response = await check();
+    }
+    if (response.status === 401) throw new Error("Reconnect YouTube: Google rejected the saved authorization.");
+    if (!response.ok) throw new Error(`YouTube authorization check returned HTTP ${response.status}.`);
+    const body = await response.json();
+    const account = body.items?.[0];
+    if (!account?.id) throw new Error("The authorized Google account has no YouTube channel.");
+    if (channel.externalAccountId && account.id !== channel.externalAccountId) {
+      throw new Error("YouTube authorization belongs to a different channel.");
+    }
+    return { channelId, valid: true, externalAccountId: account.id, name: account.snippet?.title || null, refreshAvailable: Boolean(credentials.refreshToken) };
   }
 
   async #exchangeCode(platform, code, config) {

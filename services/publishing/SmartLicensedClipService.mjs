@@ -1,3 +1,4 @@
+import { resolveAgentProviderConfig } from "../agent/providers/createAgentProvider.mjs";
 import { randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
@@ -15,7 +16,6 @@ import { PublicationService } from "../publications/PublicationService.mjs";
 import { PublishingService } from "./PublishingService.mjs";
 import {
   requestStructuredJson,
-  resolveOpenAICompatibleConfig,
 } from "../ai/OpenAICompatibleClient.mjs";
 
 const DEFAULT_QUERIES = [
@@ -767,19 +767,12 @@ async function createEditorial({ source, candidate }) {
     reason: "Fallback editorial basado en el fragmento seleccionado y las métricas verificadas.",
   };
 
-  const apiKey = String(process.env.CLIPFORGE_ZAI_API_KEY || "").trim();
-  const model = String(process.env.CLIPFORGE_ZAI_MODEL || "").trim();
-  if (!apiKey || !model) return fallback;
+  const config = resolveAgentProviderConfig();
+  if (!config.apiKey || !config.model) return fallback;
 
   try {
-    const config = resolveOpenAICompatibleConfig({
-      apiKey,
-      model,
-      baseUrl: process.env.CLIPFORGE_ZAI_BASE_URL || "https://api.z.ai/api/paas/v4",
-      apiStyle: process.env.CLIPFORGE_ZAI_API_STYLE || "chat-completions",
-      temperature: 0.65,
-      maxOutputTokens: 900,
-    });
+    config.temperature = 0.65;
+    config.maxOutputTokens = 900;
     const result = await requestStructuredJson({
       config,
       name: "smart_clip_editorial",
@@ -827,7 +820,7 @@ async function createEditorial({ source, candidate }) {
       reason: String(parsed.reason || "Agent editorial selection.").trim().slice(0, 600),
     };
   } catch (error) {
-    console.warn("[smart-clip] ZAI editorial fallback:", error instanceof Error ? error.message : String(error));
+    console.warn("[smart-clip] AI editorial fallback:", String(error instanceof Error ? error.message : error).split(config.apiKey).join("[REDACTED]"));
     return fallback;
   }
 }
