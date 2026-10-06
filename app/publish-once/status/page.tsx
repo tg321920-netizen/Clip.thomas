@@ -13,7 +13,7 @@ type JobStatus = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  IDLE: "Esperando iniciar la prueba",
+  IDLE: "No hay una publicación en curso",
   QUEUED: "Trabajo en cola",
   STARTING: "Iniciando ClipForge",
   CHECKING_YOUTUBE_CONNECTION: "Verificando YouTube",
@@ -30,7 +30,7 @@ const STAGE_LABELS: Record<string, string> = {
   UPLOADING_TO_YOUTUBE: "Subiendo a YouTube",
   YOUTUBE_PROCESSING: "YouTube está procesando el video",
   PUBLISHED: "Publicado",
-  FAILED: "La prueba encontró un error",
+  FAILED: "La publicación encontró un error",
   START_FAILED: "No se pudo iniciar la autorización",
 };
 
@@ -75,8 +75,11 @@ export default function PublishOnceStatusPage() {
           ClipForge
         </p>
         <h1 className="mt-3 text-2xl font-semibold">
-          {done ? "Video listo" : "Prueba completa en proceso"}
+          {done ? "Última publicación" : "Estado de publicación"}
         </h1>
+        <p className="mt-3 text-sm leading-6 text-zinc-400">
+          Esta pantalla muestra el último trabajo guardado. Autorizar YouTube no crea ni publica otro video.
+        </p>
         <p className="mt-3 text-sm leading-6 text-zinc-400">
           {STAGE_LABELS[job.stage] || job.stage}
         </p>
@@ -122,14 +125,14 @@ export default function PublishOnceStatusPage() {
               href="/api/publish-once/start"
               className="mt-4 block rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-zinc-100"
             >
-              Reintentar autorización y prueba
+              Reconectar YouTube (sin publicar)
             </a>
           </div>
         ) : null}
 
         {!done && !failed ? (
           <p className="mt-6 text-xs leading-5 text-zinc-500">
-            Podés dejar esta pantalla abierta. Se actualiza sola y ayuda a mantener activo el servicio gratuito mientras procesa el video.
+            Esta pantalla muestra el último trabajo registrado. Reconectar YouTube no inicia una nueva publicación.
           </p>
         ) : null}
       </div>

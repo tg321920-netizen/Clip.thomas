@@ -4,7 +4,6 @@ import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.
 import {
   PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
 } from "@/services/publishing/PublishOncePodcastService.mjs";
-import { queueSmartPublishJob } from "@/services/publishing/SmartPublishJobService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,12 +35,10 @@ export async function GET(
 
     if (
       normalized === "YOUTUBE" &&
-      result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID &&
-      String(process.env.CLIPFORGE_PUBLISH_ONCE_SMART || "").trim().toLowerCase() === "true"
+      result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID
     ) {
-      await queueSmartPublishJob(result.channelId);
       const statusUrl = new URL("/publish-once/status", publicOrigin);
-      statusUrl.searchParams.set("started", "1");
+      statusUrl.searchParams.set("authorized", "1");
       const response = NextResponse.redirect(statusUrl, 303);
       response.cookies.delete(cookieName(normalized));
       return response;

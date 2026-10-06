@@ -25,6 +25,15 @@ const RUNNABLE_JOB_STATUSES = new Set([
 const kv = createRedisKvFromEnv();
 
 export async function queueSmartPublishJob(channelId) {
+  // This legacy entrypoint is a one-shot test, not an autonomous content queue.
+  // OAuth retries and restarts must preserve any existing or remote publication.
+  const existing = await readJob();
+  if (existing && (existing.status !== "FAILED" || existing.publicationId)) {
+    if (existing.channelId !== channelId) {
+      throw new Error("A smart-publish job already exists for another channel.");
+    }
+    return publicJob(existing);
+  }
   const now = new Date().toISOString();
   const job = {
     id: randomUUID(),
