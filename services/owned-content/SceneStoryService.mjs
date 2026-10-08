@@ -48,11 +48,12 @@ export async function planStory(input, options = {}) {
     if (sentences.length < 6) throw new WaitingResourceError("Divide el relato en al menos seis frases para crear seis escenas.");
     texts = Array.from({ length: 6 }, (_, i) => sentences.slice(Math.floor(i * sentences.length / 6), Math.floor((i + 1) * sentences.length / 6)).join(" ")); provider = "user-script";
   } else if (/maya/i.test(String(input.topic)) && /ciudad|selva/i.test(String(input.topic))) {
-    texts = MAYA_NARRATION; provider = "local-original-maya-story";
+    texts = duration < 45 ? ["Al amanecer, una exploradora descubre una pirámide entre la niebla.","Bajo las raíces, un símbolo del jaguar señala una puerta.","La luz de su antorcha revela un mapa tallado.","Tras el umbral, encuentra un estanque y columnas antiguas.","Un rayo de sol ilumina conocimientos sobre ríos y estrellas.","La exploradora registra el hallazgo y promete proteger la ciudad."] : MAYA_NARRATION; provider = "local-original-maya-story";
   } else throw new WaitingResourceError("No hay un modelo de guion autorizado configurado para este tema. Pega un relato completo o utiliza el ejemplo gratuito de la ciudad maya.");
   if (!Array.isArray(texts) || texts.length < 6 || texts.length > 12 || texts.some(t => !String(t || "").trim())) throw new Error("El guion necesita entre seis y doce escenas completas.");
   const totalWords = texts.reduce((n, t) => n + t.split(/\s+/).length, 0);
-  const manifest = { style: String(input.style || "cinematográfico"), language: "es-419", palette: "verde esmeralda, piedra cálida, luz dorada", era: "ruinas mayas antiguas, exploración contemporánea", character: "exploradora con camisa beige y bolso de cuero", continuityLimit: "El proveedor local utiliza imágenes elegidas por el usuario; no garantiza identidad visual perfecta." };
+  const maya=provider==="local-original-maya-story";
+  const manifest = { style: String(input.style || "cinematográfico"), language: "es-419", palette: String(input.palette||(maya?"verde esmeralda, piedra cálida, luz dorada":"Conservar la paleta de los recursos originales")), era: String(input.era||(maya?"ruinas mayas antiguas, exploración contemporánea":"Según el relato y las imágenes proporcionadas")), character: String(input.character||(maya?"exploradora con camisa beige y bolso de cuero":"Conservar los personajes de las imágenes proporcionadas")), continuityLimit: "El proveedor local utiliza imágenes elegidas por el usuario; no garantiza identidad visual perfecta." };
   const scenes = texts.map((narration, i) => ({ id: `scene-${i + 1}`, order: i + 1, narration,
     visualDescription: `${input.topic || "Historia"}. Escena ${i + 1}: ${narration}. Estilo: ${manifest.style}.`,
     estimatedDuration: duration * narration.split(/\s+/).length / totalWords,

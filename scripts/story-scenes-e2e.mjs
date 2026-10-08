@@ -9,8 +9,10 @@ const root = path.resolve("artifacts/story-scenes/storage"), output = path.dirna
 process.env.CLIPFORGE_STORAGE_DIR = root; await mkdir(path.join(root, "story-assets"), { recursive: true });
 const images = [];
 for (let i = 1; i <= 6; i++) { const relative = `story-assets/${randomUUID()}.jpg`; await copyFile(`tests/fixtures/maya-story/scene-${i}.jpg`, path.join(root, relative)); images.push(relative); }
+const music=`story-assets/${randomUUID()}.wav`;
+await runMedia("ffmpeg",["-v","error","-y","-f","lavfi","-i","aevalsrc=0.03*(sin(2*PI*220*t)+sin(2*PI*277.18*t)+sin(2*PI*329.63*t)):s=48000","-t","4",path.join(root,music)]);
 const id = randomUUID();
-const result = await new SceneStoryService({ width: 360, height: 640 }).render(id, { topic: "Crea una historia de 60 segundos sobre una ciudad maya perdida en la selva, con misterio, narración en español e imágenes cinematográficas.", duration: 60, images, subtitles: true });
+const result = await new SceneStoryService({ width: 360, height: 640 }).render(id, { topic: "Crea una historia de 60 segundos sobre una ciudad maya perdida en la selva, con misterio, narración en español e imágenes cinematográficas.", duration: 60, images, music, subtitles: true });
 assert.equal(result.validation.valid, true); assert.ok(Math.abs(result.validation.duration - 60) < 0.5); assert.equal(result.validation.audioCodec, "aac");
 const manifest = JSON.parse(await readFile(path.join(root, "stories", id, "manifest.json"), "utf8"));
 assert.equal(manifest.plan.scenes.length, 6); assert.ok(manifest.cues.length >= 6);

@@ -16,7 +16,8 @@ let browser,ingest,page;
 async function worker(){await new Promise((resolve,reject)=>{const child=spawn(process.execPath,["scripts/media-worker.mjs","--once"],{env,stdio:["ignore","pipe","pipe"]});let logs="";child.stdout.on("data",c=>{logs+=c;});child.stderr.on("data",c=>{logs+=c;});child.on("error",reject);child.on("exit",code=>code===0?resolve():reject(new Error(logs)));});}
 try{
   for(let i=0;i<100;i++){try{if((await fetch(`${base}/api/health`)).ok)break;}catch{}if(next.exitCode!==null)throw new Error(log);await new Promise(r=>setTimeout(r,200));}
-  browser=await chromium.launch({headless:true});const context=await browser.newContext({...devices["Pixel 5"],acceptDownloads:true});page=await context.newPage();await page.goto(base);
+  browser=await chromium.launch({channel:"chrome",headless:true});const context=await browser.newContext({...devices["Pixel 5"],acceptDownloads:true});page=await context.newPage();await page.goto(base);
+  console.log("Browser media codecs:",await page.evaluate(()=>{const video=document.createElement("video");return {h264:video.canPlayType('video/mp4; codecs="avc1.42E01E"'),aac:video.canPlayType('audio/mp4; codecs="mp4a.40.2"')};}));
   for(const name of ["CREAR HISTORIA CON IA","EDITAR VIDEO AUTOMÁTICAMENTE","SACAR MEJORES CLIPS"])await page.getByRole("button",{name,exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"Mobile layout must not overflow horizontally");
   if(process.argv.includes("--clips-only")) {
@@ -42,6 +43,7 @@ try{
   await page.close();await worker(); // Browser is closed while all rendering occurs on the server.
   page=await context.newPage();await page.goto(base);let article=page.getByRole("region",{name:"Mis videos",exact:true}).locator("article").first();await article.getByText(/READY/).waitFor({timeout:10000});
   const history=await (await fetch(`${base}/api/media/jobs/${storyJob.id}`)).json();assert.equal(history.job.status,"READY");assert.ok(history.job.history.some(h=>h.status==="VALIDATING"));
+  const mediaResponse=await fetch(`${base}${history.job.result.sourceUrl}`,{headers:{Range:"bytes=0-1023"}});assert.equal(mediaResponse.status,206,"The actual MP4 route must return bytes before playback");
   const video=article.locator("video");await video.evaluate(async v=>{v.muted=true;await v.play();});await page.waitForTimeout(500);assert.ok(await video.evaluate(v=>v.currentTime)>0,"Actual browser playback must advance");await video.evaluate(v=>v.pause());
   const downloading=page.waitForEvent("download");await article.getByRole("link",{name:"Descargar MP4"}).click();const download=await downloading;await download.saveAs(path.join(output,"browser-story.mp4"));
   const storyValidation=await validateMp4(path.join(output,"browser-story.mp4"),{requireAudio:true,duration:60,width:360,height:640});

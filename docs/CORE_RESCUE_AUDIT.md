@@ -38,6 +38,16 @@ MediaValidationService exige MP4 H.264/yuv420p, AAC cuando hay audio, duración 
 
 `node scripts/core-rescue-e2e.mjs --service-only`: reconstrucción de 28.638.115 bytes, ingesta y miniatura reales, cola retomada desde otra instancia de JobStore y render de tres segundos a 360x640 H.264/AAC. Evidencia en `artifacts/core-rescue/evidence.json`; MP4 en `artifacts/core-rescue/first-validated.mp4`. El archivo de prueba autorizado es un patrón generado localmente con audio sinusoidal y un átomo MP4 free para probar el tamaño de transferencia; no es el archivo Android del propietario ni una prueba de narración.
 
-HTTP desplegado, navegador Android, lint, typecheck y build siguen pendientes hasta ejecutarse con dependencias y conectividad. Fase 1 no se declara completa sin esos controles. Las fases de historia de 60 s, autoedición y tres clips de una grabación de 20 min tampoco se declaran completas.
+CI inicial 37795226386: lint, typecheck, build, 168 pruebas, transferencia HTTP y render real PASS. CI 37799579309: 173 pruebas PASS y aceptación real de historia y edición PASS. CI 37800544784: build y pruebas PASS; Whisper real transcribió una grabación ficticia original de 1.200 segundos y produjo tres clips distintos de 106,7, 90 y 90 segundos. Los archivos y sus JSON de evidencia están disponibles como artefactos de esas ejecuciones. Estos números corresponden a commits concretos, no se presentan como resultados del último commit.
+
+La historia contiene seis imágenes originales distintas, movimiento zoompan, transiciones xfade, voz española eSpeak con tiempos medidos y subtítulos normales. Un fotograma del render posterior se revisó visualmente y mediante OCR. El guion automático local cubre el ejemplo maya; otros temas requieren un relato completo del usuario o un proveedor autorizado. No se llama a una API externa de pago.
+
+La edición completa conserva el original y recorta silencios medidos a -50 dB con márgenes. Cuando se piden subtítulos, Whisper transcribe también el audio editado para alinear los nuevos tiempos. El encuadre FIT conserva la imagen completa y no afirma detección del hablante. La intensidad controla cortes y movimiento discreto.
+
+Los trabajos MEDIA_* usan QUEUED, PROCESSING, VALIDATING, READY, FAILED, WAITING_RESOURCE y CANCELLED; READY vuelve a comprobar archivos reales. Un test mata un proceso durante VALIDATING y demuestra recuperación única sin robar bloqueos vivos. Identidad de proceso y serialización de recuperación complementan los locks existentes. Esto verifica reinicios con almacenamiento conservado, no la supervivencia de /tmp tras reemplazar una instancia de Render.
+
+La pantalla inicial conecta tres formularios y el historial al backend. Vercel dirige la entrada al runtime multimedia existente, reutilizando la separación ya aplicada a /factory. Los archivos se reproducen con Range y se descargan con Content-Disposition. Las pruebas de navegador y subtítulos del último commit deben consultarse en su ejecución de CI; no se declara Android físico verificado.
+
+La comprobación autenticada del runtime desplegado y el despliegue de la rama siguen pendientes de acceso al workspace de Render y a la sesión del propietario. No se han creado recursos pagos. La conexión GitHub rechazó inicialmente crear PR con 403; se preparó la descripción y un intento mediante el token del workflow después de la aceptación audiovisual.
 
 PUBLISHING = OFF en la rama; no se ha desplegado este cambio en producción y no se afirma que el servicio actual lo tenga aplicado.

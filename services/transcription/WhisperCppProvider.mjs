@@ -43,8 +43,8 @@ export class WhisperCppProvider {
       "-ng",
       "-t",
       String(this.threads),
-      "-ml", "80", "-sow",
     ];
+    if(process.env.WHISPER_WORD_TIMESTAMPS === "true")args.push("-ml","80","-sow");
 
     if (this.language) args.push("-l", this.language);
 

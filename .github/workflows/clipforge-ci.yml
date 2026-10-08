@@ -1,5 +1,9 @@
 name: ClipForge CI
 
+concurrency:
+  group: clipforge-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/codex/clipforge-core-rescue' }}
+
 on:
   push:
     branches: [main, "chatgpt/**", "work/**", "codex/clipforge-core-rescue"]
@@ -90,7 +94,7 @@ jobs:
       - name: Install isolated browser test tooling
         run: |
           npm install --prefix /tmp/clipforge-browser --no-save --no-package-lock playwright@1.56.1
-          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chromium
+          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chrome
 
       - name: Android-equivalent browser, real APIs and downloads
         run: node scripts/mobile-browser-e2e.mjs
@@ -153,7 +157,7 @@ jobs:
       - name: Install isolated Chromium
         run: |
           npm install --prefix /tmp/clipforge-browser --no-save --no-package-lock playwright@1.56.1
-          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chromium
+          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chrome
       - name: Upload long recording, generate and download three clips from mobile browser
         run: node scripts/mobile-browser-e2e.mjs --clips-only
       - name: Preserve clips and validation evidence
