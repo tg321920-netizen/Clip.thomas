@@ -6,7 +6,7 @@ import { EspeakNewsTtsProvider } from "../services/news/EspeakNewsTtsProvider.mj
 import { BestClipsService } from "../services/analysis/BestClipsService.mjs";
 import { runMedia,probeMediaFile } from "../services/media-processing/MediaValidationService.mjs";
 import { replaceProjectFile,loadProjectFile } from "../lib/project-files.mjs";
-import { verifySubtitleFrame } from "./verify-subtitle-frame.mjs";
+import { verifySubtitleFrame,selectSubtitleReviewCue } from "./verify-subtitle-frame.mjs";
 const output=path.resolve("artifacts/best-clips"),root=path.join(output,"storage");process.env.CLIPFORGE_STORAGE_DIR=root;
 const id=randomUUID(),directory=path.join(root,"uploads",id);await mkdir(directory,{recursive:true});
 const topics=[
@@ -31,7 +31,7 @@ const topics=[
   ["la red de costura","Paula","telas, diseños y reparación","una prenda duradera"],
   ["el jardín de mariposas","Samuel","flores, insectos y estaciones","un espacio de biodiversidad"],
 ];
-const paragraphs=topics.map(([topic,name,details,outcome],i)=>`¿Cómo empezó ${topic}? ${name} recuerda que la primera reunión tuvo apenas cinco participantes. Nadie sabía si la propuesta funcionaría, pero decidieron escuchar antes de comprar materiales. Esta historia es ficticia y fue escrita para comprobar nuestro sistema audiovisual. En el capítulo ${i+1}, hablamos de ${details}. La primera dificultad apareció cuando faltaron recursos y el grupo tuvo que cambiar el calendario. Una persona quería avanzar rápidamente y otra pedía revisar cada paso. En lugar de discutir sin información, hicieron una prueba pequeña y registraron lo que sucedió. El resultado fue sorprendente: una idea que parecía complicada podía resolverse con paciencia y cooperación. ${name} explica que el cambio más importante fue aprender a compartir las decisiones. Después de varias semanas, consiguieron ${outcome}. Hubo errores, preguntas y momentos de humor durante el proceso. ¿Qué consejo darían a quien empieza? Primero, definir un objetivo comprensible. Segundo, conservar las evidencias de cada intento. Tercero, pedir ayuda cuando falte experiencia. Al terminar, el equipo celebró sus avances y reconoció también lo que todavía debía mejorar. El desenlace no fue una promesa milagrosa, sino una solución concreta que el barrio podía revisar. Cerramos este capítulo recordando que ${topic} pertenece a quienes participan y cuidan su continuidad.`);
+const paragraphs=topics.map(([topic,name,details,outcome],i)=>`¿Cómo empezó ${topic}? ${name} recuerda que la primera reunión tuvo apenas cinco participantes. Nadie sabía si la propuesta funcionaría, pero decidieron escuchar antes de comprar materiales. Esta historia es ficticia y fue escrita para comprobar nuestro sistema audiovisual. En el capítulo ${i+1}, hablamos de ${details}. La primera dificultad apareció cuando faltaron recursos y el grupo tuvo que cambiar el calendario. En lugar de discutir sin información, hicieron una prueba pequeña y registraron lo que sucedió. El resultado fue sorprendente: una idea que parecía complicada podía resolverse con paciencia y cooperación. ${name} explica que el cambio más importante fue aprender a compartir las decisiones. Después de varias semanas, consiguieron ${outcome}. Hubo errores, preguntas y momentos de humor durante el proceso. ¿Qué consejo darían a quien empieza? Cerramos este capítulo recordando que ${topic} pertenece a quienes participan y cuidan su continuidad.`);
 await writeFile(path.join(output,"authored-narration.txt"),paragraphs.join("\n\n"));
 await new EspeakNewsTtsProvider({voice:"es-419",speed:150}).synthesize({text:paragraphs.join(" "),outputPath:path.join(directory,"voice.wav")});
 const voice=await probeMediaFile(path.join(directory,"voice.wav"));const tempo=voice.duration/1200;assert.ok(tempo>.5&&tempo<2,"Fixture speech must fit naturally into twenty minutes");
@@ -46,14 +46,14 @@ const original=await loadProjectFile(id);assert.equal(original.transcript.provid
 const project=await loadProjectFile(result.projectId);
 await copyFile(filename,path.join(output,"podcast-20m.mp4"));
 await writeFile(path.join(output,"transcript-and-cues.json"),JSON.stringify({transcript:original.transcript,clips:project.clips.map(c=>({startTime:c.startTime,endTime:c.endTime,subtitles:c.subtitles}))},null,2));
-console.log("SUBTITLE_DIAGNOSTICS",JSON.stringify({segments:original.transcript.segments.slice(0,2),firstCues:project.clips[0].subtitles.cues.slice(0,4),maximumWords:Math.max(...project.clips[0].subtitles.cues.map(c=>c.text.split(/\s+/).length))}));
+console.log("SUBTITLE_DIAGNOSTICS",JSON.stringify({segments:original.transcript.segments.slice(0,2),clips:project.clips.map(c=>({cueCount:c.subtitles.cues.length,firstCues:c.subtitles.cues.slice(0,3),maximumWords:Math.max(...c.subtitles.cues.map(c=>c.text.split(/\s+/).length))}))}));
 const subtitleEvidence=[];
 for(let i=0;i<3;i++){
   const clip=result.clips[i];assert.ok(clip.duration>=90&&clip.duration<=180);assert.equal(clip.validation.audioCodec,"aac");assert.equal(clip.validation.videoCodec,"h264");assert.deepEqual(clip.validation.blackIntervals,[]);
   assert.ok(project.clips[i].subtitles.cues.length>0);assert.ok(project.clips[i].subtitles.cues.every(c=>c.startTime>=0&&c.endTime<=clip.duration+.2));
   for(const other of result.clips.slice(0,i))assert.ok(Math.min(other.endTime,clip.endTime)<=Math.max(other.startTime,clip.startTime));
   await copyFile(path.join(root,clip.relativePath),path.join(output,`clip-${i+1}.mp4`));
-  subtitleEvidence.push(await verifySubtitleFrame({file:path.join(root,clip.relativePath),cue:project.clips[i].subtitles.cues.find(c=>c.text.split(/\s+/).length>=4),width:360,height:640,output:path.join(output,`subtitle-clip-${i+1}`)}));
+  subtitleEvidence.push(await verifySubtitleFrame({file:path.join(root,clip.relativePath),cue:selectSubtitleReviewCue(project.clips[i].subtitles.cues),width:360,height:640,output:path.join(output,`subtitle-clip-${i+1}`)}));
   await runMedia("ffmpeg",["-v","error","-y","-ss","2","-i",path.join(root,clip.relativePath),"-frames:v","1",path.join(output,`clip-${i+1}.jpg`)]);
 }
 await copyFile(filename,path.join(output,"podcast-20m.mp4"));

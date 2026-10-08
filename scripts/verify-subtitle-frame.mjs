@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { runMedia } from "../services/media-processing/MediaValidationService.mjs";
+export function selectSubtitleReviewCue(cues) {
+  const words = text => new Set(String(text).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().match(/[a-z]{4,}/g) || []).size;
+  const candidates=(cues||[]).filter(c=>c?.text&&Number.isFinite(c.startTime)&&Number.isFinite(c.endTime)&&c.endTime-c.startTime>=.3&&words(c.text)>=2);
+  candidates.sort((a,b)=>words(b.text)-words(a.text)||(b.endTime-b.startTime)-(a.endTime-a.startTime));
+  assert.ok(candidates[0],"At least two distinct readable words at real subtitle times are required");
+  return candidates[0];
+}
 export async function verifySubtitleFrame({file,cue,width,height,output}) {
   assert.ok(cue?.text&&cue.endTime>cue.startTime,"A real timed subtitle cue is required");
   const time=(cue.startTime+cue.endTime)/2, cropped=Math.floor(height*.4/2)*2;

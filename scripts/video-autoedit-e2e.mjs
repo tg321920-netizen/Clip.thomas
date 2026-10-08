@@ -6,7 +6,7 @@ import { EspeakNewsTtsProvider } from "../services/news/EspeakNewsTtsProvider.mj
 import { VideoAutoEditService } from "../services/autoedit/VideoAutoEditService.mjs";
 import { runMedia, probeMediaFile, validateMp4 } from "../services/media-processing/MediaValidationService.mjs";
 import { replaceProjectFile, loadProjectFile } from "../lib/project-files.mjs";
-import { verifySubtitleFrame } from "./verify-subtitle-frame.mjs";
+import { verifySubtitleFrame,selectSubtitleReviewCue } from "./verify-subtitle-frame.mjs";
 
 const output = path.resolve("artifacts/video-autoedit");
 const root = path.join(output, "storage"); process.env.CLIPFORGE_STORAGE_DIR = root;
@@ -36,7 +36,7 @@ assert.notEqual(createHash("sha256").update(await readFile(edited)).digest("hex"
 const project = await loadProjectFile(result.projectId); assert.equal(project.clips[0].status,"READY");
 if (withWhisper) { assert.equal(project.transcript.provider,"whisper.cpp"); assert.ok(project.clips[0].subtitles.cues.length>0); }
 const originalValidation = await validateMp4(original,{requireAudio:true,duration:probe.duration});
-const subtitleEvidence=withWhisper?await verifySubtitleFrame({file:edited,cue:project.clips[0].subtitles.cues.find(c=>c.text.split(/\s+/).length>=4),width:360,height:640,output:path.join(output,"subtitle-review")}):null;
+const subtitleEvidence=withWhisper?await verifySubtitleFrame({file:edited,cue:selectSubtitleReviewCue(project.clips[0].subtitles.cues),width:360,height:640,output:path.join(output,"subtitle-review")}):null;
 await copyFile(original,path.join(output,"original.mp4")); await copyFile(edited,path.join(output,"edited.mp4"));
 await writeFile(path.join(output,"evidence.json"),JSON.stringify({result,originalValidation,originalSha256:before,subtitleEvidence,subtitles:withWhisper?"REAL_WHISPER_TRANSCRIPTION":"EXPLICITLY_DISABLED_FOR_THIS_TEST",fixture:"Original synthesized Spanish narration and generated test pattern; actual media, no mocked rendering."},null,2));
 console.log(JSON.stringify({passed:true,original:originalValidation,edited:result.validation,cuts:result.cuts},null,2));
