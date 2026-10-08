@@ -49,6 +49,9 @@ on:
 
 jobs:
   verify:
+    # Rescue pushes already verify the code; creating/updating its draft PR
+    # must not repeat a build without new code or a concrete failure hypothesis.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft != true }}
     env:
       CLIPFORGE_RUN_MEDIA_TESTS: "false"
     runs-on: ubuntu-latest
