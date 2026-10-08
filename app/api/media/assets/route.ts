@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     };
     if (!signatures[extension]) throw new Error("El contenido del recurso no corresponde al tipo de archivo declarado.");
     const probe = await probeMediaFile(temporary);
-    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 12000 || probe.video.height > 12000 : !probe.audio) throw new Error("El recurso no contiene una imagen o pista de audio válida.");
+    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000 : !probe.audio) throw new Error("El recurso no contiene una imagen válida de hasta doce megapíxeles o una pista de audio compatible.");
     await rename(temporary, filename);
     return NextResponse.json({ relativePath, sizeBytes: bytes, rights: "USER_CONFIRMED" });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo guardar el recurso." }, { status: 422 }); }

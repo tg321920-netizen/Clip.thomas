@@ -47,6 +47,7 @@ export class RenderService {
     if (clip?.edit?.motionIntensity) filter += `,${buildSafeMotionFilter(clip.edit.motionIntensity,this.width,this.height)}`;
     let subtitlesBurned = false;
     let autoReframeApplied = false;
+    if(clip?.edit?.subtitlesEnabled&&(!clip?.subtitles?.enabled||!clip.subtitles.cues?.length))throw new Error("Se solicitaron subtítulos, pero no existen tiempos y textos válidos para este clip.");
 
     if (
       clip?.edit?.autoReframeEnabled &&

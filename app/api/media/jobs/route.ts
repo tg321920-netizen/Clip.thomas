@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { JobStore } from "@/services/JobStore.mjs";
 import { isProjectId } from "@/lib/project-id.mjs";
 import { readBoundedJson } from "@/lib/bounded-json.mjs";
+import { IngestJobStore } from "@/services/ingest/IngestJobStore.mjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
@@ -16,4 +17,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo iniciar el trabajo." }, { status: 400 }); }
 }
-export async function GET() { return NextResponse.json({ jobs: await new JobStore().listMedia() }, { headers: { "Cache-Control": "no-store" } }); }
+export async function GET() {
+  const [jobs, ingests] = await Promise.all([new JobStore().listMedia(),new IngestJobStore().list(30)]);
+  const uploads = ingests.filter(job => job.type === "INGEST_UPLOAD").map(job => ({ id:job.id,name:job.source.filename,status:job.status,stage:job.stage,progress:job.progress,error:job.error,createdAt:job.createdAt }));
+  return NextResponse.json({ jobs,uploads }, { headers: { "Cache-Control": "no-store" } });
+}

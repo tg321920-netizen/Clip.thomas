@@ -12,13 +12,32 @@ const env={...process.env,CLIPFORGE_STORAGE_DIR:storage,CLIPFORGE_MEDIA_WIDTH:"3
 const base="http://127.0.0.1:3113";let log="";
 const next=spawn(process.execPath,["node_modules/next/dist/bin/next","start","-p","3113"],{env,stdio:["ignore","pipe","pipe"]});
 next.stdout.on("data",c=>{log+=c;});next.stderr.on("data",c=>{log+=c;});
-let browser,ingest;
+let browser,ingest,page;
 async function worker(){await new Promise((resolve,reject)=>{const child=spawn(process.execPath,["scripts/media-worker.mjs","--once"],{env,stdio:["ignore","pipe","pipe"]});let logs="";child.stdout.on("data",c=>{logs+=c;});child.stderr.on("data",c=>{logs+=c;});child.on("error",reject);child.on("exit",code=>code===0?resolve():reject(new Error(logs)));});}
 try{
   for(let i=0;i<100;i++){try{if((await fetch(`${base}/api/health`)).ok)break;}catch{}if(next.exitCode!==null)throw new Error(log);await new Promise(r=>setTimeout(r,200));}
-  browser=await chromium.launch({headless:true});const context=await browser.newContext({...devices["Pixel 5"],acceptDownloads:true});let page=await context.newPage();await page.goto(base);
+  browser=await chromium.launch({headless:true});const context=await browser.newContext({...devices["Pixel 5"],acceptDownloads:true});page=await context.newPage();await page.goto(base);
   for(const name of ["CREAR HISTORIA CON IA","EDITAR VIDEO AUTOMÁTICAMENTE","SACAR MEJORES CLIPS"])await page.getByRole("button",{name,exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"Mobile layout must not overflow horizontally");
+  if(process.argv.includes("--clips-only")) {
+    ingest=spawn(process.execPath,["scripts/ingest-worker.mjs"],{env,stdio:"ignore"});
+    await page.getByRole("button",{name:"SACAR MEJORES CLIPS",exact:true}).click();
+    await page.locator('input[type="file"][accept*="video/mp4"]').first().setInputFiles(path.resolve("artifacts/best-clips/podcast-20m.mp4"));
+    await page.getByRole("button",{name:"Subir y analizar",exact:true}).first().click();await page.getByText(/Original guardado:/).waitFor({timeout:90000});
+    const saved=page.waitForResponse(r=>r.url().endsWith("/api/media/jobs")&&r.request().method()==="POST");
+    await page.getByRole("button",{name:"Generar mejores clips",exact:true}).click();const clipJob=(await(await saved).json()).job;
+    await page.close();await worker();page=await context.newPage();await page.goto(base);
+    const article=page.getByRole("region",{name:"Mis videos",exact:true}).locator("article").first();await article.getByText(/READY/).waitFor({timeout:10000});
+    const persisted=await(await fetch(`${base}/api/media/jobs/${clipJob.id}`)).json();assert.equal(persisted.job.status,"READY");assert.equal(persisted.job.result.clips.length,3);
+    const validations=[];
+    for(let i=0;i<3;i++){
+      const video=article.locator("video").nth(i);await video.evaluate(async v=>{v.muted=true;await v.play();});await page.waitForTimeout(400);assert.ok(await video.evaluate(v=>v.currentTime)>0);await video.evaluate(v=>v.pause());
+      const downloading=page.waitForEvent("download");await article.getByRole("link",{name:"Descargar MP4"}).nth(i).click();const file=path.join(output,`browser-clip-${i+1}.mp4`);await(await downloading).saveAs(file);
+      validations.push(await validateMp4(file,{requireAudio:true,duration:persisted.job.result.clips[i].duration,width:360,height:640}));
+    }
+    await page.screenshot({path:path.join(output,"mobile-clips.png"),fullPage:true});assert.equal(PUBLISHING_ENABLED,false);
+    const evidence={passed:true,client:"Chromium with Pixel 5 Android browser emulation; physical Android device not tested",tool:"MEDIA_CLIPS",validations,sourceDuration:1200,browserClosedDuringRender:true,actualBrowserPlayback:true,threeBrowserDownloads:true,publishing:"OFF"};await writeFile(path.join(output,"clips-evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
+  } else {
   const saved=page.waitForResponse(r=>r.url().endsWith("/api/media/jobs")&&r.request().method()==="POST");await page.getByRole("button",{name:"Generar historia",exact:true}).click();const storyJob=(await (await saved).json()).job;
   await page.close();await worker(); // Browser is closed while all rendering occurs on the server.
   page=await context.newPage();await page.goto(base);let article=page.getByRole("region",{name:"Mis videos",exact:true}).locator("article").first();await article.getByText(/READY/).waitFor({timeout:10000});
@@ -45,4 +64,6 @@ try{
   }finally{restarted.kill("SIGTERM");}
   assert.equal(PUBLISHING_ENABLED,false);
   const evidence={passed:true,client:"Chromium with Pixel 5 Android browser emulation; physical Android device not tested",storyValidation,editValidation,browserClosedDuringRender:true,httpRestartPersisted:true,rangePlayback:true,actualBrowserPlayback:true,publishing:"OFF"};await writeFile(path.join(output,"evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
-}finally{ingest?.kill("SIGTERM");next.kill("SIGTERM");await browser?.close();await rm(storage,{recursive:true,force:true});}
+  }
+}catch(error){if(page&&!page.isClosed()){await page.screenshot({path:path.join(output,"failure.png"),fullPage:true});console.error("Browser page:",page.url(),(await page.locator("body").innerText()).slice(0,2000));}console.error("Server diagnostics:",log.slice(-2000));throw error;}
+finally{ingest?.kill("SIGTERM");next.kill("SIGTERM");await browser?.close();await rm(storage,{recursive:true,force:true});}

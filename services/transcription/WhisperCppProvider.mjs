@@ -43,6 +43,7 @@ export class WhisperCppProvider {
       "-ng",
       "-t",
       String(this.threads),
+      "-ml", "80", "-sow",
     ];
 
     if (this.language) args.push("-l", this.language);
@@ -94,11 +95,7 @@ export function convertWhisperCppPayload(payload) {
         return null;
       }
 
-      const words = Array.isArray(segment?.tokens)
-        ? segment.tokens
-            .map((token) => convertToken(token, startMs, endMs))
-            .filter(Boolean)
-        : [];
+      const words = convertTokens(segment?.tokens,startMs,endMs);
 
       return {
         start: startMs / 1000,
@@ -116,6 +113,17 @@ export function convertWhisperCppPayload(payload) {
     null;
 
   return { text, language, segments };
+}
+
+function convertTokens(tokens,startMs,endMs) {
+  const words=[];
+  for(const raw of Array.isArray(tokens)?tokens:[]) {
+    const token=convertToken(raw,startMs,endMs);if(!token)continue;
+    const previous=words.at(-1);
+    if(previous&&!/^\s/.test(String(raw.text))){previous.word+=token.word;previous.end=token.end;if(Number.isFinite(token.probability))previous.probability=Math.min(previous.probability??token.probability,token.probability);}
+    else words.push(token);
+  }
+  return words;
 }
 
 function convertToken(token, segmentStartMs, segmentEndMs) {

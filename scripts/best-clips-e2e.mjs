@@ -6,6 +6,7 @@ import { EspeakNewsTtsProvider } from "../services/news/EspeakNewsTtsProvider.mj
 import { BestClipsService } from "../services/analysis/BestClipsService.mjs";
 import { runMedia,probeMediaFile } from "../services/media-processing/MediaValidationService.mjs";
 import { replaceProjectFile,loadProjectFile } from "../lib/project-files.mjs";
+import { verifySubtitleFrame } from "./verify-subtitle-frame.mjs";
 const output=path.resolve("artifacts/best-clips"),root=path.join(output,"storage");process.env.CLIPFORGE_STORAGE_DIR=root;
 const id=randomUUID(),directory=path.join(root,"uploads",id);await mkdir(directory,{recursive:true});
 const topics=[
@@ -43,13 +44,15 @@ const result=await new BestClipsService({width:360,height:640}).render(randomUUI
 assert.equal(result.clips.length,3);assert.equal(result.validation.valid,true);
 const original=await loadProjectFile(id);assert.equal(original.transcript.provider,"whisper.cpp");assert.equal(original.transcript.status,"COMPLETED");assert.ok(original.transcript.segments.length>20);
 const project=await loadProjectFile(result.projectId);
+const subtitleEvidence=[];
 for(let i=0;i<3;i++){
   const clip=result.clips[i];assert.ok(clip.duration>=90&&clip.duration<=180);assert.equal(clip.validation.audioCodec,"aac");assert.equal(clip.validation.videoCodec,"h264");assert.deepEqual(clip.validation.blackIntervals,[]);
   assert.ok(project.clips[i].subtitles.cues.length>0);assert.ok(project.clips[i].subtitles.cues.every(c=>c.startTime>=0&&c.endTime<=clip.duration+.2));
   for(const other of result.clips.slice(0,i))assert.ok(Math.min(other.endTime,clip.endTime)<=Math.max(other.startTime,clip.startTime));
   await copyFile(path.join(root,clip.relativePath),path.join(output,`clip-${i+1}.mp4`));
+  subtitleEvidence.push(await verifySubtitleFrame({file:path.join(root,clip.relativePath),cue:project.clips[i].subtitles.cues.find(c=>c.text.split(/\s+/).length>=4),width:360,height:640,output:path.join(output,`subtitle-clip-${i+1}`)}));
   await runMedia("ffmpeg",["-v","error","-y","-ss","2","-i",path.join(root,clip.relativePath),"-frames:v","1",path.join(output,`clip-${i+1}.jpg`)]);
 }
 await copyFile(filename,path.join(output,"podcast-20m.mp4"));
-await writeFile(path.join(output,"evidence.json"),JSON.stringify({fixture:"Original fictional interview narration synthesized locally; actual 20-minute MP4 and real Whisper transcription, no mocked transcript.",originalProjectId:id,originalDuration:probe.duration,transcriptProvider:original.transcript.provider,transcriptSegments:original.transcript.segments.length,result},null,2));
+await writeFile(path.join(output,"evidence.json"),JSON.stringify({fixture:"Original fictional interview narration synthesized locally; actual 20-minute MP4 and real Whisper transcription, no mocked transcript.",originalProjectId:id,originalDuration:probe.duration,transcriptProvider:original.transcript.provider,transcriptSegments:original.transcript.segments.length,result,subtitleEvidence},null,2));
 console.log(JSON.stringify({passed:true,...result},null,2));

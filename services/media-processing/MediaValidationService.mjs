@@ -39,11 +39,14 @@ export async function validateMp4(filename, options = {}) {
   const scan = await runMedia(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-hide_banner", "-v", "info", "-i", filename, "-an", "-vf", "blackdetect=d=0.5:pix_th=0.04:pic_th=0.98", "-f", "null", "-"]);
   const blackIntervals = [...scan.stderr.matchAll(/black_start:([\d.]+) black_end:([\d.]+) black_duration:([\d.]+)/g)].map(m => ({ start: Number(m[1]), end: Number(m[2]), duration: Number(m[3]) }));
   const blackSeconds = blackIntervals.reduce((n, item) => n + item.duration, 0);
+  let audioMeanDb=null,audioPeakDb=null;
+  if(audio&&options.requireAudio){const levels=await runMedia(process.env.FFMPEG_PATH?.trim()||"ffmpeg",["-hide_banner","-v","info","-i",filename,"-vn","-af","volumedetect","-f","null","-"]);audioMeanDb=Number(levels.stderr.match(/mean_volume: ([-\d.]+) dB/)?.[1]??-100);audioPeakDb=Number(levels.stderr.match(/max_volume: ([-\d.]+) dB/)?.[1]??-100);}
+  if(options.requireAudibleNarration&&(audioPeakDb===null||audioPeakDb < -55))throw new Error("La narración solicitada está ausente o es inaudible.");
   // Intentional dark scenes are project data. Partial dark intervals remain evidence to review.
   if (blackSeconds >= duration * 0.95 && options.allowDarkVideo !== true) throw new Error("El render está prácticamente negro. Revisa los recursos visuales antes de exportar.");
   return { valid: true, checkedAt: new Date().toISOString(), sizeBytes: info.size,
     duration, width: video.width, height: video.height, videoCodec: video.codec_name,
-    audioCodec: audio?.codec_name || null, pixelFormat: video.pix_fmt,
+    audioCodec: audio?.codec_name || null, audioMeanDb,audioPeakDb,pixelFormat: video.pix_fmt,
     frameRate: video.avg_frame_rate, fullDecode: true, blackIntervals,
     warnings: blackSeconds > 0 ? ["Se detectaron intervalos oscuros; revisar contra las escenas intencionales."] : [],
     synchronization: "TRACK_DURATIONS_CHECKED", subtitleValidation: options.subtitleValidation || "NOT_REQUESTED" };

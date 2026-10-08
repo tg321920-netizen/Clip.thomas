@@ -295,7 +295,7 @@ export class IngestJobStore {
   async #write(job) {
     await this.#ensureDirectory();
     const target = this.#jobPath(job.id);
-    const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temp, JSON.stringify(job, null, 2), {
       encoding: "utf8",
       flag: "wx",

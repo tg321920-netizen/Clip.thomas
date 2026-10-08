@@ -6,6 +6,7 @@ import type { UploadedVideo } from "@/types/video";
 type Tool = "MEDIA_STORY" | "MEDIA_EDIT" | "MEDIA_CLIPS";
 type Output = { clipId: string; title?: string; sourceUrl: string; downloadUrl: string; duration?: number; startTime?: number; endTime?: number; reason?: string; validation?: { duration: number } };
 type Job = { id: string; projectId: string; type: Tool; createdAt: string; status: string; stage: string; progress: number; error?: string; result?: Output & { clips?: Output[] } };
+type UploadJob = { id:string;name:string;status:string;stage:string;error?:string };
 const TOOLS: [Tool,string,string][] = [["MEDIA_STORY","CREAR HISTORIA CON IA","Idea → Imágenes → Voz → MP4"],["MEDIA_EDIT","EDITAR VIDEO AUTOMÁTICAMENTE","Subir → Cortar silencios → MP4"],["MEDIA_CLIPS","SACAR MEJORES CLIPS","Subir video largo → Elegir momentos → MP4"]];
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base text-white";
 const button = "min-h-12 rounded-xl bg-violet-500 px-5 py-3 text-base font-semibold text-white disabled:opacity-40";
@@ -22,9 +23,10 @@ export function MediaTools() {
   const [count,setCount] = useState(3); const [minDuration,setMinDuration] = useState(90); const [maxDuration,setMaxDuration] = useState(180);
   const [busy,setBusy] = useState(false); const [message,setMessage] = useState(""); const [error,setError] = useState(""); const [jobs,setJobs] = useState<Job[]>([]); const [historyError,setHistoryError] = useState("");
   const onReady = useCallback((video: UploadedVideo) => setOriginal(video),[]);
+  const [uploads,setUploads] = useState<UploadJob[]>([]);
   useEffect(() => {
     let active=true, fetching=false; let timer: ReturnType<typeof setTimeout>;
-    const refresh=async()=>{ if(fetching)return; fetching=true; try {const body=await request("/api/media/jobs",{cache:"no-store"}); if(active){setJobs(body.jobs||[]);setHistoryError("");}} catch(failure){if(active)setHistoryError(failure instanceof Error?failure.message:"No se pudo cargar el historial.");} finally{fetching=false;if(active)timer=setTimeout(()=>void refresh(),document.hidden?15000:4000);} };
+    const refresh=async()=>{ if(fetching)return; fetching=true; try {const body=await request("/api/media/jobs",{cache:"no-store"}); if(active){setJobs(body.jobs||[]);setUploads(body.uploads||[]);setHistoryError("");}} catch(failure){if(active)setHistoryError(failure instanceof Error?failure.message:"No se pudo cargar el historial.");} finally{fetching=false;if(active)timer=setTimeout(()=>void refresh(),document.hidden?15000:4000);} };
     const notify=()=>{clearTimeout(timer);void refresh();}; void refresh(); window.addEventListener("clipforge:project-created",notify);
     return()=>{active=false;clearTimeout(timer);window.removeEventListener("clipforge:project-created",notify);};
   },[]);
@@ -43,7 +45,7 @@ export function MediaTools() {
   }catch(failure){setError(failure instanceof Error?failure.message:"No se pudo iniciar el trabajo.");}finally{setBusy(false);}}
   async function action(job:Job,value:string){try{const body=await request(`/api/media/jobs/${job.id}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:value})});setJobs(previous=>previous.map(j=>j.id===job.id?body.job:j));}catch(failure){setHistoryError(failure instanceof Error?failure.message:"No se pudo actualizar el trabajo.");}}
   return <>
-    <nav aria-label="Herramientas de video" className="grid gap-3 py-6 md:grid-cols-3">{TOOLS.map(([id,title,description])=><button key={id} type="button" aria-pressed={tool===id} onClick={()=>{setTool(id);setError("");setMessage("");}} className={`min-h-28 rounded-2xl border p-5 text-left ${tool===id?"border-violet-400 bg-violet-500/20":"border-white/15 bg-white/5"}`}><span className="block font-bold">{title}</span><span className="mt-2 block text-sm text-zinc-300">{description}</span></button>)}</nav>
+    <nav aria-label="Herramientas de video" className="grid gap-3 py-6 md:grid-cols-3">{TOOLS.map(([id,title,description])=><button key={id} type="button" aria-label={title} aria-pressed={tool===id} onClick={()=>{setTool(id);setError("");setMessage("");}} className={`min-h-28 rounded-2xl border p-5 text-left ${tool===id?"border-violet-400 bg-violet-500/20":"border-white/15 bg-white/5"}`}><span className="block font-bold">{title}</span><span className="mt-2 block text-sm text-zinc-300">{description}</span></button>)}</nav>
     <section aria-label={TOOLS.find(t=>t[0]===tool)?.[1]} className="rounded-3xl border border-white/15 bg-white/5 p-5 sm:p-7"><h2 className="mb-5 text-xl font-semibold">{TOOLS.find(t=>t[0]===tool)?.[1]}</h2><div className="grid gap-5">
       {tool==="MEDIA_STORY"?<>
         <label>Tema o idea<textarea className={field} rows={3} maxLength={2000} value={topic} onChange={e=>setTopic(e.target.value)}/></label>
@@ -66,6 +68,7 @@ export function MediaTools() {
       {message&&<p role="status" className="text-sm text-emerald-300">{message}</p>}{error&&<p role="alert" className="text-sm text-red-300">{error}</p>}
     </div></section>
     <section aria-label="Mis videos" className="py-8"><h2 className="text-xl font-semibold">Mis videos</h2><p className="mt-2 text-sm text-zinc-400">El estado se consulta al servidor. READY requiere archivos MP4 comprobados.</p>{historyError&&<p role="alert" className="mt-3 text-sm text-red-300">{historyError}</p>}
+      {uploads.filter(upload=>upload.status!=="COMPLETED").map(upload=><div key={upload.id} className="mt-4 rounded-xl border border-white/15 p-4"><p>{upload.name} · {upload.status} · {upload.stage}</p>{upload.error&&<p className="mt-2 text-sm text-red-300">{upload.error}</p>}{upload.status==="FAILED"&&<button type="button" className={`${button} mt-3`} onClick={()=>void request(`/api/videos/jobs/${upload.id}`,{method:"POST"}).then(()=>window.dispatchEvent(new Event("clipforge:project-created"))).catch(failure=>setHistoryError(failure.message))}>Reintentar análisis de la subida</button>}</div>)}
       <div className="mt-5 grid gap-4 md:grid-cols-2">{jobs.map(job=><article key={job.id} className="min-w-0 rounded-2xl border border-white/15 p-4"><h3 className="font-semibold">{job.result?.title||TOOLS.find(t=>t[0]===job.type)?.[1]}</h3><p className="mt-1 text-xs text-zinc-400">{new Date(job.createdAt).toLocaleString("es")}</p>
         <p role="status" className="mt-3 break-words text-sm">{job.status} · {job.stage||job.status}{["PROCESSING","VALIDATING"].includes(job.status)?` · ${job.progress}% de etapas completadas`:""}</p>
         {["PROCESSING","VALIDATING"].includes(job.status)&&<progress aria-label="Etapas completadas" className="mt-2 w-full" value={job.progress} max={100}/>}{job.error&&<p className="mt-2 text-sm text-red-300">{job.error}</p>}

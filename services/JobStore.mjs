@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { isProjectId } from "../lib/project-id.mjs";
 import { getStorageRoot, resolveStoragePath } from "../lib/storage-paths.mjs";
 import { validateMp4 } from "./media-processing/MediaValidationService.mjs";
+import { leaseOwner,ownerIsAlive } from "../lib/process-lease.mjs";
 
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
@@ -223,7 +224,7 @@ export class JobStore {
     const lockPath = this.#lockPath(id);
     try {
       await stat(lockPath);
-      if (job.type.startsWith("MEDIA_")) await writeFile(lockPath, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), { encoding: "utf8" });
+      if (job.type.startsWith("MEDIA_")) await writeFile(lockPath, JSON.stringify(leaseOwner()), { encoding: "utf8" });
       else await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
       return true;
     } catch (error) {
@@ -240,7 +241,7 @@ export class JobStore {
       if (!outputs.length) throw new Error("No media outputs exist.");
       for (const output of outputs) {
         if (!output.relativePath) throw new Error("No result file is associated with this job.");
-        output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation });
+        output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", requireAudibleNarration:job.type==="MEDIA_STORY",duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation });
       }
     }
     const fresh = await this.get(job.id);
@@ -284,7 +285,7 @@ export class JobStore {
   async #tryLock(id) {
     try {
       const handle = await open(this.#lockPath(id), "wx");
-      await handle.writeFile(id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) : new Date().toISOString(), "utf8");
+      await handle.writeFile(id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify(leaseOwner()) : new Date().toISOString(), "utf8");
       await handle.close();
       return true;
     } catch (error) {
@@ -295,6 +296,19 @@ export class JobStore {
 
   async #recoverStaleJobs() {
     await this.#ensureDirectory();
+    // Serialize recovery across worker processes before replacing any job lock.
+    const guard=path.join(this.#jobsDir(),".recovery.guard");let guardHandle;
+    try { guardHandle=await open(guard,"wx");await guardHandle.writeFile(JSON.stringify(leaseOwner())); }
+    catch(error) {
+      if(getErrorCode(error)!=="EEXIST")throw error;
+      try { const owner=JSON.parse(await readFile(guard,"utf8"));if(!ownerIsAlive(owner))await rm(guard,{force:true}); } catch { const info=await stat(guard).catch(()=>null);if(info&&Date.now()-info.mtimeMs>5*60*1000)await rm(guard,{force:true}); }
+      return;
+    }
+    try { await this.#recoverUnderGuard(); }
+    finally { await guardHandle.close();await rm(guard,{force:true}); }
+  }
+
+  async #recoverUnderGuard() {
     const names = await readdir(this.#jobsDir());
     for (const name of names.filter((value) => value.endsWith(".lock"))) {
       const lockPath = path.join(this.#jobsDir(), name);
@@ -302,12 +316,13 @@ export class JobStore {
         const info = await stat(lockPath);
         const id = name.slice(0, -5);
         const job = await this.get(id);
+        let confirmedDead = false;
         if (job?.type.startsWith("MEDIA_")) {
-          try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (owner.pid && processIsAlive(owner.pid)) continue; }
-          catch (error) { if (getErrorCode(error) === "ENOENT") continue; }
+          try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (ownerIsAlive(owner)) continue;confirmedDead=Boolean(owner.pid); }
+          catch (error) { if (getErrorCode(error) === "ENOENT" || Date.now()-info.mtimeMs<5*60*1000) continue; }
         }
         const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
-        if (Date.now() - info.mtimeMs < staleAfterMs) continue;
+        if (!confirmedDead && Date.now() - info.mtimeMs < staleAfterMs) continue;
         if (["PROCESSING", "VALIDATING"].includes(job?.status)) {
           await this.#write({
             ...job,
@@ -317,6 +332,8 @@ export class JobStore {
             updatedAt: new Date().toISOString(),
             nextAttemptAt: new Date().toISOString(),
             error: "Recovered after a stale worker lock.",
+            stage: "RECOVERED",
+            history: [...(job.history||[]),{status:"QUEUED",stage:"RECOVERED",at:new Date().toISOString()}].slice(-100),
           });
         }
         await rm(lockPath, { force: true });
@@ -396,4 +413,3 @@ function safeJobId(value) {
 function sanitizePayload(payload) { if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}; return JSON.parse(JSON.stringify(payload)); }
 function assertProjectId(projectId) { if (!isProjectId(projectId)) throw new Error("Invalid project id."); }
 function getErrorCode(error) { return error instanceof Error && "code" in error ? error.code : undefined; }
-function processIsAlive(pid) { try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code !== "ESRCH"; } }

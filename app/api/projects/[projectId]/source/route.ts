@@ -30,7 +30,8 @@ export async function GET(
   const uploadDir = path.join(getStorageRoot(), "uploads", projectId);
   const project = await loadProjectFile(projectId);
   const persistedPath = project?.source?.relativePath ? resolveStoragePath(project.source.relativePath) : null;
-  const disposition: Record<string, string> = new URL(request.url).searchParams.get("download") === "1" ? { "Content-Disposition": `attachment; filename="video-${projectId}.mp4"` } : {};
+  const extension = persistedPath ? path.extname(persistedPath) : ".mp4";
+  const disposition: Record<string, string> = new URL(request.url).searchParams.get("download") === "1" ? { "Content-Disposition": `attachment; filename="video-${projectId}${extension}"` } : {};
 
   let sourceName: string;
   try {

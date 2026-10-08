@@ -60,7 +60,7 @@ jobs:
       - name: Install media tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg espeak-ng
+          sudo apt-get install -y ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
 
       - name: Verify code
         run: npm run verify
@@ -134,13 +134,21 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install free local media tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
       - name: Build existing pinned Whisper implementation
         run: bash scripts/setup-whisper-ci.sh
       - name: Twenty-minute recording and three real clips
         run: node scripts/best-clips-e2e.mjs
       - name: Full editing with real Whisper subtitles
         run: node scripts/video-autoedit-e2e.mjs --with-whisper
+      - name: Build app for clip browser acceptance
+        run: npx next build
+      - name: Install isolated Chromium
+        run: |
+          npm install --prefix /tmp/clipforge-browser --no-save --no-package-lock playwright@1.56.1
+          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Upload long recording, generate and download three clips from mobile browser
+        run: node scripts/mobile-browser-e2e.mjs --clips-only
       - name: Preserve clips and validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -154,3 +162,4 @@ jobs:
             artifacts/best-clips/authored-narration.txt
             artifacts/video-autoedit/*.mp4
             artifacts/video-autoedit/evidence.json
+            artifacts/mobile-browser/*

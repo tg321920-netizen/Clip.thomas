@@ -20,7 +20,7 @@ export class LocalImageProvider {
     const filename = resolveStoragePath(relativePath); const info = await stat(filename);
     if (!info.isFile() || info.size <= 0) throw new WaitingResourceError(`La imagen ${scene.order} no está disponible.`);
     const probe = await probeMediaFile(filename);
-    if (!probe.video?.width || probe.video.width > 12000 || probe.video.height > 12000) throw new Error("Imagen inválida o demasiado grande.");
+    if (!probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000) throw new Error("Imagen inválida o demasiado grande. Utiliza una imagen de hasta doce megapíxeles.");
     return { filename, relativePath, provider: this.name };
   }
 }
@@ -132,7 +132,7 @@ export class SceneStoryService {
     args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);
     await onStage("PROCESSING", "ASSEMBLY", 65); await runMedia(process.env.FFMPEG_PATH || "ffmpeg", args);
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
-    const validation = await validateMp4(temporary, { requireAudio: true, duration: plan.duration, width, height, subtitleValidation: input.subtitles === false ? "NOT_REQUESTED" : "ASS_BURNED_WITH_MEASURED_VOICE_SEGMENTS" });
+    const validation = await validateMp4(temporary, { requireAudio: true, requireAudibleNarration:true, duration: plan.duration, width, height, subtitleValidation: input.subtitles === false ? "NOT_REQUESTED" : "ASS_BURNED_WITH_MEASURED_VOICE_SEGMENTS" });
     await rename(temporary, finalPath);
     const posterDir = path.join(getStorageRoot(), "uploads", projectId); await mkdir(posterDir, { recursive: true });
     await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", finalPath, "-frames:v", "1", path.join(posterDir, "poster.jpg")]);

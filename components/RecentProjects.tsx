@@ -16,6 +16,7 @@ export function RecentProjects() {
   const [loaded, setLoaded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [previewId,setPreviewId] = useState<string|null>(null);
 
   useEffect(() => {
     let active = true;
@@ -108,7 +109,7 @@ export function RecentProjects() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
             Proyectos
           </p>
-          <h2 className="mt-1 text-lg font-medium">Recientes</h2>
+          <h2 className="mt-1 text-lg font-medium">Originales y proyectos guardados</h2>
         </div>
         <span className="text-xs text-zinc-600">{projects.length} guardados</span>
       </div>
@@ -149,6 +150,8 @@ export function RecentProjects() {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" className="min-h-12 rounded-lg border border-white/15 px-4 py-3 text-sm" onClick={()=>setPreviewId(current=>current===project.id?null:project.id)}>Reproducir</button>
+                <a href={`${project.source.sourceUrl}?download=1`} download className="min-h-12 rounded-lg border border-white/15 px-4 py-3 text-sm">Descargar original</a>
                 <button
                   type="button"
                   onClick={() => openProject(project)}
@@ -166,6 +169,7 @@ export function RecentProjects() {
                   {deleting ? "Eliminando…" : "Eliminar"}
                 </button>
               </div>
+              {previewId===project.id&&<video controls playsInline preload="metadata" src={project.source.sourceUrl} poster={project.source.posterUrl} className="mt-4 max-h-80 w-full rounded-xl bg-black"/>}
             </article>
           );
         })}

@@ -53,7 +53,7 @@ export class VideoAutoEditService {
     }
     let silences = [];
     if (probe.audio) {
-      const scan = await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-v", "info", "-i", sourcePath, "-vn", "-af", "silencedetect=noise=-38dB:d=0.8", "-f", "null", "-"]);
+      const scan = await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-v", "info", "-i", sourcePath, "-vn", "-af", "silencedetect=noise=-50dB:d=0.8", "-f", "null", "-"]);
       let start = null;
       for (const match of scan.stderr.matchAll(/silence_(start|end): ([\d.]+)/g)) {
         if (match[1] === "start") start = Number(match[2]);
@@ -63,7 +63,9 @@ export class VideoAutoEditService {
     }
     const sceneScan = await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-v", "info", "-i", sourcePath, "-an", "-vf", "scale=160:-2,select='gt(scene,0.35)',showinfo", "-f", "null", "-"]);
     const sceneChanges = [...sceneScan.stderr.matchAll(/pts_time:([\d.]+)/g)].map(m => Number(m[1]));
-    const speech = (transcript?.segments || []).flatMap(s => s.words?.length ? s.words : [s]);
+    // Coarse ASR segments often span long quiet gaps; only reliable word bounds
+    // can protect a specific word. Acoustic cuts keep 350 ms of each pause edge.
+    const speech = (transcript?.segments || []).flatMap(s => s.words || []).filter(w => w.endTime-w.startTime<=1.2 && (w.probability===undefined || w.probability>=0.5));
     const ranges = buildKeepRanges(probe.duration, silences, intensity, speech).map(r => ({ start: Math.ceil(r.start * 30) / 30, end: Math.floor(r.end * 30) / 30 })).filter(r => r.end > r.start);
     if (ranges.length > 120) throw new Error("El video requiere demasiados cortes; utiliza una intensidad más suave.");
     const directory = path.join(getStorageRoot(), "auto-videos", outputProjectId); await mkdir(directory, { recursive: true });
@@ -80,12 +82,18 @@ export class VideoAutoEditService {
     await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "1", "-i", concat, "-c", "copy", "-movflags", "+faststart", cleanPath]);
     const cleanProbe = await probeMediaFile(cleanPath);
     const duration = cleanProbe.duration, clipId = randomUUID(), now = new Date().toISOString();
-    const trackTranscript = transcript?.status === "COMPLETED" ? remapTranscript(transcript, ranges) : undefined;
+    let trackTranscript = transcript?.status === "COMPLETED" ? remapTranscript(transcript, ranges) : undefined;
     const clip = { id: clipId, projectId: outputProjectId, candidateId: "full-edit", startTime: 0, endTime: duration, duration, status: "PROCESSING", edit: { framingMode: "FIT", motionIntensity:intensity, subtitlesEnabled: subtitles && Boolean(trackTranscript), subtitleStyle: "CLEAN", quality: "FAST" }, render: null, error: null, createdAt: now, updatedAt: now };
-    if (trackTranscript && subtitles) clip.subtitles = buildSubtitleTrack({ transcript: trackTranscript, clip, style: "CLEAN" });
     const source = { ...original.source, projectId: outputProjectId, videoId: randomUUID(), originalName: `editado-${original.source.originalName}`, storedName: "edited-clean.mp4", relativePath: path.posix.join("auto-videos", outputProjectId, "edited-clean.mp4"), durationSeconds: duration, width: this.width, height: this.height, hasAudio: Boolean(probe.audio), codec: "h264", fps: 30, container: "mp4", aspectRatio: "9:16", sourceUrl: `/api/projects/${outputProjectId}/source`, posterUrl: `/api/projects/${outputProjectId}/poster` };
     const project = { id: outputProjectId, createdAt: now, source, clips: [clip], transcript: trackTranscript, autoEditEvidence: { originalProjectId: input.projectId, originalDuration: probe.duration, ranges, silences, sceneChanges, intensity, removedSeconds: probe.duration - ranges.reduce((n,r) => n + r.end - r.start, 0), framing: "SAFE_FIT_NO_SPEAKER_DETECTION" } };
     await onStage("PROCESSING", "SUBTITLES", 75);
+    if (subtitles && probe.audio) {
+      // Re-transcribe the real edited audio. This also resolves coarse source
+      // segments crossing a removed pause without duplicating their text.
+      project.transcript = undefined; await replaceProjectFile(outputProjectId,project);
+      await transcribeProject(outputProjectId); trackTranscript=(await loadProjectFile(outputProjectId)).transcript;project.transcript=trackTranscript;
+      clip.subtitles=buildSubtitleTrack({transcript:trackTranscript,clip,style:"CLEAN"});clip.edit.subtitlesEnabled=true;
+    }
     clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip });
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
     const validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: Boolean(probe.audio), duration, width: this.width, height: this.height });
