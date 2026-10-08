@@ -8,7 +8,7 @@ No se aceptan funciones simuladas. Upload, análisis, metadatos, transcripción,
 
 ## Estado actual
 
-La reparación está preparada para revisión, pero **no se declara completada la validación de build, Android ni calidad audiovisual comercial**. Consulta [el estado verificado de Studio](docs/CLIPFORGE_STUDIO_VERIFICATION.md) para evidencias, limitaciones y el ensayo acotado.
+La reparación tiene **lint, TypeScript, tests y build PASS en [GitHub CI](https://github.com/tg321920-netizen/Clip.thomas/actions/runs/37848729008)**. Android físico y calidad audiovisual comercial siguen pendientes. Consulta [el estado verificado de Studio](docs/CLIPFORGE_STUDIO_VERIFICATION.md) para evidencias, limitaciones y el ensayo acotado.
 
 Flujo disponible:
 

@@ -10,6 +10,8 @@ Fecha de comprobación: 2026-10-08. Este documento describe la reparación de St
 - Se integraron en la copia de trabajo sus 105 archivos cambiados. Los conflictos se resolvieron conservando la validación de medios de rescate y las correcciones de CONVERSATION, KV, OAuth y procesamiento de publicaciones de foundation. Las integraciones permanecen disponibles en opciones avanzadas, con publicación OFF.
 - El parche local anterior se conservó antes de editar. No se mezclaron ramas de experimentos abandonados ni se modificaron otros repositorios.
 - Esta sesión dispone de una instantánea de archivos; no tiene un checkout Git local completo. Los hashes y padres se leen de GitHub. No se simula un commit local ni un PR.
+- Commits de código guardados y verificados en GitHub: `6df9a43dcf11a197bd58427e27cf2464af4692db` (integración con los dos padres anteriores) y `8004a2ef73169dd008863df78b645546868be773` (evitar builds duplicados al abrir un PR borrador). La documentación posterior solo registra evidencias y corrige el blueprint de ensayo. No se actualizó `main` ni foundation.
+- Se intentó crear un PR una sola vez: GitHub devolvió **403 Resource not accessible by integration**. Es un bloqueo de permisos de pull requests de la integración; la escritura de commits/ref sí está permitida. No existe PR nuevo. [Comparación preparada para revisión](https://github.com/tg321920-netizen/Clip.thomas/compare/main...codex/clipforge-core-rescue).
 
 ## Cambios funcionales
 
@@ -29,14 +31,16 @@ Los logs se conservan en `artifacts/studio-verification/` del paquete local. No 
 
 | Comprobación | Resultado observado |
 |---|---|
-| Suite completa sin renders | FAIL: 74 de 75 archivos pasan; falla `vercel-ignore-build.test.mjs` |
+| GitHub CI del código reparado | **PASS**: [run 37848729008](https://github.com/tg321920-netizen/Clip.thomas/actions/runs/37848729008), commit `8004a2ef73169dd008863df78b645546868be773`, job `113556052040`. Instalación, lint, TypeScript, tests y build terminan correctamente |
+| Tests en GitHub CI | **PASS: 275 casos, 274 PASS, 0 FAIL, 1 SKIP**. La generación multimedia opcional se omite de forma explícita |
+| Suite local sin renders | FAIL del entorno: 74 de 75 archivos pasan; falla `vercel-ignore-build.test.mjs` |
 | Causa del fallo restante | El subproceso Node no entrega stdout en esta ejecución restringida. Las cuatro mismas invocaciones del CLI, ejecutadas desde Python, pasan sus códigos y mensajes. El test original se conserva; esto no convierte la suite en PASS |
 | Regresiones enfocadas | PASS: 51 casos de cliente, handlers, reanudación, integridad, proveedores, escenas, almacenamiento, filtros y recuperación |
-| Sintaxis de módulos Node | PASS en la revisión local; no sustituye TypeScript/build |
+| Sintaxis de módulos Node | PASS: 243 módulos en la revisión local; no sustituye TypeScript/build |
 | YAML de workflows | PASS: parseo local |
-| Lint | FAIL de ejecución: `eslint` no instalado, exit 127 |
-| TypeScript | FAIL de ejecución: `tsc` no instalado, exit 127 |
-| Build | FAIL de ejecución: la verificación previa se detiene por falta de `eslint`, exit 127 |
+| Lint | **PASS en GitHub CI**. Local: `eslint` no instalado, exit 127 |
+| TypeScript | **PASS en GitHub CI**. Local: `tsc` no instalado, exit 127 |
+| Build | **PASS en GitHub CI**: compilación, TypeScript y páginas/rutas de las cuatro funciones. Local: faltan dependencias, exit 127 |
 | Dependencias | Sin `node_modules`; instalación offline falla por cache vacía. La conexión de red del shell no está disponible. No se alteran los tests para ocultar este bloqueo |
 | Transferencia mayor de 10 MB | PASS en código: handlers reales reconstruyen 73.900.000 bytes en 36 fragmentos, con interrupción, reinicio, SHA-256 exacto y un solo trabajo encolado |
 | Cliente de subida | PASS en código: más de 10 MB, pausa, reanudación sin localStorage y rechazo de un centro de archivo modificado |
@@ -50,7 +54,7 @@ Los logs se conservan en `artifacts/studio-verification/` del paquete local. No 
 | Producción | NO MODIFICADA |
 | Gastos, servicios nuevos y publicaciones | NO ACTIVADOS |
 
-No se puede declarar terminada una aplicación comercial mientras falten build, ensayo desplegado autorizado y pruebas audiovisuales/editoriales reales.
+El build ya está verificado en GitHub. No se puede declarar terminada una aplicación comercial mientras falten el ensayo desplegado autorizado y las pruebas audiovisuales/editoriales reales. Los cambios posteriores de documentación no modifican el código comprobado por ese run.
 
 ## Almacenamiento
 
@@ -83,7 +87,7 @@ Fuentes oficiales, consultadas 2026-10-08:
 
 ## Prueba de ensayo preparada, pendiente de autorización
 
-1. Completar lint, TypeScript y build en un entorno con dependencias; conservar el fallo de guard si persiste fuera del sandbox. Revisar el commit/PR concreto antes de cambiar Render.
+1. Lint, TypeScript y build completados con PASS en GitHub CI. El guard también pasa fuera del sandbox. Revisar la comparación y commits concretos antes de cambiar Render; el PR permanece bloqueado por permisos.
 2. Autorizar un ensayo aislado usando el blueprint preparado. Confirmar claves de propietario existentes y límites; no cambiar `clipforge-runtime-free` ni `storymotion`.
 3. Subir desde Android `1000227410.mp4`, aproximadamente 73,9 MB, propio o autorizado. Pausar una vez, reanudar y comparar SHA-256/FFprobe/proyecto único. Esta es la primera aceptación exigida y no genera un video nuevo.
 4. Con un original autorizado y una aprobación separada, generar UN lote de tres clips distintos de 30–60 s. Sin material suficiente, detener y pedir ajuste, sin completar con clips repetidos. Límite: un intento inicial por pieza; conservar parciales/logs ante fallo, diagnosticar antes de autorizar otro render. Render de clip: máximo 15 minutos. Medir tiempo y costo reales.

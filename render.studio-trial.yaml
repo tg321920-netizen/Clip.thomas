@@ -7,7 +7,7 @@ services:
     region: virginia
     repo: https://github.com/tg321920-netizen/Clip.thomas
     branch: codex/clipforge-core-rescue
-    autoDeployTrigger: off
+    autoDeployTrigger: "off"
     buildCommand: bash scripts/render-native-free-build.sh
     startCommand: node scripts/render-runtime-free.mjs
     healthCheckPath: /api/health
