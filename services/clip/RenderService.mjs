@@ -1,9 +1,9 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { buildSpeechZoomFilter } from "../reframe/AutoReframeService.mjs";
-import { validateMp4 } from "../media-processing/MediaValidationService.mjs";
+import { validateMp4, probeMediaFile } from "../media-processing/MediaValidationService.mjs";
 import { buildAssDocument } from "../subtitles/SubtitleService.mjs";
 
 const QUALITY = {
@@ -27,6 +27,7 @@ export class RenderService {
       clip.id,
     );
     const outputPath = path.join(outputDir, "render.mp4");
+    const temporaryPath = path.join(outputDir, "render.partial.mp4");
 
     await mkdir(outputDir, { recursive: true });
 
@@ -42,6 +43,8 @@ export class RenderService {
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
     let filter = buildVideoFilter(clip?.edit?.framingMode || "FIT", this.width, this.height);
+    filter += ",fps=30,setpts=PTS-STARTPTS";
+    if (clip?.edit?.motionIntensity) filter += `,${buildSafeMotionFilter(clip.edit.motionIntensity,this.width,this.height)}`;
     let subtitlesBurned = false;
     let autoReframeApplied = false;
 
@@ -78,10 +81,10 @@ export class RenderService {
       "-y",
       "-filter_threads", "1",
       "-threads", "2",
-      "-i",
-      sourcePath,
       "-ss",
       startTime.toFixed(3),
+      "-i",
+      sourcePath,
       "-t",
       duration.toFixed(3),
       "-map",
@@ -109,7 +112,7 @@ export class RenderService {
       "-progress",
       "pipe:1",
       "-nostats",
-      outputPath,
+      temporaryPath,
     ];
 
     await runFfmpeg(
@@ -119,7 +122,9 @@ export class RenderService {
       onProgress,
     );
 
-    const validation = await validateMp4(outputPath, { requireAudio: project.source.hasAudio !== false, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
+    const requireAudio = project.source.hasAudio ?? Boolean((await probeMediaFile(sourcePath)).audio);
+    const validation = await validateMp4(temporaryPath, { requireAudio, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
+    await rename(temporaryPath, outputPath);
     const probe = await probeVideo(outputPath);
     if (probe.width !== this.width || probe.height !== this.height) {
       throw new Error(
@@ -147,6 +152,14 @@ export class RenderService {
       autoReframeApplied,
     };
   }
+}
+
+export function buildSafeMotionFilter(intensity,width,height) {
+  const amplitude = { GENTLE:0, NORMAL:0.015, DYNAMIC:0.03 }[intensity];
+  if (amplitude === undefined) throw new Error("Invalid motion intensity.");
+  if (amplitude === 0) return "null";
+  const factor = `${1-amplitude}+${amplitude}*cos(2*PI*t/18)`;
+  return `scale=w='trunc(iw*(${factor})/2)*2':h='trunc(ih*(${factor})/2)*2':eval=frame,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:eval=frame,setsar=1`;
 }
 
 export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {

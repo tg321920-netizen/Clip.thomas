@@ -113,3 +113,31 @@ jobs:
 
       - name: News Mode end-to-end
         run: npm run news:e2e
+
+  real-whisper-clips:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install free local media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+      - name: Build existing pinned Whisper implementation
+        run: bash scripts/setup-whisper-ci.sh
+      - name: Twenty-minute recording and three real clips
+        run: node scripts/best-clips-e2e.mjs
+      - name: Preserve clips and validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipforge-three-clips-media
+          path: |
+            artifacts/best-clips/clip-*.mp4
+            artifacts/best-clips/clip-*.jpg
+            artifacts/best-clips/podcast-20m.mp4
+            artifacts/best-clips/evidence.json
+            artifacts/best-clips/authored-narration.txt

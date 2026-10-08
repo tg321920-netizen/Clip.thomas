@@ -1,4 +1,5 @@
 import { scoreCandidate } from "./ViralScoreService.mjs";
+import { windowEnergy } from "./AudioEnergyService.mjs";
 
 const DEFAULTS = {
   minDuration: 15,
@@ -13,7 +14,7 @@ export class TranscriptCandidateProvider {
     this.options = normalizeAnalysisOptions(options);
   }
 
-  async analyze({ transcript, options = {} }) {
+  async analyze({ transcript, options = {}, audioEnergyWindows = [] }) {
     const config = normalizeAnalysisOptions({ ...this.options, ...options });
     const segments = normalizeSegments(transcript?.segments);
 
@@ -24,6 +25,7 @@ export class TranscriptCandidateProvider {
     const windows = buildWindows(segments, config);
     const scored = windows
       .map((window) => {
+        window.audioEnergy = windowEnergy(window,audioEnergyWindows);
         const scoring = scoreCandidate(window);
         return {
           ...window,

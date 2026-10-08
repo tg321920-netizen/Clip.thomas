@@ -9,6 +9,7 @@ import { buildSubtitleTrack } from "../subtitles/SubtitleService.mjs";
 import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
+import { measureAudioEnergy, sentenceSegments } from "./AudioEnergyService.mjs";
 
 export class BestClipsService {
   constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; }
@@ -22,7 +23,9 @@ export class BestClipsService {
       catch (error) { if (/not installed|ENOENT|MODEL_PATH|required|not found/i.test(error.message)) throw new WaitingResourceError("Whisper no está configurado. Se necesita una transcripción real para elegir momentos y crear subtítulos."); throw error; }
     }
     await onStage("PROCESSING", "SELECTING", 35);
-    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: original.transcript, options: { minDuration, maxDuration, targetDuration: (minDuration + maxDuration) / 2, maxCandidates: 50 } });
+    const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
+    const selectionTranscript = { ...original.transcript, segments: sentenceSegments(original.transcript.segments) };
+    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, options: { minDuration, maxDuration, targetDuration: (minDuration + maxDuration) / 2, maxCandidates: 50 } });
     const selected = [];
     for (const candidate of candidates) {
       if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
@@ -34,7 +37,7 @@ export class BestClipsService {
     const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false } };
     const results = [];
     for (const candidate of selected) {
-      const clip = { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "FIT", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "FAST" }, title: candidate.title, reason: candidate.reason, createdAt: now, updatedAt: now, error: null };
+      const clip = { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "FIT", motionIntensity:input.intensity||"NORMAL", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "FAST" }, title: candidate.title, reason: candidate.reason, createdAt: now, updatedAt: now, error: null };
       if (input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
       clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
       project.clips.push(clip);
