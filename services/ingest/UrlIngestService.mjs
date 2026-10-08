@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import {
   mkdir,
-  readFile,
   readdir,
   rm,
   stat,

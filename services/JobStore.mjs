@@ -9,8 +9,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { isProjectId } from "../lib/project-id.mjs";
-import { getStorageRoot } from "../lib/storage-paths.mjs";
+import { getStorageRoot, resolveStoragePath } from "../lib/storage-paths.mjs";
+import { validateMp4 } from "./media-processing/MediaValidationService.mjs";
 
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
@@ -42,6 +44,13 @@ export class JobStore {
   async enqueueMedia(type, id, payload = {}) {
     if (!["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"].includes(type)) throw new Error("Unsupported media job.");
     return this.enqueue(type, id, { payload });
+  }
+
+  async listMedia(limit = 30) {
+    await this.#ensureDirectory();
+    const names = await readdir(this.#jobsDir());
+    const jobs = await Promise.all(names.filter(n => /^(story|videoedit|bestclips)-.*\.json$/.test(n)).map(n => this.get(n.slice(0, -5))));
+    return jobs.filter(Boolean).sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, Math.min(100, Math.max(1,limit)));
   }
 
   async transition(id, status, stage, progress = null, patch = {}) {
@@ -137,7 +146,7 @@ export class JobStore {
       payload: sanitizePayload(options.payload),
       status: "QUEUED",
       progress: 0,
-      attempts: existing?.status === "FAILED" || restartCompleted ? 0 : (existing?.attempts ?? 0),
+      attempts: ["FAILED", "WAITING_RESOURCE", "CANCELLED"].includes(existing?.status) || restartCompleted ? 0 : (existing?.attempts ?? 0),
       maxAttempts: existing?.maxAttempts ?? this.maxAttempts,
       error: null,
       createdAt: existing?.createdAt ?? now,
@@ -214,7 +223,8 @@ export class JobStore {
     const lockPath = this.#lockPath(id);
     try {
       await stat(lockPath);
-      await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
+      if (job.type.startsWith("MEDIA_")) await writeFile(lockPath, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), { encoding: "utf8" });
+      else await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
       return true;
     } catch (error) {
       if (getErrorCode(error) === "ENOENT") return false;
@@ -225,6 +235,14 @@ export class JobStore {
   async complete(job) {
     const media = job.type.startsWith("MEDIA_");
     if (media && job.result?.validation?.valid !== true) throw new Error("Media jobs need real validation evidence before READY.");
+    if (media) {
+      const outputs = job.result.clips || [job.result];
+      if (!outputs.length) throw new Error("No media outputs exist.");
+      for (const output of outputs) {
+        if (!output.relativePath) throw new Error("No result file is associated with this job.");
+        output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation });
+      }
+    }
     const fresh = await this.get(job.id);
     if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
     const completed = {
@@ -266,7 +284,7 @@ export class JobStore {
   async #tryLock(id) {
     try {
       const handle = await open(this.#lockPath(id), "wx");
-      await handle.writeFile(new Date().toISOString(), "utf8");
+      await handle.writeFile(id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) : new Date().toISOString(), "utf8");
       await handle.close();
       return true;
     } catch (error) {
@@ -284,6 +302,10 @@ export class JobStore {
         const info = await stat(lockPath);
         const id = name.slice(0, -5);
         const job = await this.get(id);
+        if (job?.type.startsWith("MEDIA_")) {
+          try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (owner.pid && processIsAlive(owner.pid)) continue; }
+          catch (error) { if (getErrorCode(error) === "ENOENT") continue; }
+        }
         const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
         if (Date.now() - info.mtimeMs < staleAfterMs) continue;
         if (["PROCESSING", "VALIDATING"].includes(job?.status)) {
@@ -306,7 +328,7 @@ export class JobStore {
     for (const name of names.filter((value) => value.endsWith(".json"))) {
       const id = name.slice(0, -5);
       const job = await this.get(id);
-      if (!job || job.type !== "RENDER_CLIP" || job.status !== "PROCESSING") continue;
+      if (!job || !(job.type === "RENDER_CLIP" || job.type.startsWith("MEDIA_")) || !["PROCESSING", "VALIDATING"].includes(job.status)) continue;
       const lastActivity = Date.parse(job.updatedAt || job.startedAt || job.createdAt);
       if (Number.isFinite(lastActivity) && Date.now() - lastActivity < this.renderStaleAfterMs) continue;
       try { await stat(this.#lockPath(id)); continue; }
@@ -326,7 +348,7 @@ export class JobStore {
   async #write(job) {
     await this.#ensureDirectory();
     const target = this.#jobPath(job.id);
-    const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temp, JSON.stringify(job, null, 2), { encoding: "utf8", flag: "wx" });
     await rename(temp, target);
   }
@@ -374,3 +396,4 @@ function safeJobId(value) {
 function sanitizePayload(payload) { if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}; return JSON.parse(JSON.stringify(payload)); }
 function assertProjectId(projectId) { if (!isProjectId(projectId)) throw new Error("Invalid project id."); }
 function getErrorCode(error) { return error instanceof Error && "code" in error ? error.code : undefined; }
+function processIsAlive(pid) { try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code !== "ESRCH"; } }

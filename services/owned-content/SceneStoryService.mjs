@@ -108,21 +108,25 @@ export class SceneStoryService {
       await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-filter_threads", "1", "-i", resolved[i].filename, "-vf", buildSceneMotion(scene.movement, frames, width, height), "-t", String(seconds), "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-pix_fmt", "yuv420p", "-r", "30", filename]);
       parts.push(filename); await onStage("PROCESSING", "SCENES", 30 + Math.round((i + 1) / plan.scenes.length * 35));
     }
-    const graph = parts.map((_, i) => `[${i}:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[v${i}]`);
-    let current = "v0", offset = 0;
+    // Join two decoders at a time to keep 1080p rendering within a small worker's memory.
+    let joined = parts[0], offset = 0;
     for (let i = 1; i < parts.length; i++) {
       offset += plan.scenes[i - 1].duration;
-      graph.push(`[${current}][v${i}]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[x${i}]`); current = `x${i}`;
+      const next = path.join(directory, `joined-${i}.mp4`);
+      await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-y","-filter_complex_threads","1","-threads","1","-i",joined,"-threads","1","-i",parts[i],"-filter_complex",`[0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[a];[1:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[b];[a][b]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[out]`,"-map","[out]","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","20","-pix_fmt","yuv420p",next]);
+      joined = next;
     }
+    const graph = ["[0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[visual]"];
+    const current = "visual";
     const ass = path.join(directory, "subtitles.ass"); await writeFile(ass, storyAss(cues, width, height));
     const finalLabel = input.subtitles === false ? current : "captioned";
     if (input.subtitles !== false) graph.push(`[${current}]ass='${filterPath(ass)}'[${finalLabel}]`);
-    const args = ["-v", "error", "-y", "-filter_complex_threads", "1", ...parts.flatMap(filename => ["-i", filename]), "-i", narration];
-    let audioMap = `${parts.length}:a:0`;
+    const args = ["-v", "error", "-y", "-filter_complex_threads", "1", "-threads","1","-i", joined, "-i", narration];
+    let audioMap = "1:a:0";
     if (input.music) {
       if (!/^story-assets\/[a-f0-9-]+\.(wav|mp3|m4a)$/.test(input.music)) throw new Error("Recurso de música no autorizado.");
       args.push("-stream_loop", "-1", "-i", resolveStoragePath(input.music));
-      graph.push(`[${parts.length}:a]asplit=2[voice][side];[${parts.length + 1}:a]volume=0.12,afade=t=in:d=1,afade=t=out:st=${plan.duration - 1}:d=1[music];[music][side]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400[ducked];[voice][ducked]amix=inputs=2:duration=first,loudnorm=I=-16:TP=-1.5:LRA=11[mixed]`); audioMap = "[mixed]";
+      graph.push(`[1:a]asplit=2[voice][side];[2:a]volume=0.12,afade=t=in:d=1,afade=t=out:st=${plan.duration - 1}:d=1[music];[music][side]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400[ducked];[voice][ducked]amix=inputs=2:duration=first,loudnorm=I=-16:TP=-1.5:LRA=11[mixed]`); audioMap = "[mixed]";
     }
     const temporary = path.join(directory, "render.partial.mp4"), finalPath = path.join(directory, "render.mp4");
     args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);

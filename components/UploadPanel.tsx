@@ -15,7 +15,7 @@ type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
 const PROJECT_OPEN_EVENT = "clipforge:project-open";
 
-export function UploadPanel() {
+export function UploadPanel({ onReady, compact = false }: { onReady?: (video: UploadedVideo) => void; compact?: boolean } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [stage, setStage] = useState("Subiendo");
@@ -36,12 +36,13 @@ export function UploadPanel() {
       setProgress(null);
       setError(null);
       setResult(video);
+      onReady?.(video);
       setState("done");
     };
 
     window.addEventListener(PROJECT_OPEN_EVENT, openProject);
     return () => window.removeEventListener(PROJECT_OPEN_EVENT, openProject);
-  }, []);
+  }, [onReady]);
 
   function chooseFile(nextFile: File | undefined) {
     if (!nextFile) return;
@@ -54,6 +55,7 @@ export function UploadPanel() {
 
     setFile(nextFile);
     setResult(null);
+    setQueuedId(null);
     setProgress(null);
 
     if (!validation.ok) {
@@ -115,6 +117,7 @@ export function UploadPanel() {
         onQueued: (id) => { setQueuedId(id); window.dispatchEvent(new Event("clipforge:project-created")); },
       });
       setResult(video as UploadedVideo); setState("done"); setProgress(100);
+      onReady?.(video as UploadedVideo);
       window.dispatchEvent(new Event("clipforge:project-created"));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Conexión interrumpida. Puedes reanudar seleccionando el mismo archivo.");
@@ -280,7 +283,7 @@ export function UploadPanel() {
               Proyecto: {result.projectId}
             </p>
 
-            <ProjectPipeline
+            {!compact && <details className="mt-5"><summary className="cursor-pointer py-3 text-sm text-violet-200">Opciones avanzadas del proyecto</summary><ProjectPipeline
               key={`pipeline:${result.projectId}`}
               projectId={result.projectId}
             />
@@ -290,7 +293,7 @@ export function UploadPanel() {
                 projectId={result.projectId}
                 enabled
               />
-            </div>
+            </div></details>}
           </div>
         </div>
       )}

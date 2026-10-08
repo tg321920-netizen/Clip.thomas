@@ -18,6 +18,16 @@ export async function POST(request: Request) {
     await mkdir(path.dirname(filename), { recursive: true }); handle = await open(temporary, "wx"); let bytes = 0;
     for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > 4 * 1024 * 1024) throw new Error("El recurso supera 4 MB. Utiliza una versión más pequeña."); await writeAll(handle, chunk); }
     await handle.sync(); await handle.close(); handle = null;
+    const prefixHandle = await open(temporary, "r"); const prefix = Buffer.alloc(16); await prefixHandle.read(prefix,0,16,0); await prefixHandle.close();
+    const signatures: Record<string, boolean> = {
+      jpg: prefix[0] === 0xff && prefix[1] === 0xd8,
+      png: prefix.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),
+      webp: prefix.toString("ascii",0,4) === "RIFF" && prefix.toString("ascii",8,12) === "WEBP",
+      wav: prefix.toString("ascii",0,4) === "RIFF" && prefix.toString("ascii",8,12) === "WAVE",
+      mp3: prefix.toString("ascii",0,3) === "ID3" || (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0),
+      m4a: prefix.toString("ascii",4,8) === "ftyp",
+    };
+    if (!signatures[extension]) throw new Error("El contenido del recurso no corresponde al tipo de archivo declarado.");
     const probe = await probeMediaFile(temporary);
     if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 12000 || probe.video.height > 12000 : !probe.audio) throw new Error("El recurso no contiene una imagen o pista de audio válida.");
     await rename(temporary, filename);

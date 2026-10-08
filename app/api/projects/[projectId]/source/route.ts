@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { parseByteRange } from "@/lib/http-range.mjs";
 import { isProjectId } from "@/lib/project-id.mjs";
 import { getStorageRoot } from "@/services/StorageService";
+import { loadProjectFile } from "@/lib/project-files.mjs";
+import { resolveStoragePath } from "@/lib/storage-paths.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,9 +28,14 @@ export async function GET(
   }
 
   const uploadDir = path.join(getStorageRoot(), "uploads", projectId);
+  const project = await loadProjectFile(projectId);
+  const persistedPath = project?.source?.relativePath ? resolveStoragePath(project.source.relativePath) : null;
+  const disposition: Record<string, string> = new URL(request.url).searchParams.get("download") === "1" ? { "Content-Disposition": `attachment; filename="video-${projectId}.mp4"` } : {};
 
   let sourceName: string;
   try {
+    if (persistedPath) sourceName = path.basename(persistedPath);
+    else {
     const entries = await readdir(uploadDir);
     const found = entries.find((entry) => SOURCE_PATTERN.test(entry));
     if (!found) {
@@ -38,6 +45,7 @@ export async function GET(
       );
     }
     sourceName = found;
+    }
   } catch (error) {
     if (getErrorCode(error) === "ENOENT") {
       return NextResponse.json(
@@ -53,7 +61,7 @@ export async function GET(
     );
   }
 
-  const filePath = path.join(uploadDir, sourceName);
+  const filePath = persistedPath || path.join(uploadDir, sourceName);
 
   try {
     const fileStat = await stat(filePath);
@@ -65,6 +73,7 @@ export async function GET(
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 200,
         headers: {
+          ...disposition,
           "Content-Type": mimeType,
           "Content-Length": String(fileStat.size),
           "Accept-Ranges": "bytes",
@@ -91,6 +100,7 @@ export async function GET(
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 206,
       headers: {
+        ...disposition,
         "Content-Type": mimeType,
         "Content-Length": String(end - start + 1),
         "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,

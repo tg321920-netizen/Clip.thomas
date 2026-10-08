@@ -21,7 +21,7 @@ export async function GET(
 ) {
   const { projectId, clipId } = await context.params;
   const download = new URL(request.url).searchParams.get("download") === "1";
-  const disposition = download ? { "Content-Disposition": `attachment; filename="clip-${clipId}.mp4"` } : {};
+  const disposition: Record<string, string> = download ? { "Content-Disposition": `attachment; filename="clip-${clipId}.mp4"` } : {};
 
   if (!isProjectId(projectId) || !isProjectId(clipId)) {
     return NextResponse.json(
