@@ -95,7 +95,11 @@ export function convertWhisperCppPayload(payload) {
         return null;
       }
 
-      const words = convertTokens(segment?.tokens,startMs,endMs);
+      const timedWords = convertTokens(segment?.tokens,startMs,endMs);
+      // Some CLI modes provide offsets for only a few tokens. Such metadata
+      // cannot replace the complete transcript in captions or protect cuts.
+      const letters = value => String(value).normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+      const words = letters(timedWords.map(word => word.word).join(" ")) === letters(text) ? timedWords : [];
 
       return {
         start: startMs / 1000,

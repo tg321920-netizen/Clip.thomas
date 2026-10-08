@@ -51,3 +51,32 @@ test("whisper.cpp conversion ignores invalid segments and special tokens", () =>
   assert.equal(normalized.segments[0].words.length, 1);
   assert.equal(normalized.segments[0].words[0].text, "válido");
 });
+
+test("incomplete token timings preserve the full segment text for subtitles", () => {
+  const converted = convertWhisperCppPayload({ transcription: [{
+    offsets: { from: 0, to: 5000 }, text: " Esta historia conserva todas sus palabras.",
+    tokens: [
+      { text: " Esta", offsets: { from: 0, to: 500 } },
+      { text: " historia", offsets: { from: -1, to: -1 } },
+      { text: " conserva", offsets: { from: -1, to: -1 } },
+      { text: " todas", offsets: { from: -1, to: -1 } },
+      { text: " sus", offsets: { from: -1, to: -1 } },
+      { text: " palabras.", offsets: { from: 4500, to: 5000 } },
+    ],
+  }] });
+  assert.equal(converted.segments[0].text, "Esta historia conserva todas sus palabras.");
+  assert.equal(converted.segments[0].words, undefined);
+});
+
+test("complete subword token timings are merged without dropping accents or punctuation", () => {
+  const converted = convertWhisperCppPayload({ transcription: [{
+    offsets: { from: 0, to: 2000 }, text: " cooperación natural.",
+    tokens: [
+      { text: " coop", offsets: { from: 0, to: 400 } },
+      { text: "eración", offsets: { from: 400, to: 900 } },
+      { text: " natural", offsets: { from: 900, to: 1700 } },
+      { text: ".", offsets: { from: 1700, to: 1800 } },
+    ],
+  }] });
+  assert.deepEqual(converted.segments[0].words.map(word=>word.word),["cooperación","natural."]);
+});

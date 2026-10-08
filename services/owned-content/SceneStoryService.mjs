@@ -5,6 +5,7 @@ import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs"
 import { replaceProjectFile } from "../../lib/project-files.mjs";
 import { EspeakNewsTtsProvider } from "../news/EspeakNewsTtsProvider.mjs";
 import { runMedia, validateMp4, probeMediaFile } from "../media-processing/MediaValidationService.mjs";
+import { hashFile } from "../ingest/ResumableUploadStore.mjs";
 
 export class WaitingResourceError extends Error {
   constructor(message) { super(message); this.code = "WAITING_RESOURCE"; }
@@ -78,13 +79,13 @@ export class SceneStoryService {
     for (const scene of plan.scenes) resolved.push(await this.images.resolve(scene, input, plan.manifest));
     const imageHashes = await Promise.all(resolved.map(async r => createHash("sha256").update(await readFile(r.filename)).digest("hex")));
     if (new Set(imageHashes).size < 6) throw new WaitingResourceError("La historia necesita al menos seis imágenes diferentes. No se sustituirán por fondos vacíos.");
-    const voiceSegments = [], cues = []; let rawDuration = 0;
+    const voiceSegments = [], cues = []; let rawDuration = 0,reusedVoiceSegments=0,reusedScenes=0;
     await onStage("PROCESSING", "NARRATION", 0);
     for (const scene of plan.scenes) {
       scene.audioStart = rawDuration;
       for (const text of captionPhrases(scene.narration)) {
         const filename = path.join(directory, `voice-${voiceSegments.length}.wav`);
-        try { await this.tts.synthesize({ text, outputPath: filename }); }
+        try { if(await reuseVerifiedStage(filename,{text,provider:this.tts.name,voice:this.tts.voice,speed:this.tts.speed},()=>this.tts.synthesize({ text, outputPath: filename })))reusedVoiceSegments++; }
         catch (error) { if (/not installed|ENOENT|configured/i.test(error.message)) throw new WaitingResourceError("La voz local en español no está disponible. Instala/configura eSpeak en el worker o proporciona un proveedor autorizado."); throw error; }
         const duration = (await probeMediaFile(filename)).duration;
         if (!(duration > 0)) throw new Error("El proveedor de voz no produjo audio válido.");
@@ -106,7 +107,7 @@ export class SceneStoryService {
       const scene = plan.scenes[i], filename = path.join(directory, `scene-${i}.mp4`);
       const seconds = scene.duration + (i < plan.scenes.length - 1 ? transition : 0);
       const frames = Math.ceil(seconds * 30);
-      await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-filter_threads", "1", "-i", resolved[i].filename, "-vf", buildSceneMotion(scene.movement, frames, width, height), "-t", String(seconds), "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-pix_fmt", "yuv420p", "-r", "30", filename]);
+      if(await reuseVerifiedStage(filename,{image:imageHashes[i],movement:scene.movement,frames,width,height,seconds},()=>runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-filter_threads", "1", "-i", resolved[i].filename, "-vf", buildSceneMotion(scene.movement, frames, width, height), "-t", String(seconds), "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-pix_fmt", "yuv420p", "-r", "30", filename])))reusedScenes++;
       parts.push(filename); await onStage("PROCESSING", "SCENES", 30 + Math.round((i + 1) / plan.scenes.length * 35));
     }
     // Join two decoders at a time to keep 1080p rendering within a small worker's memory.
@@ -139,11 +140,12 @@ export class SceneStoryService {
     await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", finalPath, "-frames:v", "1", path.join(posterDir, "poster.jpg")]);
     const clipId = randomUUID(), relativePath = path.posix.join("stories", projectId, "render.mp4"), sourceUrl = `/api/projects/${projectId}/clips/${clipId}/source`;
     const now = new Date().toISOString();
+    plan.recovery={reusedVoiceSegments,reusedScenes};
     const render = { relativePath, sourceUrl, width, height, codec: "h264", container: "mp4", sizeBytes: validation.sizeBytes, validation, subtitlesBurned: input.subtitles !== false, autoReframeApplied: false };
     const project = { id: projectId, createdAt: now, source: { projectId, originalName: `${plan.title}.mp4`, storedName: "render.mp4", relativePath, sourceUrl, posterUrl: `/api/projects/${projectId}/poster`, sizeBytes: validation.sizeBytes, durationSeconds: validation.duration, width, height, fps: 30, codec: "h264", container: "mp4", aspectRatio: input.format || "9:16", hasAudio: true },
       story: { ...plan, imageProvider: this.images.name, subtitleCues: cues }, clips: [{ id: clipId, projectId, candidateId: "story", startTime: 0, endTime: validation.duration, duration: validation.duration, status: "READY", render, edit: { framingMode: "FIT", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, createdAt: now, updatedAt: now, error: null }] };
     await replaceProjectFile(projectId, project); await writeFile(path.join(directory, "manifest.json"), JSON.stringify({ plan, validation, cues }, null, 2));
-    return { projectId, clipId, relativePath, sourceUrl, downloadUrl: `${sourceUrl}?download=1`, validation, title: plan.title };
+    return { projectId, clipId, relativePath, sourceUrl, downloadUrl: `${sourceUrl}?download=1`, validation, recovery:plan.recovery,title: plan.title };
   }
 }
 
@@ -170,3 +172,11 @@ function storyAss(cues, width, height) {
 }
 function assTime(seconds) { const cs = Math.round(Math.max(0, seconds) * 100); return `${Math.floor(cs / 360000)}:${String(Math.floor(cs / 6000) % 60).padStart(2,"0")}:${String(Math.floor(cs / 100) % 60).padStart(2,"0")}.${String(cs % 100).padStart(2,"0")}`; }
 function filterPath(value) { return value.replaceAll("\\", "\\\\").replaceAll(":", "\\:").replaceAll("'", "\\'").replaceAll(",", "\\,").replaceAll("[", "\\[").replaceAll("]", "\\]"); }
+
+async function reuseVerifiedStage(filename,request,build) {
+  const requestHash=createHash("sha256").update(JSON.stringify(request)).digest("hex");
+  try { const cache=JSON.parse(await readFile(`${filename}.cache.json`,"utf8"));if(cache.requestHash===requestHash&&cache.sha256===await hashFile(filename)&&(await probeMediaFile(filename)).duration>0)return true; } catch { /* An incomplete stage is rendered again from its authorized source. */ }
+  await build();const probe=await probeMediaFile(filename);if(!(probe.duration>0))throw new Error("La etapa multimedia no produjo un archivo válido.");
+  await writeFile(`${filename}.cache.json`,JSON.stringify({requestHash,sha256:await hashFile(filename),duration:probe.duration,completedAt:new Date().toISOString()}));
+  return false;
+}

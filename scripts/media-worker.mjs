@@ -6,10 +6,12 @@ import { VideoAutoEditService } from "../services/autoedit/VideoAutoEditService.
 import { BestClipsService } from "../services/analysis/BestClipsService.mjs";
 import { validateMp4 } from "../services/media-processing/MediaValidationService.mjs";
 import { ResumableUploadStore } from "../services/ingest/ResumableUploadStore.mjs";
+import { cleanupCompletedMedia } from "../services/media-processing/MediaTempCleanup.mjs";
 const store = new JobStore(), once = process.argv.includes("--once"); let stopping = false;
 process.on("SIGTERM", () => { stopping = true; }); process.on("SIGINT", () => { stopping = true; });
 while (!stopping) {
   await new ResumableUploadStore().cleanup();
+  for(const completed of await store.listMedia())await cleanupCompletedMedia(completed).catch(error=>console.error("Media temporary cleanup:",error.message));
   const job = await store.claimNext(["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"]);
   if (!job) { if (once) break; await new Promise(r => setTimeout(r, 2500)); continue; }
   const heartbeat = setInterval(() => { void store.heartbeat(job.id).catch(() => {}); }, 15_000);
@@ -24,7 +26,8 @@ while (!stopping) {
       const service = job.type === "MEDIA_STORY" ? new SceneStoryService() : job.type === "MEDIA_EDIT" ? new VideoAutoEditService() : new BestClipsService();
       result = await service.render(job.projectId, job.payload, async (status, stage, progress) => store.transition(job.id, status, stage, progress));
     }
-    await store.complete({ ...(await store.get(job.id)), result, resultPath: result.relativePath || null, validation: result.validation });
+    const completed=await store.complete({ ...(await store.get(job.id)), result, resultPath: result.relativePath || null, validation: result.validation });
+    await cleanupCompletedMedia(completed).catch(error=>console.error("Media temporary cleanup:",error.message));
   } catch (error) {
     if (error.code === "WAITING_RESOURCE") {
       await store.transition(job.id, "WAITING_RESOURCE", "WAITING_RESOURCE", null, { error: error.message }); await store.release(job.id);

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir,mkdtemp,rm,writeFile } from "node:fs/promises";
+import { mkdir,mkdtemp,rm,writeFile,stat } from "node:fs/promises";
+import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
-import { validateMp4 } from "../services/media-processing/MediaValidationService.mjs";
+import { validateMp4,probeMediaFile } from "../services/media-processing/MediaValidationService.mjs";
 import { PUBLISHING_ENABLED } from "../lib/publishing-policy.mjs";
 const { chromium,devices }=await import(process.env.PLAYWRIGHT_MODULE || "/tmp/clipforge-browser/node_modules/playwright/index.mjs");
 const output=path.resolve("artifacts/mobile-browser");await mkdir(output,{recursive:true});
@@ -40,9 +41,17 @@ try{
     const evidence={passed:true,client:"Chromium with Pixel 5 Android browser emulation; physical Android device not tested",tool:"MEDIA_CLIPS",validations,sourceDuration:1200,browserClosedDuringRender:true,actualBrowserPlayback:true,threeBrowserDownloads:true,publishing:"OFF"};await writeFile(path.join(output,"clips-evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
   } else {
   const saved=page.waitForResponse(r=>r.url().endsWith("/api/media/jobs")&&r.request().method()==="POST");await page.getByRole("button",{name:"Generar historia",exact:true}).click();const storyJob=(await (await saved).json()).job;
-  await page.close();await worker(); // Browser is closed while all rendering occurs on the server.
+  await page.close();
+  const interrupted=spawn(process.execPath,["scripts/media-worker.mjs","--once"],{env,detached:true,stdio:"ignore"});
+  try {
+    for(let i=0;i<300;i++){const job=(await(await fetch(`${base}/api/media/jobs/${storyJob.id}`)).json()).job;if(job.stage==="SCENES")break;await new Promise(r=>setTimeout(r,100));}
+    const partial=path.join(storage,"stories",storyJob.projectId,"scene-0.mp4");assert.ok((await stat(partial)).size>0);assert.equal((await probeMediaFile(partial)).video.codec_name,"h264");
+    process.kill(-interrupted.pid,"SIGKILL");await once(interrupted,"exit");
+    await worker(); // Verified voice and scene checkpoints are reused after a real renderer restart.
+  } finally {try{process.kill(-interrupted.pid,"SIGKILL");}catch{}}
   page=await context.newPage();await page.goto(base);let article=page.getByRole("region",{name:"Mis videos",exact:true}).locator("article").first();await article.getByText(/READY/).waitFor({timeout:10000});
   const history=await (await fetch(`${base}/api/media/jobs/${storyJob.id}`)).json();assert.equal(history.job.status,"READY");assert.ok(history.job.history.some(h=>h.status==="VALIDATING"));
+  assert.equal(history.job.attempts,2);assert.ok(history.job.history.some(h=>h.stage==="RECOVERED"));assert.ok(history.job.result.recovery.reusedScenes>=1);assert.ok(history.job.result.recovery.reusedVoiceSegments>=6);
   const mediaResponse=await fetch(`${base}${history.job.result.sourceUrl}`,{headers:{Range:"bytes=0-1023"}});assert.equal(mediaResponse.status,206,"The actual MP4 route must return bytes before playback");
   const video=article.locator("video");await video.evaluate(async v=>{v.muted=true;await v.play();});await page.waitForTimeout(500);assert.ok(await video.evaluate(v=>v.currentTime)>0,"Actual browser playback must advance");await video.evaluate(v=>v.pause());
   const downloading=page.waitForEvent("download");await article.getByRole("link",{name:"Descargar MP4"}).click();const download=await downloading;await download.saveAs(path.join(output,"browser-story.mp4"));
@@ -65,7 +74,7 @@ try{
     const response=await fetch(`${base}${history.job.result.downloadUrl}`);assert.equal(response.status,200);assert.ok(response.headers.get("content-disposition").includes("attachment"));assert.equal((await response.arrayBuffer()).byteLength,storyValidation.sizeBytes);
   }finally{restarted.kill("SIGTERM");}
   assert.equal(PUBLISHING_ENABLED,false);
-  const evidence={passed:true,client:"Chromium with Pixel 5 Android browser emulation; physical Android device not tested",storyValidation,editValidation,browserClosedDuringRender:true,httpRestartPersisted:true,rangePlayback:true,actualBrowserPlayback:true,publishing:"OFF"};await writeFile(path.join(output,"evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
+  const evidence={passed:true,client:"Google Chrome with Pixel 5 Android browser emulation; physical Android device not tested",storyValidation,editValidation,browserClosedDuringRender:true,interruptedRealRendererRecovered:true,httpRestartPersisted:true,rangePlayback:true,actualBrowserPlayback:true,publishing:"OFF"};await writeFile(path.join(output,"evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
   }
 }catch(error){if(page&&!page.isClosed()){await page.screenshot({path:path.join(output,"failure.png"),fullPage:true});console.error("Browser page:",page.url(),(await page.locator("body").innerText()).slice(0,2000));}console.error("Server diagnostics:",log.slice(-2000));throw error;}
 finally{ingest?.kill("SIGTERM");next.kill("SIGTERM");await browser?.close();await rm(storage,{recursive:true,force:true});}
