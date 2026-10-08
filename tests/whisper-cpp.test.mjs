@@ -80,3 +80,12 @@ test("complete subword token timings are merged without dropping accents or punc
   }] });
   assert.deepEqual(converted.segments[0].words.map(word=>word.word),["cooperación","natural."]);
 });
+
+test("segment mode never exposes token offsets as word alignment", () => {
+  const converted = convertWhisperCppPayload({ transcription: [{
+    offsets: { from: 0, to: 8000 }, text: "Conservamos una frase completa para subtítulos normales.",
+    tokens: [{ text: " Conservamos una frase completa para subtítulos normales.", offsets: { from: 0, to: 8000 } }],
+  }] }, { includeWords: false });
+  assert.equal(converted.segments[0].words, undefined);
+  assert.equal(converted.segments[0].text, "Conservamos una frase completa para subtítulos normales.");
+});

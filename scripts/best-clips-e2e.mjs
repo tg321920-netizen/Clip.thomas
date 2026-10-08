@@ -44,6 +44,9 @@ const result=await new BestClipsService({width:360,height:640}).render(randomUUI
 assert.equal(result.clips.length,3);assert.equal(result.validation.valid,true);
 const original=await loadProjectFile(id);assert.equal(original.transcript.provider,"whisper.cpp");assert.equal(original.transcript.status,"COMPLETED");assert.ok(original.transcript.segments.length>20);
 const project=await loadProjectFile(result.projectId);
+await copyFile(filename,path.join(output,"podcast-20m.mp4"));
+await writeFile(path.join(output,"transcript-and-cues.json"),JSON.stringify({transcript:original.transcript,clips:project.clips.map(c=>({startTime:c.startTime,endTime:c.endTime,subtitles:c.subtitles}))},null,2));
+console.log("SUBTITLE_DIAGNOSTICS",JSON.stringify({segments:original.transcript.segments.slice(0,2),firstCues:project.clips[0].subtitles.cues.slice(0,4),maximumWords:Math.max(...project.clips[0].subtitles.cues.map(c=>c.text.split(/\s+/).length))}));
 const subtitleEvidence=[];
 for(let i=0;i<3;i++){
   const clip=result.clips[i];assert.ok(clip.duration>=90&&clip.duration<=180);assert.equal(clip.validation.audioCodec,"aac");assert.equal(clip.validation.videoCodec,"h264");assert.deepEqual(clip.validation.blackIntervals,[]);

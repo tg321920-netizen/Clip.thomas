@@ -31,12 +31,13 @@ export class WhisperCppProvider {
       outputDir,
       `${path.parse(audioPath).name}.whispercpp`,
     );
+    const wordTimestamps = process.env.WHISPER_WORD_TIMESTAMPS === "true";
     const args = [
       "-m",
       this.modelPath,
       "-f",
       audioPath,
-      "-ojf",
+      wordTimestamps ? "-ojf" : "-oj",
       "-of",
       outputBase,
       "-np",
@@ -44,7 +45,7 @@ export class WhisperCppProvider {
       "-t",
       String(this.threads),
     ];
-    if(process.env.WHISPER_WORD_TIMESTAMPS === "true")args.push("-ml","80","-sow");
+    if(wordTimestamps)args.push("-ml","80","-sow");
 
     if (this.language) args.push("-l", this.language);
 
@@ -61,7 +62,7 @@ export class WhisperCppProvider {
       );
     }
 
-    const normalized = normalizeWhisperResult(convertWhisperCppPayload(payload));
+    const normalized = normalizeWhisperResult(convertWhisperCppPayload(payload, { includeWords: wordTimestamps }));
     if (normalized.segments.length === 0) {
       throw new Error("whisper.cpp returned no valid transcript segments.");
     }
@@ -74,7 +75,7 @@ export class WhisperCppProvider {
   }
 }
 
-export function convertWhisperCppPayload(payload) {
+export function convertWhisperCppPayload(payload, options = {}) {
   const rawSegments = Array.isArray(payload?.transcription)
     ? payload.transcription
     : [];
@@ -95,7 +96,7 @@ export function convertWhisperCppPayload(payload) {
         return null;
       }
 
-      const timedWords = convertTokens(segment?.tokens,startMs,endMs);
+      const timedWords = options.includeWords === false ? [] : convertTokens(segment?.tokens,startMs,endMs);
       // Some CLI modes provide offsets for only a few tokens. Such metadata
       // cannot replace the complete transcript in captions or protect cuts.
       const letters = value => String(value).normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");

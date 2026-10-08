@@ -174,6 +174,7 @@ jobs:
             artifacts/best-clips/clip-*.jpg
             artifacts/best-clips/podcast-20m.mp4
             artifacts/best-clips/evidence.json
+            artifacts/best-clips/transcript-and-cues.json
             artifacts/best-clips/authored-narration.txt
             artifacts/video-autoedit/*.mp4
             artifacts/video-autoedit/evidence.json
