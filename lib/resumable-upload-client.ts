@@ -1,5 +1,6 @@
-type Session = { id: string; token: string; chunkSize: number; chunkCount: number; status: string; received?: number[] };
+type Session = { id: string; token: string; chunkSize: number; chunkCount: number; status: string; received?: number[]; receivedHashes?: Record<string,string> };
 type Job = { id: string; status: string; stage: string; error?: string; result?: { video?: unknown } };
+const memorySessions = new Map<string, Session>();
 
 /** Only transfer/hashing run on the phone. Probing and rendering run in workers. */
 export async function uploadResumable(file: File, options: {
@@ -9,20 +10,32 @@ export async function uploadResumable(file: File, options: {
 }) {
   const fingerprint = await sha256(await new Blob([file.slice(0, 65536), file.slice(Math.max(0, file.size - 65536)), `${file.name}:${file.size}:${file.lastModified}`]).arrayBuffer());
   const key = `clipforge-upload:${fingerprint}`;
-  let session: Session | null = null;
-  try { session = JSON.parse(localStorage.getItem(key) || "null") as Session | null; } catch { /* A fresh session still works when browser storage is unavailable. */ }
+  let session: Session | null = memorySessions.get(key) || null;
+  try { session = JSON.parse(localStorage.getItem(key) || "null") as Session | null || session; } catch { /* In-memory sessions preserve retries while this page remains open. */ }
+  if (session && !validSession(session, file)) { session = null; memorySessions.delete(key); try { localStorage.removeItem(key); } catch { /* Storage may be unavailable. */ } }
   let status: { session: Session; job?: Job } | null = null;
   if (session) {
     try { status = await jsonRequest(`/api/videos/uploads/${session.id}`, { headers: tokenHeaders(session), signal: options.signal }); }
-    catch (error) { if (!(error instanceof HttpError) || ![403, 404, 410].includes(error.status)) throw error; session = null; }
+    catch (error) { if (!(error instanceof HttpError) || ![403, 404, 410].includes(error.status)) throw error; session = null; memorySessions.delete(key); }
   }
   if (!session) {
     const created = await jsonRequest<{ session: Session }>("/api/videos/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, mimeType: file.type || "application/octet-stream", size: file.size }), signal: options.signal });
     session = created.session;
+    if (!validSession(session, file)) throw new Error("El servidor devolvió una configuración de subida inválida.");
+    memorySessions.set(key, session);
     try { localStorage.setItem(key, JSON.stringify(session)); } catch { /* Retries within this screen still work. */ }
   }
   const current = session;
-  if (status?.session.status !== "QUEUED") {
+  // A sampled fingerprint locates a session; it does not prove the file's
+  // middle is unchanged. Verify every retained chunk before skipping it.
+  for (const index of status?.session.received || []) {
+    const chunk = file.slice(index * current.chunkSize, Math.min(file.size, (index + 1) * current.chunkSize));
+    if (await sha256(await chunk.arrayBuffer()) !== status?.session.receivedHashes?.[String(index)]) {
+      memorySessions.delete(key); try { localStorage.removeItem(key); } catch { /* Storage may be unavailable. */ }
+      throw new Error("El archivo no coincide con los fragmentos guardados. Vuelve a pulsar Subir video para iniciar una transferencia nueva; el original anterior se conserva.");
+    }
+  }
+  if (!["QUEUED", "ASSEMBLED"].includes(status?.session.status || "")) {
     const received = new Set(status?.session.received || []);
     let savedBytes = [...received].reduce((sum, i) => sum + Math.min(current.chunkSize, file.size - i * current.chunkSize), 0);
     options.onProgress(Math.floor(savedBytes / file.size * 100), "Subiendo");
@@ -36,15 +49,16 @@ export async function uploadResumable(file: File, options: {
       savedBytes += chunk.size;
       options.onProgress(Math.floor(savedBytes / file.size * 100), "Subiendo");
     }
-    await retry(() => jsonRequest(`/api/videos/uploads/${current.id}`, { method: "POST", headers: tokenHeaders(current), signal: options.signal }), options.signal);
   }
+  if (status?.session.status !== "QUEUED") await retry(() => jsonRequest(`/api/videos/uploads/${current.id}`, { method: "POST", headers: tokenHeaders(current), signal: options.signal }), options.signal);
   options.onQueued(current.id);
   options.onProgress(100, "Subida completa. Analizando en el servidor");
   for (;;) {
     if (options.signal.aborted) throw new DOMException("Subida pausada", "AbortError");
-    const response = await jsonRequest<{ session: Session; job?: Job }>(`/api/videos/uploads/${current.id}`, { headers: tokenHeaders(current), signal: options.signal });
+    const response = await retry(() => jsonRequest<{ session: Session; job?: Job }>(`/api/videos/uploads/${current.id}`, { headers: tokenHeaders(current), signal: options.signal }), options.signal);
     if (response.job?.status === "COMPLETED" && response.job.result?.video) {
       try { localStorage.removeItem(key); } catch { /* No browser storage. */ }
+      memorySessions.delete(key);
       return response.job.result.video;
     }
     if (response.job?.status === "FAILED") throw new Error(response.job.error || "No se pudo analizar el archivo. Puedes reintentar desde Mis videos.");
@@ -52,6 +66,7 @@ export async function uploadResumable(file: File, options: {
     await delay(2000, options.signal);
   }
 }
+function validSession(session: Session, file: File) { return /^[a-f0-9-]{36}$/.test(session.id || "") && /^[a-f0-9]{64}$/.test(session.token || "") && session.chunkSize === 2 * 1024 * 1024 && session.chunkCount === Math.ceil(file.size / session.chunkSize); }
 function tokenHeaders(session: Session) { return { "X-Upload-Token": session.token }; }
 async function sha256(bytes: ArrayBuffer) { const hash = await crypto.subtle.digest("SHA-256", bytes); return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, "0")).join(""); }
 class HttpError extends Error { constructor(message: string, public status: number) { super(message); } }
@@ -76,3 +91,4 @@ function delay(ms: number, signal: AbortSignal) { return new Promise<void>((reso
   const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
   signal.addEventListener("abort", abort, { once: true });
 }); }
+

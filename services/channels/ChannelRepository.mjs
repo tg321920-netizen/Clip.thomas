@@ -2,9 +2,95 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { isProjectId } from "../../lib/project-id.mjs";
+import { createRedisKvFromEnv } from "../../lib/redis-kv.mjs";
+
+const INDEX_KEY = "clipforge:channels:v1:index";
 
 export class ChannelRepository {
+  constructor(options = {}) {
+    this.kv = Object.hasOwn(options, "kv")
+      ? options.kv
+      : createRedisKvFromEnv();
+  }
+
   async list() {
+    const records = new Map();
+
+    for (const record of await this.#listLocal()) {
+      records.set(record.id, record);
+    }
+
+    if (this.kv) {
+      try {
+        const rawIndex = await this.kv.get(INDEX_KEY);
+        const ids = parseIndex(rawIndex);
+        const shared = await Promise.all(
+          ids.map(async (id) => {
+            const raw = await this.kv.get(this.#redisKey(id));
+            return raw ? JSON.parse(raw) : null;
+          }),
+        );
+        for (const record of shared.filter(Boolean)) {
+          records.set(record.id, record);
+          await this.#writeLocal(record).catch(() => undefined);
+        }
+      } catch (error) {
+        if (records.size === 0) throw error;
+      }
+    }
+
+    return [...records.values()].sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+    );
+  }
+
+  async get(channelId) {
+    assertId(channelId);
+
+    if (this.kv) {
+      try {
+        const raw = await this.kv.get(this.#redisKey(channelId));
+        if (raw) {
+          const record = JSON.parse(raw);
+          await this.#writeLocal(record).catch(() => undefined);
+          return record;
+        }
+      } catch (error) {
+        const local = await this.#readLocal(channelId);
+        if (local) return local;
+        throw error;
+      }
+    }
+
+    return this.#readLocal(channelId);
+  }
+
+  async save(record) {
+    assertId(record?.id);
+
+    if (this.kv) {
+      await this.kv.set(this.#redisKey(record.id), JSON.stringify(record));
+      await this.#addToIndex(record.id);
+      await this.#writeLocal(record).catch(() => undefined);
+      return record;
+    }
+
+    await this.#writeLocal(record);
+    return record;
+  }
+
+  async delete(channelId) {
+    assertId(channelId);
+
+    if (this.kv) {
+      await this.kv.delete(this.#redisKey(channelId));
+      await this.#removeFromIndex(channelId);
+    }
+
+    await rm(this.#path(channelId), { force: true });
+  }
+
+  async #listLocal() {
     const directory = this.#directory();
     await mkdir(directory, { recursive: true });
 
@@ -21,13 +107,10 @@ export class ChannelRepository {
         }),
     );
 
-    return records
-      .filter(Boolean)
-      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    return records.filter(Boolean);
   }
 
-  async get(channelId) {
-    assertId(channelId);
+  async #readLocal(channelId) {
     try {
       return JSON.parse(await readFile(this.#path(channelId), "utf8"));
     } catch (error) {
@@ -38,8 +121,7 @@ export class ChannelRepository {
     }
   }
 
-  async save(record) {
-    assertId(record?.id);
+  async #writeLocal(record) {
     const directory = this.#directory();
     await mkdir(directory, { recursive: true });
 
@@ -60,13 +142,26 @@ export class ChannelRepository {
       await rm(temp, { force: true }).catch(() => undefined);
       throw error;
     }
-
-    return record;
   }
 
-  async delete(channelId) {
-    assertId(channelId);
-    await rm(this.#path(channelId), { force: true });
+  async #addToIndex(channelId) {
+    const ids = parseIndex(await this.kv.get(INDEX_KEY));
+    if (!ids.includes(channelId)) {
+      ids.push(channelId);
+      await this.kv.set(INDEX_KEY, JSON.stringify(ids));
+    }
+  }
+
+  async #removeFromIndex(channelId) {
+    const ids = parseIndex(await this.kv.get(INDEX_KEY));
+    const next = ids.filter((id) => id !== channelId);
+    if (next.length !== ids.length) {
+      await this.kv.set(INDEX_KEY, JSON.stringify(next));
+    }
+  }
+
+  #redisKey(channelId) {
+    return `clipforge:channels:v1:${channelId}`;
   }
 
   #directory() {
@@ -75,6 +170,18 @@ export class ChannelRepository {
 
   #path(channelId) {
     return path.join(this.#directory(), `${channelId}.json`);
+  }
+}
+
+function parseIndex(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((id) => isProjectId(id))
+      : [];
+  } catch {
+    return [];
   }
 }
 

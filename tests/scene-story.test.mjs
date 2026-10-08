@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { planStory, buildSceneMotion, LocalImageProvider } from "../services/owned-content/SceneStoryService.mjs";
 import { buildKeepRanges, remapTranscript } from "../services/autoedit/VideoAutoEditService.mjs";
-test("local Maya story has six original coherent scenes and a continuity manifest", async () => {
-  const plan = await planStory({ topic: "Una ciudad maya en la selva", duration: 60 });
+test("own narration creates six distinct scene plans and a continuity manifest", async () => {
+  const narration = Array.from({ length: 6 }, (_, i) => `En la escena ${i + 1}, la protagonista descubre una pista distinta mientras sigue su camino por la ciudad abandonada.`).join(" ");
+  const plan = await planStory({ topic: "Misterio urbano", narration, duration: 60 });
   assert.equal(plan.scenes.length, 6); assert.equal(new Set(plan.scenes.map(s => s.narration)).size, 6);
   assert.ok(plan.manifest.character); assert.ok(plan.scenes.every(s => s.movement && s.visualDescription));
 });
@@ -24,3 +25,4 @@ test("subtitle times follow actual retained ranges", () => {
   const result = remapTranscript({ segments: [{ startTime: 7, endTime: 9, text: "Texto real" }] }, [{ start: 0, end: 3 }, { start: 6, end: 10 }]);
   assert.equal(result.segments[0].startTime, 4); assert.equal(result.segments[0].endTime, 6);
 });
+

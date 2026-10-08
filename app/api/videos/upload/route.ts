@@ -38,6 +38,9 @@ export async function POST(request: Request) {
       request.headers.get("content-length") ||
       "0",
   );
+  if (declaredSize > 2 * 1024 * 1024) {
+    return NextResponse.json({ code: "RESUMABLE_UPLOAD_REQUIRED", error: "Este archivo necesita la subida por fragmentos. Actualiza la página y utiliza Subir video; el archivo original no se ha modificado.", uploadUrl: "/api/videos/uploads" }, { status: 413 });
+  }
 
   const validation = validateUploadDescriptor({
     filename: originalName,

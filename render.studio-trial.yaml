@@ -1,0 +1,57 @@
+# Proposal only. Creation/deployment needs owner approval; production untouched.
+services:
+  - type: web
+    name: clipforge-studio-trial
+    runtime: node
+    plan: free
+    region: virginia
+    repo: https://github.com/tg321920-netizen/Clip.thomas
+    branch: codex/clipforge-core-rescue
+    autoDeployTrigger: off
+    buildCommand: bash scripts/render-native-free-build.sh
+    startCommand: node scripts/render-runtime-free.mjs
+    healthCheckPath: /api/health
+    numInstances: 1
+    envVars:
+      - key: CLIPFORGE_STORAGE_DIR
+        value: /tmp/clipforge-studio-trial
+      - key: CLIPFORGE_STORAGE_PERSISTENT
+        value: "false"
+      - key: CLIPFORGE_MEDIA_WIDTH
+        value: "720"
+      - key: CLIPFORGE_MEDIA_HEIGHT
+        value: "1280"
+      - key: CLIPFORGE_REQUIRE_OWNER_AUTH
+        value: "true"
+      - key: CLIPFORGE_OWNER_ACCESS_KEY
+        sync: false
+      - key: CLIPFORGE_SESSION_KEY
+        generateValue: true
+      - key: CLIPFORGE_AGENT_ENABLED
+        value: "false"
+      - key: CLIPFORGE_AGENT_REAL_PUBLISHING
+        value: "false"
+      - key: CLIPFORGE_CONTENT_REAL_PUBLISHING
+        value: "false"
+      - key: CLIPFORGE_SMART_PUBLISH_ON_BOOT
+        value: "false"
+      - key: CLIPFORGE_CC_PODCAST_SMOKE
+        value: "false"
+      - key: CLIPFORGE_STORY_SCRIPT_PROVIDER
+        value: "off"
+      - key: CLIPFORGE_STORY_IMAGE_PROVIDER
+        value: "off"
+      - key: CLIPFORGE_STORY_EXTERNAL_AUTHORIZED
+        value: "false"
+      - key: FFMPEG_PATH
+        value: /opt/render/project/src/.runtime/bin/ffmpeg
+      - key: FFPROBE_PATH
+        value: /opt/render/project/src/.runtime/bin/ffprobe
+      - key: WHISPER_PROVIDER
+        value: cpp
+      - key: WHISPER_CPP_COMMAND
+        value: /opt/render/project/src/.runtime/bin/whisper-cli
+      - key: WHISPER_CPP_MODEL_PATH
+        value: /opt/render/project/src/.runtime/models/ggml-tiny.bin
+      - key: WHISPER_CPP_THREADS
+        value: "1"

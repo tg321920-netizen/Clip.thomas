@@ -42,9 +42,10 @@ export class RenderService {
     }
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
-    let filter = buildVideoFilter(clip?.edit?.framingMode || "FIT", this.width, this.height);
-    filter += ",fps=30,setpts=PTS-STARTPTS";
-    if (clip?.edit?.motionIntensity) filter += `,${buildSafeMotionFilter(clip.edit.motionIntensity,this.width,this.height)}`;
+    const postFilters = ["fps=30", "setpts=PTS-STARTPTS"];
+    if (clip?.edit?.motionIntensity) {
+      postFilters.push(buildSafeMotionFilter(clip.edit.motionIntensity, this.width, this.height));
+    }
     let subtitlesBurned = false;
     let autoReframeApplied = false;
     if(clip?.edit?.subtitlesEnabled&&(!clip?.subtitles?.enabled||!clip.subtitles.cues?.length))throw new Error("Se solicitaron subtítulos, pero no existen tiempos y textos válidos para este clip.");
@@ -59,7 +60,7 @@ export class RenderService {
       );
 
       if (reframeFilter) {
-        filter = `${filter},${reframeFilter}`;
+        postFilters.push(reframeFilter);
         autoReframeApplied = true;
       }
     }
@@ -72,15 +73,23 @@ export class RenderService {
     ) {
       const assPath = path.join(outputDir, "subtitles.ass");
       await writeFile(assPath, buildAssDocument(clip.subtitles), "utf8");
-      filter = `${filter},ass='${escapeFilterPath(assPath)}'`;
+      postFilters.push(`ass='${escapeFilterPath(assPath)}'`);
       subtitlesBurned = true;
     }
+
+    const videoPlan = buildRenderVideoPlan(
+      clip?.edit?.framingMode || "FIT",
+      postFilters,
+      this.width,
+      this.height,
+    );
 
     const args = [
       "-v",
       "error",
       "-y",
       "-filter_threads", "1",
+      "-filter_complex_threads", "1",
       "-threads", "2",
       "-ss",
       startTime.toFixed(3),
@@ -88,12 +97,7 @@ export class RenderService {
       sourcePath,
       "-t",
       duration.toFixed(3),
-      "-map",
-      "0:v:0",
-      "-map",
-      "0:a?",
-      "-vf",
-      filter,
+      ...videoPlan.args,
       "-c:v",
       "libx264",
       "-preset",
@@ -163,8 +167,59 @@ export function buildSafeMotionFilter(intensity,width,height) {
   return `scale=w='trunc(iw*(${factor})/2)*2':h='trunc(ih*(${factor})/2)*2':eval=frame,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:eval=frame,setsar=1`;
 }
 
+export function buildRenderVideoPlan(mode = "FILL", postFilters = [], width = 1080, height = 1920) {
+  assertResolution(width, height);
+  const normalizedPostFilters = Array.isArray(postFilters)
+    ? postFilters.filter((value) => typeof value === "string" && value.trim())
+    : [];
+
+  if (mode === "CONVERSATION") {
+    const graph = [
+      "[0:v]split=2[bg][fg]",
+      `[bg]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},gblur=sigma=28[bgv]`,
+      `[fg]scale=${width}:${height}:force_original_aspect_ratio=decrease[fgv]`,
+      "[bgv][fgv]overlay=(W-w)/2:(H-h)/2,setsar=1[basev]",
+      `[basev]${normalizedPostFilters.length ? normalizedPostFilters.join(",") : "null"}[vout]`,
+    ].join(";");
+
+    return {
+      mode: "complex",
+      filter: graph,
+      args: [
+        "-filter_complex",
+        graph,
+        "-map",
+        "[vout]",
+        "-map",
+        "0:a?",
+      ],
+    };
+  }
+
+  const base = buildVideoFilter(mode, width, height);
+  const filter = [base, ...normalizedPostFilters].join(",");
+  return {
+    mode: "simple",
+    filter,
+    args: [
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-vf",
+      filter,
+    ],
+  };
+}
+
 export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {
-  if (![width, height].every(n => Number.isSafeInteger(n) && n >= 144 && n <= 3840 && n % 2 === 0)) throw new Error("Invalid output resolution.");
+  assertResolution(width, height);
+  if (mode === "CONVERSATION") {
+    throw new Error(
+      "CONVERSATION framing requires buildRenderVideoPlan() and FFmpeg -filter_complex.",
+    );
+  }
+
   if (mode === "FIT") {
     return [
       `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
@@ -184,6 +239,12 @@ export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {
   ].join(",");
 }
 
+function assertResolution(width, height) {
+  if (![width, height].every(n => Number.isSafeInteger(n) && n >= 144 && n <= 3840 && n % 2 === 0)) {
+    throw new Error("Invalid output resolution.");
+  }
+}
+
 function runFfmpeg(command, args, duration, onProgress) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -194,12 +255,14 @@ function runFfmpeg(command, args, duration, onProgress) {
 
     let stdoutBuffer = "";
     let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 15 * 60 * 1000);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
 
     child.stdout.on("data", (chunk) => {
-      stdoutBuffer += chunk;
+      stdoutBuffer = (stdoutBuffer + chunk).slice(-2_000_000);
       const lines = stdoutBuffer.split(/\r?\n/);
       stdoutBuffer = lines.pop() || "";
 
@@ -229,10 +292,11 @@ function runFfmpeg(command, args, duration, onProgress) {
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      stderr = (stderr + chunk).slice(-2_000_000);
     });
 
     child.on("error", (error) => {
+      clearTimeout(timer);
       if (error?.code === "ENOENT") {
         reject(new Error("FFmpeg is not installed or FFMPEG_PATH is invalid."));
         return;
@@ -241,7 +305,8 @@ function runFfmpeg(command, args, duration, onProgress) {
     });
 
     child.on("close", (code) => {
-      if (code === 0) {
+      clearTimeout(timer);
+      if (code === 0 && !timedOut) {
         onProgress(100);
         resolve();
         return;
@@ -249,7 +314,7 @@ function runFfmpeg(command, args, duration, onProgress) {
 
       reject(
         new Error(
-          stderr.trim() || `FFmpeg render failed with code ${code ?? "?"}.`,
+          timedOut ? "El render superó el límite de 15 minutos. Se conservan los recursos y el archivo parcial para diagnóstico." : stderr.trim() || `FFmpeg render failed with code ${code ?? "?"}.`,
         ),
       );
     });
@@ -335,3 +400,4 @@ function escapeFilterPath(filePath) {
     .replaceAll("[", "\\[")
     .replaceAll("]", "\\]");
 }
+

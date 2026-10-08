@@ -1,38 +1,19 @@
 name: ClipForge Render Runtime
 
 on:
-  push:
-    branches:
-      - main
-      - "chatgpt/**"
-    paths:
-      - "Dockerfile"
-      - "Dockerfile.free"
-      - ".dockerignore"
-      - "render.yaml"
-      - "render.production.yaml"
-      - "scripts/render-native-free-build.sh"
-      - "scripts/render-runtime.mjs"
-      - "scripts/render-runtime-free.mjs"
-      - "scripts/whisper-cpp-smoke.mjs"
-      - "scripts/ingest-worker.mjs"
-      - "services/transcription/TranscriptionService.mjs"
-      - "services/transcription/WhisperCppProvider.mjs"
-      - "services/ingest/**"
-      - "lib/public-source-url.mjs"
-      - "tests/whisper-cpp.test.mjs"
-      - "tests/long-stream-capture.test.mjs"
-      - "app/api/health/route.ts"
-      - "app/api/ingest/**"
-      - "proxy.ts"
-      - "eslint.config.mjs"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/render-runtime-ci.yml"
+  # These checks download models and may generate audio/video. Run only after
+  # the owner's explicit approval; normal repair commits verify code only.
   workflow_dispatch:
+    inputs:
+      owner_approved_media_test:
+        description: "El propietario autorizó expresamente esta prueba audiovisual"
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   production-runtime:
+    if: ${{ inputs.owner_approved_media_test == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -80,6 +61,7 @@ jobs:
           exit 1
 
   free-runtime:
+    if: ${{ inputs.owner_approved_media_test == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -132,6 +114,7 @@ jobs:
           exit 1
 
   native-free-runtime:
+    if: ${{ inputs.owner_approved_media_test == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
 

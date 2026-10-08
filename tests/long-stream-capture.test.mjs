@@ -6,7 +6,11 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { captureSegmentedStream } from "../services/ingest/UrlIngestService.mjs";
 
-test("segmented stream capture processes more than the old 120 second limit", async () => {
+test("segmented stream capture processes more than the old 120 second limit", {
+  skip: process.env.CLIPFORGE_RUN_MEDIA_TESTS !== "true"
+    ? "Generación audiovisual pendiente de autorización; no se ejecuta con las pruebas ligeras."
+    : false,
+}, async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-long-stream-"));
   const input = path.join(root, "long-source.mp4");
   const uploadDir = path.join(root, "capture");
@@ -74,3 +78,4 @@ function run(command, args) {
     });
   });
 }
+

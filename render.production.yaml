@@ -21,8 +21,14 @@ services:
     envVars:
       - key: CLIPFORGE_STORAGE_DIR
         value: /var/data/clipforge
+      - key: CLIPFORGE_STORAGE_PERSISTENT
+        value: "true"
       - key: CLIPFORGE_RUNTIME_HOME
         value: /var/data/clipforge/.runtime-home
+      - key: CLIPFORGE_AGENT_ENABLED
+        value: "false"
+      - key: CLIPFORGE_AGENT_REAL_PUBLISHING
+        value: "false"
       - key: CLIPFORGE_REQUIRE_OWNER_AUTH
         value: "true"
       - key: CLIPFORGE_OWNER_ACCESS_KEY
@@ -43,3 +49,4 @@ services:
         value: es
       - key: CLIPFORGE_NEWS_TTS_SPEED
         value: "165"
+

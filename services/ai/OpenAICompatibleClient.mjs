@@ -32,6 +32,14 @@ export function resolveOpenAICompatibleConfig(options = {}) {
       2048,
     ),
   );
+  const timeoutMs = Math.round(
+    clampNumber(
+      options.timeoutMs ?? process.env.CLIPFORGE_AI_TIMEOUT_MS,
+      1_000,
+      300_000,
+      60_000,
+    ),
+  );
 
   return {
     apiKey,
@@ -40,6 +48,7 @@ export function resolveOpenAICompatibleConfig(options = {}) {
     apiStyle,
     temperature,
     maxOutputTokens,
+    timeoutMs,
   };
 }
 
@@ -62,26 +71,31 @@ export async function requestStructuredJson({
   }
 
   if (config.apiStyle === "responses") {
-    const response = await fetchImpl(`${config.baseUrl}/responses`, {
-      method: "POST",
-      headers: authHeaders(config.apiKey),
-      body: JSON.stringify({
-        model: config.model,
-        store: false,
-        instructions,
-        input: typeof input === "string" ? input : JSON.stringify(input),
-        text: {
-          format: {
-            type: "json_schema",
-            name,
-            strict: true,
-            schema,
+    const response = await requestProvider(
+      fetchImpl,
+      `${config.baseUrl}/responses`,
+      {
+        method: "POST",
+        headers: authHeaders(config.apiKey),
+        body: JSON.stringify({
+          model: config.model,
+          store: false,
+          instructions,
+          input: typeof input === "string" ? input : JSON.stringify(input),
+          text: {
+            format: {
+              type: "json_schema",
+              name,
+              strict: true,
+              schema,
+            },
           },
-        },
-        temperature: config.temperature,
-        max_output_tokens: config.maxOutputTokens,
-      }),
-    });
+          temperature: config.temperature,
+          max_output_tokens: config.maxOutputTokens,
+        }),
+      },
+      config.timeoutMs,
+    );
     const body = await readJsonResponse(response);
     if (!response.ok) throw providerHttpError(body, response.status, "Responses API");
     return parseStructuredResult(body, "responses");
@@ -95,41 +109,51 @@ export async function requestStructuredJson({
     },
   ];
   const endpoint = `${config.baseUrl}/chat/completions`;
-  let response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: authHeaders(config.apiKey),
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: config.temperature,
-      max_tokens: config.maxOutputTokens,
-      response_format: {
-        type: "json_schema",
-        json_schema: { name, strict: true, schema },
-      },
-    }),
-  });
-  let body = await readJsonResponse(response);
-
-  if (!response.ok && [400, 404, 422].includes(response.status)) {
-    response = await fetchImpl(endpoint, {
+  let response = await requestProvider(
+    fetchImpl,
+    endpoint,
+    {
       method: "POST",
       headers: authHeaders(config.apiKey),
       body: JSON.stringify({
         model: config.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              `${instructions}\nReturn only valid JSON matching this schema: ${JSON.stringify(schema)}`,
-          },
-          messages[1],
-        ],
+        messages,
         temperature: config.temperature,
         max_tokens: config.maxOutputTokens,
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: { name, strict: true, schema },
+        },
       }),
-    });
+    },
+    config.timeoutMs,
+  );
+  let body = await readJsonResponse(response);
+
+  if (!response.ok && [400, 404, 422].includes(response.status)) {
+    response = await requestProvider(
+      fetchImpl,
+      endpoint,
+      {
+        method: "POST",
+        headers: authHeaders(config.apiKey),
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            {
+              role: "system",
+              content:
+                `${instructions}\nReturn only valid JSON matching this schema: ${JSON.stringify(schema)}`,
+            },
+            messages[1],
+          ],
+          temperature: config.temperature,
+          max_tokens: config.maxOutputTokens,
+          response_format: { type: "json_object" },
+        }),
+      },
+      config.timeoutMs,
+    );
     body = await readJsonResponse(response);
   }
 
@@ -175,13 +199,21 @@ export function extractCompatibleUsage(body) {
 
 function parseStructuredResult(body, style) {
   const text = extractCompatibleText(body);
-  if (!text) throw new Error("The configured AI provider returned no text output.");
+  if (!text) {
+    const error = new Error("The configured AI provider returned no text output.");
+    error.code = "AI_PROVIDER_EMPTY_RESPONSE";
+    error.retryable = true;
+    throw error;
+  }
 
   let parsed;
   try {
     parsed = JSON.parse(stripJsonFence(text));
   } catch {
-    throw new Error("The configured AI provider returned invalid JSON.");
+    const error = new Error("The configured AI provider returned invalid JSON.");
+    error.code = "AI_PROVIDER_INVALID_JSON";
+    error.retryable = true;
+    throw error;
   }
 
   return {
@@ -228,7 +260,53 @@ function providerHttpError(body, status, label) {
     body?.error?.message ||
     body?.message ||
     `${label} returned HTTP ${status}.`;
-  return new Error(String(message));
+  const error = new Error(String(message));
+  error.name = "AIProviderHttpError";
+  error.status = Number(status);
+  error.code = `AI_PROVIDER_HTTP_${status}`;
+  error.rateLimited = Number(status) === 429;
+  error.retryable =
+    Number(status) === 408 ||
+    Number(status) === 409 ||
+    Number(status) === 425 ||
+    Number(status) === 429 ||
+    Number(status) >= 500;
+  return error;
+}
+
+async function requestProvider(fetchImpl, url, init, timeoutMs) {
+  const timeout = Math.max(
+    1_000,
+    Math.min(Number(timeoutMs) || 60_000, 300_000),
+  );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error(
+        `AI provider request timed out after ${timeout} ms.`,
+      );
+      timeoutError.code = "AI_PROVIDER_TIMEOUT";
+      timeoutError.retryable = true;
+      throw timeoutError;
+    }
+
+    if (error instanceof Error) {
+      error.code = error.code || "AI_PROVIDER_NETWORK_ERROR";
+      error.retryable = true;
+      throw error;
+    }
+
+    const networkError = new Error(String(error));
+    networkError.code = "AI_PROVIDER_NETWORK_ERROR";
+    networkError.retryable = true;
+    throw networkError;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function stripJsonFence(value) {

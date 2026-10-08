@@ -14,6 +14,8 @@ const METRICS = [
   "followersGained",
   "impressions",
   "reach",
+  "clicks",
+  "ctr",
 ];
 
 export class AnalyticsService {

@@ -280,6 +280,7 @@ export function ChannelConnections({ channels }: { channels: ChannelRecord[] }) 
                       {channel.platform === "YOUTUBE"
                         ? ` · ${profile === "SECONDARY" ? "Google secundaria" : "Google principal"}`
                         : ""}
+                      {channel.externalAccountName ? ` · ${channel.externalAccountName}` : ""}
                       {channel.externalAccountId ? ` · ${channel.externalAccountId}` : ""}
                     </p>
                   </div>

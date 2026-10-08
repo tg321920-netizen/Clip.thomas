@@ -16,6 +16,7 @@ import {
 } from "../services/clip/ClipService.mjs";
 import { resolveStoragePath } from "../lib/storage-paths.mjs";
 import { generateSubtitleTrack } from "../services/subtitles/SubtitleService.mjs";
+import { applySpeechFocus } from "../services/reframe/AutoReframeService.mjs";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-render-"));
 const storage = path.join(root, "storage");
@@ -151,6 +152,30 @@ try {
           confidence: "MEDIUM",
           disclaimer: "test",
         },
+        {
+          id: "candidate-0002",
+          startTime: 0.5,
+          endTime: 3,
+          duration: 2.5,
+          text: "Prueba real de conversación vertical.",
+          title: "Prueba conversación",
+          hook: "Prueba conversación vertical.",
+          reason: "E2E conversation",
+          viralScore: 55,
+          status: "CANDIDATE",
+          analysisMethod: "test",
+          components: {
+            hook: 55,
+            semanticInterest: 55,
+            emotionTone: 50,
+            audioEnergy: null,
+            standaloneComprehensibility: 55,
+            durationFit: 55,
+          },
+          reasons: ["E2E conversation"],
+          confidence: "MEDIUM",
+          disclaimer: "test",
+        },
       ],
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
@@ -227,6 +252,82 @@ try {
   const probe = await ffprobe(renderedPath);
   assert(probe.width === 1080 && probe.height === 1920, "ffprobe resolution mismatch");
   assert(probe.duration >= 2.2 && probe.duration <= 2.8, "Unexpected clip duration");
+  assert(probe.hasAudio === true, "Rendered clip has no audio stream");
+
+  const conversation = await createClipFromCandidate(
+    projectId,
+    "candidate-0002",
+    {
+      framingMode: "CONVERSATION",
+      quality: "FAST",
+    },
+  );
+
+  const conversationSubtitles = await generateSubtitleTrack(
+    projectId,
+    conversation.clip.id,
+    {
+      style: "VIRAL",
+      enabled: true,
+    },
+  );
+  assert(
+    conversationSubtitles.style === "VIRAL",
+    "Conversation subtitles must use normal non-karaoke style",
+  );
+
+  const focus = await applySpeechFocus(projectId, conversation.clip.id, {
+    zoom: 1.10,
+    attackMs: 700,
+    releaseMs: 900,
+    mergeGapMs: 250,
+    paddingBeforeMs: 120,
+    paddingAfterMs: 180,
+  });
+  assert(focus.windows.length > 0, "Conversation speech zoom has no windows");
+
+  const conversationRendered = await renderClip(
+    projectId,
+    conversation.clip.id,
+  );
+  assert(
+    conversationRendered.clip.render?.subtitlesBurned === true,
+    "Conversation render did not burn subtitles",
+  );
+  assert(
+    conversationRendered.clip.render?.autoReframeApplied === true,
+    "Conversation render did not apply speech zoom",
+  );
+
+  const conversationPath = resolveStoragePath(
+    conversationRendered.clip.render.relativePath,
+  );
+  const conversationProbe = await ffprobe(conversationPath);
+  assert(
+    conversationProbe.width === 1080 && conversationProbe.height === 1920,
+    "Conversation ffprobe resolution mismatch",
+  );
+  assert(
+    conversationProbe.hasAudio === true,
+    "Conversation render has no audio stream",
+  );
+
+  const conversationAssPath = path.join(
+    storage,
+    "clips",
+    projectId,
+    conversation.clip.id,
+    "subtitles.ass",
+  );
+  const conversationAss = await readFile(conversationAssPath, "utf8");
+  assert(
+    /Dialogue: 0/.test(conversationAss),
+    "Conversation ASS subtitle file has no dialogue",
+  );
+  assert(
+    !/\\k\d+/.test(conversationAss),
+    "Conversation subtitles unexpectedly contain karaoke timing tags",
+  );
 
   const sourceHashAfter = await hashFile(sourcePath);
   assert(
@@ -270,6 +371,12 @@ try {
     resolution: `${probe.width}x${probe.height}`,
     duration: probe.duration,
     sizeBytes: renderedStat.size,
+    conversationClipId: conversation.clip.id,
+    conversationResolution:
+      `${conversationProbe.width}x${conversationProbe.height}`,
+    conversationHasAudio: conversationProbe.hasAudio,
+    conversationSubtitles: conversationSubtitles.style,
+    conversationZoomWindows: focus.windows.length,
   });
 } finally {
   if (previousStorage === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
@@ -291,11 +398,13 @@ async function ffprobe(filePath) {
 
   const parsed = JSON.parse(output);
   const video = parsed.streams.find((stream) => stream.codec_type === "video");
+  const audio = parsed.streams.find((stream) => stream.codec_type === "audio");
 
   return {
     width: Number(video.width),
     height: Number(video.height),
     duration: Number(parsed.format.duration),
+    hasAudio: Boolean(audio),
   };
 }
 

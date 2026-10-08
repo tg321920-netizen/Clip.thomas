@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot as resolveStorageRoot } from "@/lib/storage-paths.mjs";
+import { classifyStorageDurability as classifyDurability } from "@/lib/storage-durability.mjs";
 
 export type StorageStatus = {
   writable: boolean;
@@ -47,36 +48,6 @@ export async function getStorageStatus(): Promise<StorageStatus> {
   }
 }
 
-export function classifyStorageDurability(root: string) {
-  const resolved = path.resolve(root);
-  const normalized = resolved.replaceAll("\\", "/");
-
-  if (
-    normalized === "/tmp" ||
-    normalized.startsWith("/tmp/") ||
-    normalized.startsWith("/var/tmp/") ||
-    normalized.includes("/.next/")
-  ) {
-    return {
-      persistence: "EPHEMERAL_PATH" as const,
-      durable: false,
-      warning:
-        "El almacenamiento es escribible pero temporal: un deploy o reemplazo de instancia puede borrar proyectos, jobs y renders. Configura CLIPFORGE_STORAGE_DIR sobre un volumen persistente para producción.",
-    };
-  }
-
-  if (process.env.CLIPFORGE_STORAGE_DIR?.trim()) {
-    return {
-      persistence: "PERSISTENT_PATH" as const,
-      durable: true,
-      warning: undefined,
-    };
-  }
-
-  return {
-    persistence: "UNKNOWN" as const,
-    durable: false,
-    warning:
-      "No se puede garantizar persistencia entre reemplazos de instancia sin un directorio persistente explícito.",
-  };
+export function classifyStorageDurability(root: string): Pick<StorageStatus, "persistence" | "durable" | "warning"> {
+  return classifyDurability(root) as Pick<StorageStatus, "persistence" | "durable" | "warning">;
 }

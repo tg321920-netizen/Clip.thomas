@@ -7,7 +7,7 @@ import { PublicationService } from "../publications/PublicationService.mjs";
 import { SchedulerService } from "../scheduler/SchedulerService.mjs";
 
 const PLATFORMS = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
-const MODES = new Set(["MANUAL", "AUTOPILOT"]);
+const MODES = new Set(["MANUAL", "SEMI_AUTO", "AUTO"]);
 
 export class AutopilotService {
   constructor(options = {}) {
@@ -71,7 +71,7 @@ export class AutopilotService {
     const config = options.config || (await this.getConfig());
     const allowManual = options.allowManual === true;
 
-    if ((!config.enabled || config.mode !== "AUTOPILOT") && !allowManual) {
+    if ((!config.enabled || config.mode === "MANUAL") && !allowManual) {
       return { projectId, state: "DISABLED", queuedJob: null, clipId: null, clipIds: [] };
     }
 
@@ -234,7 +234,8 @@ export class AutopilotService {
         clipIds: readyClips.map((clip) => clip.id),
         eligibleChannelIds: [],
         publicationIds: [],
-        approvalRequired: config.approvalRequired,
+        approvalRequired:
+        config.mode === "SEMI_AUTO" ? true : config.approvalRequired,
       };
     }
 
@@ -263,7 +264,10 @@ export class AutopilotService {
 
     return {
       projectId,
-      state: config.approvalRequired ? "WAITING_APPROVAL" : "PUBLICATIONS_SCHEDULED",
+      state:
+        (config.mode === "SEMI_AUTO" ? true : config.approvalRequired)
+          ? "WAITING_APPROVAL"
+          : "PUBLICATIONS_SCHEDULED",
       queuedJob: null,
       clipId: readyClips[0].id,
       clipIds: readyClips.map((clip) => clip.id),
@@ -306,13 +310,17 @@ export function normalizeConfig(input = {}, fallback = null) {
     fallback?.maxClipDuration ?? Math.max(60, minClipDuration),
   );
 
+  const mode = normalizeMode(input.mode, fallback?.mode || "MANUAL");
+
   return {
     enabled: Boolean(input.enabled),
-    mode: enumValue(input.mode, MODES, fallback?.mode || "MANUAL"),
+    mode,
     approvalRequired:
-      typeof input.approvalRequired === "boolean"
-        ? input.approvalRequired
-        : fallback?.approvalRequired ?? true,
+      mode === "MANUAL" || mode === "SEMI_AUTO"
+        ? true
+        : typeof input.approvalRequired === "boolean"
+          ? input.approvalRequired
+          : fallback?.approvalRequired ?? true,
     postsPerDay: boundedInteger(input.postsPerDay, 1, 50, fallback?.postsPerDay || 3),
     clipsPerSource: boundedInteger(
       input.clipsPerSource,
@@ -450,9 +458,12 @@ function normalizeTimes(value, fallback) {
   return output;
 }
 
-function enumValue(value, allowed, fallback) {
-  const normalized = String(value || "").trim().toUpperCase();
-  return allowed.has(normalized) ? normalized : fallback;
+function normalizeMode(value, fallback) {
+  let normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "AUTOPILOT") normalized = "AUTO";
+  if (MODES.has(normalized)) return normalized;
+  const safeFallback = String(fallback || "MANUAL").trim().toUpperCase();
+  return MODES.has(safeFallback) ? safeFallback : "MANUAL";
 }
 
 function boundedInteger(value, min, max, fallback) {

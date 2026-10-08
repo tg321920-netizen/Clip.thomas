@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { access, mkdir } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import path from "node:path";
+import { PUBLISHING_ENABLED } from "../lib/publishing-policy.mjs";
 
 const storageRoot = path.resolve(
   process.env.CLIPFORGE_STORAGE_DIR?.trim() || "/tmp/clipforge",
@@ -45,10 +46,12 @@ if (process.argv.includes("--check")) {
 let shuttingDown = false;
 let webChild = null;
 let ingestChild = null;
+let smokeChild = null;
 let activeWorker = null;
 
 const workerScripts = [
   "scripts/autopilot-worker.mjs",
+  "scripts/agent-worker.mjs",
   "scripts/transcription-worker.mjs",
   "scripts/media-worker.mjs",
   "scripts/analysis-worker.mjs",
@@ -68,7 +71,133 @@ ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-void workerLoop();
+void startBackgroundWork();
+
+async function startBackgroundWork() {
+  if (PUBLISHING_ENABLED) await maybePrepareSmartPublishOnBoot();
+
+  // Rescue deployments never create demonstration videos automatically.
+  if (PUBLISHING_ENABLED && String(process.env.CLIPFORGE_CC_PODCAST_SMOKE || "").trim().toLowerCase() === "true") {
+    await runCcPodcastSmoke();
+  }
+
+  if (!shuttingDown) void workerLoop();
+}
+
+async function maybePrepareSmartPublishOnBoot() {
+  const enabled =
+    String(process.env.CLIPFORGE_SMART_PUBLISH_ON_BOOT || "")
+      .trim()
+      .toLowerCase() === "true";
+  if (!enabled) return;
+
+  try {
+    const {
+      ensurePublishOnceYouTubeChannel,
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    } = await import("../services/publishing/PublishOncePodcastService.mjs");
+    const { OAuthConnectionService } = await import(
+      "../services/oauth/OAuthConnectionService.mjs"
+    );
+    const {
+      getSmartPublishJobStatus,
+      queueSmartPublishJob,
+    } = await import("../services/publishing/SmartPublishJobService.mjs");
+
+    await ensurePublishOnceYouTubeChannel();
+
+    const oauth = new OAuthConnectionService();
+    const credentials = await oauth.getValidCredentials(
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    );
+    if (!credentials?.accessToken) {
+      console.log(
+        "[free-runtime] smart publish boot is waiting for YouTube authorization.",
+      );
+      return;
+    }
+
+    const current = await getSmartPublishJobStatus();
+    if (
+      ["QUEUED", "RUNNING", "YOUTUBE_PROCESSING", "PUBLISHING", "PUBLISHED"].includes(
+        current.status,
+      )
+    ) {
+      console.log("[free-runtime] smart publish boot found existing job.", {
+        status: current.status,
+        stage: current.stage,
+        publicationId: current.publicationId || null,
+        externalPostUrl: current.externalPostUrl || null,
+      });
+      return;
+    }
+
+    if (current.status === "FAILED" && current.publicationId) {
+      console.warn(
+        "[free-runtime] smart publish boot found a failed job with a publication id; refusing to queue a duplicate upload.",
+        {
+          publicationId: current.publicationId,
+          externalPostUrl: current.externalPostUrl || null,
+        },
+      );
+      return;
+    }
+
+    const realPublishingEnabled =
+      String(process.env.CLIPFORGE_AGENT_REAL_PUBLISHING || "")
+        .trim()
+        .toLowerCase() === "true";
+
+    if (!realPublishingEnabled) {
+      console.log(
+        "[free-runtime] YouTube credentials recovered; smart publish is ready but real publishing remains disabled.",
+      );
+      return;
+    }
+
+    const queued = await queueSmartPublishJob(
+      PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+    );
+    console.log("[free-runtime] smart publish boot queued one job.", {
+      id: queued.id,
+      status: queued.status,
+    });
+  } catch (error) {
+    console.error(
+      "[free-runtime] smart publish boot preparation failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+function runCcPodcastSmoke() {
+  return new Promise((resolve) => {
+    console.log("[free-runtime] starting licensed Spanish podcast smoke test...");
+    smokeChild = spawn(process.execPath, ["scripts/cc-podcast-smoke.mjs"], {
+      env: process.env,
+      stdio: "inherit",
+      shell: false,
+    });
+
+    smokeChild.on("error", (error) => {
+      console.error("[free-runtime] licensed podcast smoke test failed to start", error);
+      smokeChild = null;
+      resolve();
+    });
+
+    smokeChild.on("exit", (code, signal) => {
+      if (code === 0) {
+        console.log("[free-runtime] licensed podcast smoke test finished successfully.");
+      } else {
+        console.error(
+          `[free-runtime] licensed podcast smoke test exited (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
+        );
+      }
+      smokeChild = null;
+      resolve();
+    });
+  });
+}
 
 async function workerLoop() {
   while (!shuttingDown) {
@@ -134,19 +263,19 @@ function shutdown(signal, exitCode = 0) {
   shuttingDown = true;
   console.log("[free-runtime] shutting down...");
 
-  for (const child of [activeWorker, ingestChild, webChild]) {
+  for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
     if (child && !child.killed) child.kill(signal);
   }
 
   const timer = setTimeout(() => {
-    for (const child of [activeWorker, ingestChild, webChild]) {
+    for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
       if (child && !child.killed) child.kill("SIGKILL");
     }
     process.exit(exitCode);
   }, 10_000);
   timer.unref();
 
-  const pending = [activeWorker, ingestChild, webChild]
+  const pending = [activeWorker, smokeChild, ingestChild, webChild]
     .filter(Boolean)
     .map(
       (child) =>
@@ -225,3 +354,4 @@ function clampInteger(value, min, max) {
   if (!Number.isFinite(parsed)) return min;
   return Math.max(min, Math.min(max, parsed));
 }
+

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ClipForge Multi",
-  description: "Crea clips verticales reales para TikTok, Shorts y Reels.",
+  title: "ClipForge Studio",
+  description: "Importa videos, edita, crea clips e historias visuales y descarga tus MP4.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

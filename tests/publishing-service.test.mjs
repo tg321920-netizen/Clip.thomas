@@ -7,6 +7,8 @@ import { ChannelService } from "../services/channels/ChannelService.mjs";
 import { JobStore } from "../services/JobStore.mjs";
 import { PublicationService } from "../services/publications/PublicationService.mjs";
 import { PublishingService, classifyProviderStatus } from "../services/publishing/PublishingService.mjs";
+import { PublishingProviderError } from "../services/publishing/PublishingProvider.mjs";
+import { PublishingReadinessService } from "../services/publishing/PublishingReadinessService.mjs";
 
 const PROJECT_ID = "8e56073f-ae3a-4c2c-a73d-b11085dbd1b6";
 const CLIP_ID = "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b";
@@ -14,7 +16,9 @@ const CLIP_ID = "15b0e6f2-72cb-4cf2-a3ad-a2a5f27e694b";
 async function withStorage(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-publishing-"));
   const previous = process.env.CLIPFORGE_STORAGE_DIR;
+  const previousRealPublishing = process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
   process.env.CLIPFORGE_STORAGE_DIR = root;
+  process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "true";
 
   try {
     await mkdir(path.join(root, "projects"), { recursive: true });
@@ -23,6 +27,11 @@ async function withStorage(fn) {
   } finally {
     if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
     else process.env.CLIPFORGE_STORAGE_DIR = previous;
+    if (previousRealPublishing === undefined) {
+      delete process.env.CLIPFORGE_AGENT_REAL_PUBLISHING;
+    } else {
+      process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = previousRealPublishing;
+    }
     await rm(root, { recursive: true, force: true });
   }
 }
@@ -119,6 +128,172 @@ test("editing publication metadata resets approval and consent", async () => {
   });
 });
 
+
+test("PublishingService blocks provider invocation while the global real-publishing flag is OFF", async () => {
+  await withStorage(async (root) => {
+    await seedProject(root);
+    const channels = new ChannelService();
+    const channel = await channels.createChannel({
+      platform: "YOUTUBE",
+      name: "YouTube guarded",
+      timezone: "UTC",
+      status: "CONNECTED",
+      publishingEnabled: true,
+    });
+    const publications = new PublicationService({ channels });
+    const created = await publications.createForClip({
+      projectId: PROJECT_ID,
+      clipId: CLIP_ID,
+      channelId: channel.id,
+      approvalRequired: false,
+    });
+    await publications.schedule(created.publication.id, "2030-01-01T09:00:00.000Z");
+
+    let providerFactoryCalls = 0;
+    let providerPublishCalls = 0;
+    const service = new PublishingService({
+      publications,
+      channels,
+      credentials: {
+        isConfigured() { return true; },
+        async get() { return { accessToken: "test-token" }; },
+      },
+      providerFactory() {
+        providerFactoryCalls += 1;
+        return {
+          requirements() { return {}; },
+          async publish() {
+            providerPublishCalls += 1;
+            return {
+              externalPostId: "must-not-be-created",
+              providerStatus: "PUBLISHED",
+            };
+          },
+        };
+      },
+    });
+
+    process.env.CLIPFORGE_AGENT_REAL_PUBLISHING = "false";
+
+    await assert.rejects(
+      () => service.publishPublication(created.publication.id, {
+        now: new Date("2030-01-01T09:01:00.000Z"),
+      }),
+      (error) => error?.code === "REAL_PUBLISHING_DISABLED",
+    );
+
+    assert.equal(providerFactoryCalls, 0);
+    assert.equal(providerPublishCalls, 0);
+    const saved = await publications.get(created.publication.id);
+    assert.equal(saved.status, "SCHEDULED");
+    assert.equal(saved.externalPostId, null);
+  });
+});
+
+test("TikTok FILE_UPLOAD readiness accepts a rendered local file without publicVideoUrl", async () => {
+  await withStorage(async (root) => {
+    await seedProject(root);
+    const channels = new ChannelService();
+    const channel = await channels.createChannel({
+      platform: "TIKTOK",
+      name: "TikTok local upload",
+      timezone: "UTC",
+      status: "CONNECTED",
+      publishingEnabled: true,
+    });
+    const publications = new PublicationService({ channels });
+    const created = await publications.createForClip({
+      projectId: PROJECT_ID,
+      clipId: CLIP_ID,
+      channelId: channel.id,
+      approvalRequired: true,
+    });
+    await publications.approve(created.publication.id, {
+      consent: true,
+      platformSettings: {
+        privacyLevel: "SELF_ONLY",
+        transferMethod: "FILE_UPLOAD",
+      },
+    });
+
+    const readiness = new PublishingReadinessService({
+      publications,
+      channels,
+      credentials: {
+        isConfigured() { return true; },
+        async get() { return { accessToken: "test-token" }; },
+      },
+      providerFactory() {
+        return { requirements() { return { oauthScopes: ["video.publish"] }; } };
+      },
+    });
+
+    const state = await readiness.check(created.publication.id);
+    assert.equal(state.ready, true);
+    assert.equal(state.reasons.includes("TIKTOK_VERIFIED_MEDIA_URL_REQUIRED"), false);
+    assert.equal(state.publication.platformSettings.transferMethod, "FILE_UPLOAD");
+  });
+});
+
+test("TikTok PULL_FROM_URL readiness requires and accepts a verified HTTPS publicVideoUrl", async () => {
+  await withStorage(async (root) => {
+    await seedProject(root);
+    const channels = new ChannelService();
+    const channel = await channels.createChannel({
+      platform: "TIKTOK",
+      name: "TikTok URL upload",
+      timezone: "UTC",
+      status: "CONNECTED",
+      publishingEnabled: true,
+    });
+    const publications = new PublicationService({ channels });
+    const created = await publications.createForClip({
+      projectId: PROJECT_ID,
+      clipId: CLIP_ID,
+      channelId: channel.id,
+      approvalRequired: true,
+    });
+
+    await publications.approve(created.publication.id, {
+      consent: true,
+      platformSettings: {
+        privacyLevel: "SELF_ONLY",
+        transferMethod: "PULL_FROM_URL",
+      },
+    });
+
+    const readiness = new PublishingReadinessService({
+      publications,
+      channels,
+      credentials: {
+        isConfigured() { return true; },
+        async get() { return { accessToken: "test-token" }; },
+      },
+      providerFactory() {
+        return { requirements() { return { oauthScopes: ["video.publish"] }; } };
+      },
+    });
+
+    const missingUrl = await readiness.check(created.publication.id);
+    assert.equal(missingUrl.ready, false);
+    assert.ok(missingUrl.reasons.includes("TIKTOK_VERIFIED_MEDIA_URL_REQUIRED"));
+
+    await publications.approve(created.publication.id, {
+      consent: true,
+      platformSettings: {
+        privacyLevel: "SELF_ONLY",
+        transferMethod: "PULL_FROM_URL",
+        publicVideoUrl: "https://media.example.com/clip.mp4",
+      },
+    });
+
+    const withUrl = await readiness.check(created.publication.id);
+    assert.equal(withUrl.ready, true);
+    assert.equal(withUrl.reasons.includes("TIKTOK_VERIFIED_MEDIA_URL_REQUIRED"), false);
+    assert.equal(withUrl.publication.platformSettings.transferMethod, "PULL_FROM_URL");
+  });
+});
+
 test("PublishingService submits a due scheduled publication through injected credentials/provider", async () => {
   await withStorage(async (root) => {
     await seedProject(root);
@@ -206,5 +381,60 @@ test("PUBLISH_POST jobs are unique per publication and preserve News Mode jobs",
     const claimed = await store.claimNext(["PUBLISH_POST"]);
     assert.equal(claimed?.type, "PUBLISH_POST");
     assert.ok([publicationA, publicationB].includes(claimed?.entityId));
+  });
+});
+
+
+test("retryable provider failures requeue the publication for bounded worker retry", async () => {
+  await withStorage(async (root) => {
+    await seedProject(root);
+    const channels = new ChannelService();
+    const channel = await channels.createChannel({
+      platform: "YOUTUBE",
+      name: "YouTube retry",
+      timezone: "UTC",
+      status: "CONNECTED",
+      publishingEnabled: true,
+    });
+    const publications = new PublicationService({ channels });
+    const created = await publications.createForClip({
+      projectId: PROJECT_ID,
+      clipId: CLIP_ID,
+      channelId: channel.id,
+      approvalRequired: false,
+    });
+    await publications.schedule(created.publication.id, "2030-01-01T09:00:00.000Z");
+
+    const service = new PublishingService({
+      publications,
+      channels,
+      credentials: {
+        isConfigured() { return true; },
+        async get() { return { accessToken: "test-token" }; },
+      },
+      providerFactory() {
+        return {
+          requirements() { return { mock: true }; },
+          async publish() {
+            throw new PublishingProviderError("Provider rate limited", {
+              code: "YOUTUBE_HTTP_429",
+              retryable: true,
+            });
+          },
+        };
+      },
+    });
+
+    await assert.rejects(
+      () => service.publishPublication(created.publication.id, {
+        now: new Date("2030-01-01T09:01:00.000Z"),
+      }),
+      (error) => error?.retryable === true,
+    );
+
+    const saved = await publications.get(created.publication.id);
+    assert.equal(saved.status, "SCHEDULED");
+    assert.match(saved.error, /rate limited/i);
+    assert.ok(saved.scheduledAt);
   });
 });

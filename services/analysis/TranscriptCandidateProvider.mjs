@@ -75,6 +75,7 @@ export function normalizeAnalysisOptions(options = {}) {
     maxCandidates: Math.round(
       boundedNumber(options.maxCandidates, 1, 50, DEFAULTS.maxCandidates),
     ),
+    requireCompleteSentences: options.requireCompleteSentences === true,
   };
 }
 
@@ -82,6 +83,8 @@ function buildWindows(segments, config) {
   const windows = [];
 
   for (let startIndex = 0; startIndex < segments.length; startIndex += 1) {
+    if (config.requireCompleteSentences && startIndex > 0 &&
+        !hasSentenceEnd(segments[startIndex - 1].text)) continue;
     const start = segments[startIndex].startTime;
     let best = null;
 
@@ -91,6 +94,7 @@ function buildWindows(segments, config) {
 
       if (duration > config.maxDuration) break;
       if (duration < config.minDuration) continue;
+      if (config.requireCompleteSentences && !hasSentenceEnd(segments[endIndex].text)) continue;
 
       const text = segments
         .slice(startIndex, endIndex + 1)
@@ -124,7 +128,7 @@ function buildWindows(segments, config) {
     if (best) windows.push(best);
   }
 
-  if (windows.length === 0) {
+  if (windows.length === 0 && !config.requireCompleteSentences) {
     const first = segments[0];
     const last = segments[segments.length - 1];
     const duration = last.endTime - first.startTime;
@@ -143,6 +147,13 @@ function buildWindows(segments, config) {
   }
 
   return windows;
+}
+
+// Punctuation is timing evidence, not proof that the idea stands on its own.
+// An ellipsis is deliberately not accepted as a finished sentence.
+function hasSentenceEnd(text) {
+  const ending = String(text).trim().replace(/["'»”)\]]+$/u, "");
+  return /[.!?]$/.test(ending) && !/[.…]{2,}$/.test(ending);
 }
 
 function selectDistinct(candidates, maxCandidates) {
@@ -260,3 +271,4 @@ function omitInternal(candidate) {
 function round(value) {
   return Math.round(Number(value) * 1000) / 1000;
 }
+

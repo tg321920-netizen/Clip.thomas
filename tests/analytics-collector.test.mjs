@@ -121,3 +121,54 @@ test("normalizeProviderMetrics never invents unsupported metrics", () => {
     { views: 10, likes: 2, shares: 0 },
   );
 });
+
+
+test("AnalyticsCollectorService uses OAuth-refreshed YouTube credentials", async () => {
+  let oauthCalls = 0;
+  let providerToken = null;
+  const collector = new AnalyticsCollectorService({
+    publications: {
+      async get() {
+        return publication;
+      },
+    },
+    channels: {
+      async getChannel() {
+        return channel;
+      },
+    },
+    credentials: {
+      isConfigured() {
+        return true;
+      },
+      async get() {
+        throw new Error("raw vault access should not be used when OAuth is available");
+      },
+    },
+    oauth: {
+      async getValidCredentials(id) {
+        oauthCalls += 1;
+        assert.equal(id, ids.channel);
+        return { accessToken: "refreshed-youtube-token" };
+      },
+    },
+    analytics: {
+      async recordSnapshot(input) {
+        return { id: "snapshot-refreshed", ...input };
+      },
+    },
+    providerFactory() {
+      return {
+        async getAnalytics(context) {
+          providerToken = context.credentials.accessToken;
+          return { views: 5, source: "youtube-data-api" };
+        },
+      };
+    },
+  });
+
+  const result = await collector.collectPublication(ids.publication);
+  assert.equal(result.collected, true);
+  assert.equal(oauthCalls, 1);
+  assert.equal(providerToken, "refreshed-youtube-token");
+});

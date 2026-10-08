@@ -15,9 +15,10 @@ type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
 const PROJECT_OPEN_EVENT = "clipforge:project-open";
 
-export function UploadPanel({ onReady, compact = false }: { onReady?: (video: UploadedVideo) => void; compact?: boolean } = {}) {
+export function UploadPanel({ onReady, compact = false }: { onReady?: (video: UploadedVideo | null) => void; compact?: boolean } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const [stage, setStage] = useState("Subiendo");
   const [queuedId, setQueuedId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -26,11 +27,16 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
   const [result, setResult] = useState<UploadedVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; abortRef.current?.abort(); abortRef.current = null; };
+  }, []);
 
   useEffect(() => {
     const openProject = (event: Event) => {
       const video = (event as CustomEvent<UploadedVideo>).detail;
       if (!video?.projectId) return;
+      abortRef.current?.abort(); abortRef.current = null;
 
       setFile(null);
       setProgress(null);
@@ -45,7 +51,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
   }, [onReady]);
 
   function chooseFile(nextFile: File | undefined) {
-    if (!nextFile) return;
+    if (!nextFile || state === "checking" || state === "uploading") return;
 
     const validation = validateUploadDescriptor({
       filename: nextFile.name,
@@ -55,6 +61,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
 
     setFile(nextFile);
     setResult(null);
+    onReady?.(null);
     setQueuedId(null);
     setProgress(null);
 
@@ -76,20 +83,26 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
 
   async function upload() {
     if (!file || state === "checking" || state === "uploading") return;
+    const abort = new AbortController();
+    abortRef.current = abort;
+    const current = () => mounted.current && abortRef.current === abort;
 
     setState("checking");
     setError(null);
     setResult(null);
+    onReady?.(null);
     setProgress(null);
 
     try {
       const readinessResponse = await fetch("/api/system/media-status", {
         cache: "no-store",
+        signal: abort.signal,
       });
       const readiness = (await readinessResponse.json()) as {
         ready?: boolean;
         message?: string;
       };
+      if (!current()) return;
 
       if (!readiness.ready) {
         setError(
@@ -97,32 +110,35 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
             "Este entorno todavía no está listo para procesar video.",
         );
         setState("error");
+        abortRef.current = null;
         return;
       }
     } catch {
+      if (!current()) return;
       setError("No se pudo verificar el motor de procesamiento.");
       setState("error");
+      abortRef.current = null;
       return;
     }
 
     setState("uploading");
     setProgress(0);
 
-    const abort = new AbortController();
-    abortRef.current = abort;
     try {
       const video = await uploadResumable(file, {
         signal: abort.signal,
-        onProgress: (percent, nextStage) => { setProgress(percent); setStage(nextStage); },
-        onQueued: (id) => { setQueuedId(id); window.dispatchEvent(new Event("clipforge:project-created")); },
+        onProgress: (percent, nextStage) => { if (current()) { setProgress(percent); setStage(nextStage); } },
+        onQueued: (id) => { if (current()) setQueuedId(id); window.dispatchEvent(new Event("clipforge:project-created")); },
       });
+      if (!current()) return;
       setResult(video as UploadedVideo); setState("done"); setProgress(100);
       onReady?.(video as UploadedVideo);
       window.dispatchEvent(new Event("clipforge:project-created"));
     } catch (failure) {
+      if (!current()) return;
       setError(failure instanceof Error ? failure.message : "Conexión interrumpida. Puedes reanudar seleccionando el mismo archivo.");
       setState("error");
-    } finally { abortRef.current = null; }
+    } finally { if (abortRef.current === abort) abortRef.current = null; }
   }
 
   function cancel() { abortRef.current?.abort(); }
@@ -216,7 +232,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
                 disabled={Boolean(!file || !validateUploadDescriptor({ filename: file.name, mimeType: file.type || "application/octet-stream", size: file.size }).ok)}
                 className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {state === "error" ? "Reanudar subida" : "Subir y analizar"}
+                {state === "error" ? "Reanudar subida" : "Subir video"}
               </button>
             ) : state === "uploading" ? (
               <button
@@ -264,12 +280,12 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
           <div className="p-4">
             <div className="flex items-center justify-between">
               <h3 className="font-medium text-emerald-200">
-                FFprobe + FFmpeg completados
+                Video original recibido
               </h3>
               <span className="text-xs text-emerald-400">REAL</span>
             </div>
             <p className="mt-1 text-xs text-zinc-500">
-              El reproductor usa el archivo guardado de este proyecto, no una demo.
+              La subida está completa. Ahora puedes crear clips del original.
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
@@ -328,3 +344,4 @@ function formatDuration(seconds: number): string {
   const remaining = total % 60;
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
 }
+

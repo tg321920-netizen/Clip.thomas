@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPublicRequestOrigin } from "@/lib/owner-auth.mjs";
 import { OAuthConnectionService } from "@/services/oauth/OAuthConnectionService.mjs";
+import {
+  PUBLISH_ONCE_YOUTUBE_CHANNEL_ID,
+} from "@/services/publishing/PublishOncePodcastService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +33,18 @@ export async function GET(
       stateCookie: cookie,
     });
 
-    const url = new URL("/autopilot", publicOrigin);
+    if (
+      normalized === "YOUTUBE" &&
+      result.channelId === PUBLISH_ONCE_YOUTUBE_CHANNEL_ID
+    ) {
+      const statusUrl = new URL("/publish-once/status", publicOrigin);
+      statusUrl.searchParams.set("authorized", "1");
+      const response = NextResponse.redirect(statusUrl, 303);
+      response.cookies.delete(cookieName(normalized));
+      return response;
+    }
+
+    const url = new URL("/connections", publicOrigin);
     url.searchParams.set(
       "oauth",
       result.pageSelectionRequired ? "page_selection_required" : "connected",
@@ -42,7 +56,10 @@ export async function GET(
     response.cookies.delete(cookieName(normalized));
     return response;
   } catch (error) {
-    const url = new URL("/autopilot", publicOrigin);
+    const usePublicStatus =
+      normalized === "YOUTUBE" &&
+      String(process.env.CLIPFORGE_PUBLISH_ONCE_SMART || "").trim().toLowerCase() === "true";
+    const url = new URL(usePublicStatus ? "/publish-once/status" : "/connections", publicOrigin);
     url.searchParams.set("oauth", "callback_failed");
     url.searchParams.set("platform", normalized.toLowerCase());
     url.searchParams.set(

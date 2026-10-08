@@ -1,10 +1,9 @@
 import { JobStore } from "../services/JobStore.mjs";
 import { loadProjectFile } from "../lib/project-files.mjs";
-import { resolveStoragePath } from "../lib/storage-paths.mjs";
 import { SceneStoryService } from "../services/owned-content/SceneStoryService.mjs";
 import { VideoAutoEditService } from "../services/autoedit/VideoAutoEditService.mjs";
 import { BestClipsService } from "../services/analysis/BestClipsService.mjs";
-import { validateMp4 } from "../services/media-processing/MediaValidationService.mjs";
+import { recoverMediaResult } from "../services/media-processing/MediaResultRecovery.mjs";
 import { ResumableUploadStore } from "../services/ingest/ResumableUploadStore.mjs";
 import { cleanupCompletedMedia } from "../services/media-processing/MediaTempCleanup.mjs";
 const store = new JobStore(), once = process.argv.includes("--once"); let stopping = false;
@@ -17,12 +16,9 @@ while (!stopping) {
   const heartbeat = setInterval(() => { void store.heartbeat(job.id).catch(() => {}); }, 15_000);
   try {
     // A crash after persisting the validated project need not render it again.
-    const existing = await loadProjectFile(job.projectId); let result;
-    if (existing?.clips?.length && existing.clips.every(c => c.status === "READY" && c.render?.relativePath)) {
-      const clips = [];
-      for (const c of existing.clips) clips.push({ clipId: c.id, sourceUrl: c.render.sourceUrl, downloadUrl: `${c.render.sourceUrl}?download=1`, relativePath: c.render.relativePath, validation: await validateMp4(resolveStoragePath(c.render.relativePath), { requireAudio: existing.source.hasAudio !== false, duration: c.duration }) });
-      result = clips.length === 1 ? { ...clips[0], projectId: job.projectId, title: existing.source.originalName } : { projectId: job.projectId, title: existing.source.originalName, clips, validation: { valid: clips.every(c => c.validation.valid), clipCount: clips.length } };
-    } else {
+    const existing = await loadProjectFile(job.projectId);
+    let result = await recoverMediaResult(existing, job);
+    if (!result) {
       const service = job.type === "MEDIA_STORY" ? new SceneStoryService() : job.type === "MEDIA_EDIT" ? new VideoAutoEditService() : new BestClipsService();
       result = await service.render(job.projectId, job.payload, async (status, stage, progress) => store.transition(job.id, status, stage, progress));
     }
@@ -35,3 +31,4 @@ while (!stopping) {
   } finally { clearInterval(heartbeat); }
   if (once) break;
 }
+

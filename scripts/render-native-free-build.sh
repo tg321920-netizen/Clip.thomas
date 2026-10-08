@@ -45,61 +45,80 @@ fi
 # A normal YouTube/Twitch/web page is not itself a media stream. Bundle the
 # official standalone yt-dlp Linux executable so URL ingestion can resolve
 # supported public pages without adding a paid service.
-curl --fail --location --retry 3 \
-  "$YTDLP_URL" \
-  --output "$RUNTIME_ROOT/bin/yt-dlp"
-chmod +x "$RUNTIME_ROOT/bin/yt-dlp"
+if [ ! -x "$RUNTIME_ROOT/bin/yt-dlp" ]; then
+  curl --fail --location --retry 3 \
+    "$YTDLP_URL" \
+    --output "$RUNTIME_ROOT/bin/yt-dlp"
+  chmod +x "$RUNTIME_ROOT/bin/yt-dlp"
+else
+  echo "[render-native] reusing cached yt-dlp."
+fi
 
 export PATH="$RUNTIME_ROOT/bin:$PATH"
 "$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null
 "$RUNTIME_ROOT/bin/ffprobe" -version >/dev/null
 "$RUNTIME_ROOT/bin/yt-dlp" --version >/dev/null
 
-# cmake is not guaranteed by Render's native runtime. Install its Python wheel
-# only for the build if necessary; the built media tools are copied into the
-# deploy artifact and do not require cmake at runtime.
-if ! command -v cmake >/dev/null 2>&1; then
-  python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-cache-dir cmake
-  export PATH="$(python3 -m site --user-base)/bin:$PATH"
+# Reuse heavy native tools from Render's build cache whenever possible.
+NEED_CMAKE=false
+if [ ! -x "$RUNTIME_ROOT/bin/whisper-cli" ] || [ ! -s "$RUNTIME_ROOT/models/ggml-tiny.bin" ]; then
+  NEED_CMAKE=true
 fi
-command -v cmake >/dev/null
+if [ ! -x "$ESPEAK_PREFIX/bin/espeak-ng" ] || [ ! -d "$ESPEAK_PREFIX/share/espeak-ng-data" ]; then
+  NEED_CMAKE=true
+fi
 
-rm -rf "$WHISPER_SRC"
-git clone --filter=blob:none --no-checkout https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC"
-cd "$WHISPER_SRC"
-git fetch --depth 1 origin "$WHISPER_COMMIT"
-git checkout --detach FETCH_HEAD
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DGGML_NATIVE=OFF \
-  -DWHISPER_BUILD_TESTS=OFF \
-  -DWHISPER_BUILD_EXAMPLES=ON
-cmake --build build --config Release --target whisper-cli --parallel 2
-cp build/bin/whisper-cli "$RUNTIME_ROOT/bin/whisper-cli"
-chmod +x "$RUNTIME_ROOT/bin/whisper-cli"
+if [ "$NEED_CMAKE" = "true" ]; then
+  if ! command -v cmake >/dev/null 2>&1; then
+    python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-cache-dir cmake
+    export PATH="$(python3 -m site --user-base)/bin:$PATH"
+  fi
+  command -v cmake >/dev/null
+fi
 
-curl --fail --location --retry 3 \
-  "$WHISPER_MODEL_URL" \
-  --output "$RUNTIME_ROOT/models/ggml-tiny.bin"
+if [ ! -x "$RUNTIME_ROOT/bin/whisper-cli" ] || [ ! -s "$RUNTIME_ROOT/models/ggml-tiny.bin" ]; then
+  rm -rf "$WHISPER_SRC"
+  git clone --filter=blob:none --no-checkout https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC"
+  cd "$WHISPER_SRC"
+  git fetch --depth 1 origin "$WHISPER_COMMIT"
+  git checkout --detach FETCH_HEAD
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_NATIVE=OFF \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON
+  cmake --build build --config Release --target whisper-cli --parallel 2
+  cp build/bin/whisper-cli "$RUNTIME_ROOT/bin/whisper-cli"
+  chmod +x "$RUNTIME_ROOT/bin/whisper-cli"
+
+  curl --fail --location --retry 3 \
+    "$WHISPER_MODEL_URL" \
+    --output "$RUNTIME_ROOT/models/ggml-tiny.bin"
+else
+  echo "[render-native] reusing cached whisper.cpp and model."
+fi
 test -s "$RUNTIME_ROOT/models/ggml-tiny.bin"
 
-# News Mode needs real narration. Bundle a pinned eSpeak NG build instead of
-# depending on packages installed in Render's host image or a paid TTS API.
-rm -rf "$ESPEAK_SRC" "$ESPEAK_PREFIX"
-git clone --filter=blob:none --no-checkout https://github.com/espeak-ng/espeak-ng.git "$ESPEAK_SRC"
-cd "$ESPEAK_SRC"
-git fetch --depth 1 origin "$ESPEAK_COMMIT"
-git checkout --detach FETCH_HEAD
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="$ESPEAK_PREFIX" \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DUSE_LIBPCAUDIO=OFF \
-  -DUSE_SONIC=OFF
-cmake --build build --config Release --parallel 2
-cmake --build build --config Release --target data --parallel 1
-cmake --install build
+# News Mode needs real narration. Reuse the pinned cached build when available.
+if [ ! -x "$ESPEAK_PREFIX/bin/espeak-ng" ] || [ ! -d "$ESPEAK_PREFIX/share/espeak-ng-data" ]; then
+  rm -rf "$ESPEAK_SRC" "$ESPEAK_PREFIX"
+  git clone --filter=blob:none --no-checkout https://github.com/espeak-ng/espeak-ng.git "$ESPEAK_SRC"
+  cd "$ESPEAK_SRC"
+  git fetch --depth 1 origin "$ESPEAK_COMMIT"
+  git checkout --detach FETCH_HEAD
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$ESPEAK_PREFIX" \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DUSE_LIBPCAUDIO=OFF \
+    -DUSE_SONIC=OFF
+  cmake --build build --config Release --parallel 2
+  cmake --build build --config Release --target data --parallel 1
+  cmake --install build
+else
+  echo "[render-native] reusing cached eSpeak NG."
+fi
 
 test -x "$ESPEAK_PREFIX/bin/espeak-ng"
 test -d "$ESPEAK_PREFIX/share/espeak-ng-data"
@@ -110,7 +129,10 @@ cd "$ROOT"
 npm ci --include=dev
 # Production bootstrap belongs to the running service, not to build-time tests.
 # Keep tests deterministic even when Render injects runtime environment values.
-CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS=false npm run build
+CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS=false \
+CLIPFORGE_REDIS_URL= \
+REDIS_URL= \
+npm run build
 npm prune --omit=dev
 rm -rf "$TOOLING_ROOT"
 

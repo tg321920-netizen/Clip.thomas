@@ -6,10 +6,10 @@ import { replaceProjectFile } from "../../lib/project-files.mjs";
 import { EspeakNewsTtsProvider } from "../news/EspeakNewsTtsProvider.mjs";
 import { runMedia, validateMp4, probeMediaFile } from "../media-processing/MediaValidationService.mjs";
 import { hashFile } from "../ingest/ResumableUploadStore.mjs";
-
-export class WaitingResourceError extends Error {
-  constructor(message) { super(message); this.code = "WAITING_RESOURCE"; }
-}
+import { isProjectId } from "../../lib/project-id.mjs";
+import { WaitingResourceError } from "./StoryProviderError.mjs";
+import { createStoryGenerationProviders, storyPlanSignature } from "./StoryGenerationProviders.mjs";
+export { WaitingResourceError } from "./StoryProviderError.mjs";
 
 /** Providers must return actual, authorized files; missing scenes never become color fields. */
 export class LocalImageProvider {
@@ -38,47 +38,72 @@ export const MAYA_NARRATION = [
 ];
 
 export async function planStory(input, options = {}) {
-  const duration = Number(input.duration || 60);
+  const duration = Number(input.duration ?? 60);
   if (!Number.isFinite(duration) || duration < 15 || duration > 300) throw new Error("Elige una duración entre 15 y 300 segundos.");
-  let texts, provider;
-  if (options.scriptProvider?.generate) {
-    if (options.scriptProvider.requiresPayment && input.authorizedPaid !== true) throw new WaitingResourceError("El proveedor de guion requiere autorización de costo. Puedes pegar un relato completo sin costo.");
-    const result = await options.scriptProvider.generate(input); texts = result.scenes?.map(s => s.narration); provider = options.scriptProvider.name;
-  } else if (String(input.narration || "").trim().split(/\s+/).length >= 60) {
+  const sceneCount = Number(input.sceneCount ?? 6);
+  if (!Number.isSafeInteger(sceneCount) || sceneCount < 6 || sceneCount > 12) throw new Error("Elige entre seis y doce escenas.");
+  let texts, provider, generated;
+  if (String(input.narration || "").trim().split(/\s+/).length >= 60) {
     const sentences = String(input.narration).trim().split(/(?<=[.!?])\s+/);
-    if (sentences.length < 6) throw new WaitingResourceError("Divide el relato en al menos seis frases para crear seis escenas.");
-    texts = Array.from({ length: 6 }, (_, i) => sentences.slice(Math.floor(i * sentences.length / 6), Math.floor((i + 1) * sentences.length / 6)).join(" ")); provider = "user-script";
-  } else if (/maya/i.test(String(input.topic)) && /ciudad|selva/i.test(String(input.topic))) {
+    if (sentences.length < sceneCount) throw new WaitingResourceError(`Divide el relato en al menos ${sceneCount} frases para crear ${sceneCount} escenas.`);
+    texts = Array.from({ length: sceneCount }, (_, i) => sentences.slice(Math.floor(i * sentences.length / sceneCount), Math.floor((i + 1) * sentences.length / sceneCount)).join(" ")); provider = "user-script";
+  } else if (options.scriptProvider?.generate) {
+    if (options.scriptProvider.requiresPayment && options.scriptProvider.authorized !== true) throw new WaitingResourceError("El proveedor de guion requiere autorización de costo en el servidor. Puedes pegar un relato completo sin costo.");
+    generated = await options.scriptProvider.generate({ ...input, sceneCount }); texts = generated.scenes?.map(s => s.narration); provider = options.scriptProvider.name;
+  } else if (input.example === "MAYA_LEGACY" && sceneCount === 6) {
     texts = duration < 45 ? ["Al amanecer, una exploradora descubre una pirámide entre la niebla.","Bajo las raíces, un símbolo del jaguar señala una puerta.","La luz de su antorcha revela un mapa tallado.","Tras el umbral, encuentra un estanque y columnas antiguas.","Un rayo de sol ilumina conocimientos sobre ríos y estrellas.","La exploradora registra el hallazgo y promete proteger la ciudad."] : MAYA_NARRATION; provider = "local-original-maya-story";
-  } else throw new WaitingResourceError("No hay un modelo de guion autorizado configurado para este tema. Pega un relato completo o utiliza el ejemplo gratuito de la ciudad maya.");
-  if (!Array.isArray(texts) || texts.length < 6 || texts.length > 12 || texts.some(t => !String(t || "").trim())) throw new Error("El guion necesita entre seis y doce escenas completas.");
+  } else throw new WaitingResourceError("No hay un modelo de guion autorizado configurado para este tema. Pega un relato completo de al menos 60 palabras o configura un proveedor autorizado.");
+  if (!Array.isArray(texts) || texts.length !== sceneCount || texts.some(t => typeof t !== "string" || !t.trim())) throw new Error("El proveedor debe devolver la cantidad solicitada de escenas completas.");
   const totalWords = texts.reduce((n, t) => n + t.split(/\s+/).length, 0);
   const maya=provider==="local-original-maya-story";
-  const manifest = { style: String(input.style || "cinematográfico"), language: "es-419", palette: String(input.palette||(maya?"verde esmeralda, piedra cálida, luz dorada":"Conservar la paleta de los recursos originales")), era: String(input.era||(maya?"ruinas mayas antiguas, exploración contemporánea":"Según el relato y las imágenes proporcionadas")), character: String(input.character||(maya?"exploradora con camisa beige y bolso de cuero":"Conservar los personajes de las imágenes proporcionadas")), continuityLimit: "El proveedor local utiliza imágenes elegidas por el usuario; no garantiza identidad visual perfecta." };
+  const manifest = { style: String(input.style || "cinematográfico"), language: "es-419", palette: String(input.palette||generated?.palette||(maya?"verde esmeralda, piedra cálida, luz dorada":"Conservar la paleta de los recursos originales")), era: String(input.era||(maya?"ruinas mayas antiguas, exploración contemporánea":"Según el relato y las imágenes proporcionadas")), character: String(input.character||generated?.character||(maya?"exploradora con camisa beige y bolso de cuero":"Conservar los personajes de las imágenes proporcionadas")), continuityLimit: "El manifiesto mantiene una descripción común; la identidad visual debe revisarse y no se garantiza continuidad perfecta." };
   const scenes = texts.map((narration, i) => ({ id: `scene-${i + 1}`, order: i + 1, narration,
-    visualDescription: `${input.topic || "Historia"}. Escena ${i + 1}: ${narration}. Estilo: ${manifest.style}.`,
+    visualDescription: generated?.scenes[i]?.visualDescription || `${input.topic || "Historia"}. Escena ${i + 1}: ${narration}. Estilo: ${manifest.style}.`,
     estimatedDuration: duration * narration.split(/\s+/).length / totalWords,
     movement: ["zoom-in", "pan-right", "zoom-out", "pan-up", "pan-left", "zoom-in"][i % 6], transition: i === texts.length - 1 ? "none" : "fade" }));
-  return { title: String(input.title || input.topic || "Historia visual").slice(0, 120), duration, provider, manifest, scenes };
+  return { title: String(input.title || generated?.title || input.topic || "Historia visual").slice(0, 120), duration, provider, manifest, scenes };
 }
 
 export class SceneStoryService {
   constructor(options = {}) {
-    this.images = options.imageProvider || new LocalImageProvider();
-    this.scriptProvider = options.scriptProvider;
+    const configured = createStoryGenerationProviders(options);
+    this.localImages = new LocalImageProvider();
+    this.images = options.imageProvider || configured.imageProvider || this.localImages;
+    this.scriptProvider = options.scriptProvider || configured.scriptProvider;
     this.tts = options.ttsProvider || new EspeakNewsTtsProvider({ voice: "es-419", speed: 165 });
     this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920);
   }
   async render(projectId, input, onStage = async () => {}) {
-    const plan = await planStory(input, { scriptProvider: this.scriptProvider });
-    const directory = path.join(getStorageRoot(), "stories", projectId); await mkdir(directory, { recursive: true });
+    if (!isProjectId(projectId)) throw new Error("Proyecto de historia inválido.");
     if (input.format && !["9:16", "16:9"].includes(input.format)) throw new Error("Formato inválido.");
+    const scriptProvider = input.generationMode === "AI" ? this.scriptProvider : undefined;
+    if (input.generationMode === "AI" && this.images === this.localImages && !input.images?.length) throw new WaitingResourceError("La generación IA de imágenes todavía no está configurada. No se consumirá el proveedor de guion.");
+    if (input.generationMode === "AI" && this.images.requiresPayment) {
+      const config = this.images.config;
+      const scriptCost = String(input.narration || "").trim().split(/\s+/).length >= 60 ? 0 : config.scriptMaxCostUsd;
+      if (!config.authorized || !config.imageUnitCostUsd || !config.maxCostUsd || scriptCost === null || (Number(input.sceneCount ?? 6) * config.imageUnitCostUsd + scriptCost) > config.maxCostUsd) throw new WaitingResourceError("Los proveedores y el presupuesto deben estar autorizados antes de iniciar esta historia.");
+    }
+    const directory = path.join(getStorageRoot(), "stories", projectId); await mkdir(directory, { recursive: true });
+    const signature = storyPlanSignature(input, `${scriptProvider?.name || "user-script"}:${scriptProvider?.config?.scriptModel || ""}`);
+    const planFile = path.join(directory, "plan.json");
+    const cached = await readFile(planFile, "utf8").then(JSON.parse).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+    const plan = cached?.signature === signature ? cached.plan : await planStory({ ...input, projectId }, { scriptProvider });
+    if (cached?.signature !== signature) {
+      const temporary = `${planFile}.${randomUUID()}.tmp`;
+      await writeFile(temporary, JSON.stringify({ signature, plan }), { flag: "wx" }); await rename(temporary, planFile);
+    }
     let width = this.width, height = this.height;
     if (input.format === "16:9") [width, height] = [height, width];
     const resolved = [];
-    for (const scene of plan.scenes) resolved.push(await this.images.resolve(scene, input, plan.manifest));
+    await onStage("PROCESSING", "IMAGES", 0);
+    for (const scene of plan.scenes) {
+      const image = input.images?.[scene.order - 1] ? await this.localImages.resolve(scene, input) : await this.images.resolve(scene, { ...input, projectId }, plan.manifest);
+      // Generated files receive the same probe/dimension checks as own images.
+      if (image.provider !== this.localImages.name) await this.localImages.resolve(scene, { images: Array.from({ length: plan.scenes.length }, (_, i) => i === scene.order - 1 ? image.relativePath : undefined) });
+      resolved.push(image); await onStage("PROCESSING", "IMAGES", 0);
+    }
     const imageHashes = await Promise.all(resolved.map(async r => createHash("sha256").update(await readFile(r.filename)).digest("hex")));
-    if (new Set(imageHashes).size < 6) throw new WaitingResourceError("La historia necesita al menos seis imágenes diferentes. No se sustituirán por fondos vacíos.");
+    if (new Set(imageHashes).size !== plan.scenes.length) throw new WaitingResourceError("Cada escena necesita una imagen diferente. Corrige los recursos repetidos; no se sustituirán por fondos vacíos.");
     const voiceSegments = [], cues = []; let rawDuration = 0,reusedVoiceSegments=0,reusedScenes=0;
     await onStage("PROCESSING", "NARRATION", 0);
     for (const scene of plan.scenes) {
@@ -180,3 +205,4 @@ async function reuseVerifiedStage(filename,request,build) {
   await writeFile(`${filename}.cache.json`,JSON.stringify({requestHash,sha256:await hashFile(filename),duration:probe.duration,completedAt:new Date().toISOString()}));
   return false;
 }
+

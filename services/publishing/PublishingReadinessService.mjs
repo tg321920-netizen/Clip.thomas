@@ -78,7 +78,16 @@ export class PublishingReadinessService {
       if (!publication.platformSettings?.privacyLevel) {
         reasons.push("TIKTOK_PRIVACY_REQUIRED");
       }
-      if (!isHttpsUrl(publication.platformSettings?.publicVideoUrl)) {
+
+      const transferMethod = String(
+        publication.platformSettings?.transferMethod || "FILE_UPLOAD",
+      ).trim().toUpperCase();
+      if (!["FILE_UPLOAD", "PULL_FROM_URL"].includes(transferMethod)) {
+        reasons.push("TIKTOK_TRANSFER_METHOD_INVALID");
+      } else if (
+        transferMethod === "PULL_FROM_URL" &&
+        !isHttpsUrl(publication.platformSettings?.publicVideoUrl)
+      ) {
         reasons.push("TIKTOK_VERIFIED_MEDIA_URL_REQUIRED");
       }
     }

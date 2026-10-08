@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 type AutopilotConfig = {
   enabled: boolean;
-  mode: "MANUAL" | "AUTOPILOT";
+  mode: "MANUAL" | "SEMI_AUTO" | "AUTO";
   approvalRequired: boolean;
   postsPerDay: number;
   clipsPerSource: number;
@@ -114,18 +114,18 @@ export function AutopilotControlPanel() {
                 ? {
                     ...current,
                     enabled: !current.enabled,
-                    mode: current.enabled ? "MANUAL" : "AUTOPILOT",
+                    mode: current.enabled ? "MANUAL" : "SEMI_AUTO",
                   }
                 : current,
             )
           }
           className={`rounded-full px-4 py-2 text-xs font-semibold ${
-            config.enabled && config.mode === "AUTOPILOT"
+            config.enabled && config.mode !== "MANUAL"
               ? "bg-emerald-400/15 text-emerald-300"
               : "bg-white/5 text-zinc-400"
           }`}
         >
-          {config.enabled && config.mode === "AUTOPILOT" ? "AUTOPILOT ON" : "AUTOPILOT OFF"}
+          {config.enabled && config.mode !== "MANUAL" ? `${config.mode} ON` : "AUTOPILOT OFF"}
         </button>
       </div>
 
@@ -177,19 +177,20 @@ export function AutopilotControlPanel() {
       <label className="mt-4 flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
         <input
           type="checkbox"
-          checked={!config.approvalRequired}
+          checked={config.approvalRequired}
+          disabled={config.mode === "SEMI_AUTO"}
           onChange={(event) =>
-            setConfig({ ...config, approvalRequired: !event.target.checked })
+            setConfig({ ...config, approvalRequired: event.target.checked })
           }
           className="mt-1"
         />
         <span>
           <span className="block text-sm font-medium text-zinc-200">
-            Programar automáticamente sin aprobación manual
+            Requerir aprobación antes de programar
           </span>
           <span className="mt-1 block text-xs leading-5 text-zinc-500">
-            Solo publica si el canal ya tiene OAuth válido y está habilitado. Si faltan
-            credenciales, ClipForge se detiene de forma segura.
+            En SEMI_AUTO esta protección permanece activa. Además, la publicación real
+            conserva sus guardas de OAuth, canal y servidor.
           </span>
         </span>
       </label>

@@ -1,6 +1,6 @@
-# ClipForge Multi
+# ClipForge Studio
 
-ClipForge Multi convierte videos largos en clips verticales reales para TikTok, YouTube Shorts y Facebook Reels. La aplicación Next.js vive directamente en la raíz del repositorio para que GitHub, Vercel y el runtime persistente construyan el mismo código.
+ClipForge Studio muestra cuatro funciones: importar una URL autorizada, subir y editar videos, extraer clips y crear historias de múltiples escenas. La aplicación Next.js vive en la raíz del repositorio. La rama de rescate conserva las reparaciones previas y las mejoras de foundation; publicación y generación externa paga están desactivadas.
 
 ## Regla del proyecto
 
@@ -8,7 +8,7 @@ No se aceptan funciones simuladas. Upload, análisis, metadatos, transcripción,
 
 ## Estado actual
 
-El **MVP de propietario único está completo a nivel de código y verificación automática**.
+La reparación está preparada para revisión, pero **no se declara completada la validación de build, Android ni calidad audiovisual comercial**. Consulta [el estado verificado de Studio](docs/CLIPFORGE_STUDIO_VERIFICATION.md) para evidencias, limitaciones y el ensayo acotado.
 
 Flujo disponible:
 
@@ -26,7 +26,7 @@ También incluye:
 - Docker + `render.yaml` para el runtime persistente con FFmpeg, FFprobe, Whisper, TTS y workers;
 - elección de cuántos clips/candidatos generar y reanálisis cuando cambia esa configuración.
 
-El commit `17c95d3e2ccb1aad422de4242dfb42742b598b23` de `main` pasó `ClipForge CI` completo y está desplegado en el proyecto Vercel canónico `clip-thomas`.
+Los informes anteriores corresponden a otros commits y no prueban que esta reparación esté desplegada. Producción sigue en `codex/clipforge-agent-foundation`; no se ha modificado el servicio de Render.
 
 ## Importante sobre producción
 
@@ -62,14 +62,17 @@ npm run reframe:e2e
 npm run news:e2e
 ```
 
-GitHub Actions además valida Whisper real y la imagen Docker del runtime persistente.
+Los renders y pruebas de Whisper con generación audiovisual necesitan autorización expresa. GitHub Actions verifica código en los commits normales; los workflows audiovisuales se ejecutan solo manualmente con esa autorización.
 
 ## Publicación real
 
-Los adapters oficiales existen, pero una publicación real requiere apps/cuentas autorizadas y credenciales OAuth reales del propietario. ClipForge no inventa tokens ni marca una cuenta como conectada sin completar OAuth.
+`PUBLISHING = OFF` durante el rescate. Los adapters oficiales se conservan para una futura activación autorizada; tener OAuth válido no habilita publicación en esta versión.
 
 Consulta:
 
+- `docs/FINAL_EXTERNAL_HANDOFF.md` — verificación del núcleo y límites comprobados (2026-10-05).
+- `docs/ZCODE_EXTERNAL_CONTRACT.md` — contrato y prueba local para ZCode externo.
+- `docs/FUTURE_CHANNELS_AND_MARKETING.md` — separación orgánica/publicidad y evolución segura.
 - `CLIPFORGE_AUTOPILOT_PROGRESS.md`
 - `PROJECT_PLAN.md`
 - `docs/AUTOPILOT_ARCHITECTURE.md`

@@ -18,7 +18,7 @@ while (!stopping) {
   try {
     const config = await service.getConfig();
 
-    if (config.enabled && config.mode === "AUTOPILOT") {
+    if (config.enabled && config.mode !== "MANUAL") {
       const projects = await listProjectFiles(200);
 
       for (const project of projects) {

@@ -5,7 +5,7 @@ import { createAutoEditProvider } from "./createAutoEditProvider.mjs";
 
 const PLATFORM_SET = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
 const STYLE_SET = new Set(["CLEAN", "VIRAL", "KARAOKE"]);
-const FRAMING_SET = new Set(["FILL", "FIT"]);
+const FRAMING_SET = new Set(["FILL", "FIT", "CONVERSATION"]);
 const QUALITY_SET = new Set(["FAST", "BALANCED", "HIGH"]);
 
 export async function prepareAutoEdit(projectId, options = {}) {

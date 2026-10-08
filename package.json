@@ -24,6 +24,8 @@
     "worker:autoedit:once": "node scripts/autoedit-worker.mjs --once",
     "worker:autopilot": "node scripts/autopilot-worker.mjs",
     "worker:autopilot:once": "node scripts/autopilot-worker.mjs --once",
+    "worker:agent": "node scripts/agent-worker.mjs",
+    "worker:agent:once": "node scripts/agent-worker.mjs --once",
     "worker:news": "node scripts/news-worker.mjs",
     "worker:news:once": "node scripts/news-worker.mjs --once",
     "news:e2e": "node scripts/news-e2e.mjs",
@@ -36,7 +38,7 @@
     "worker:analytics:once": "node scripts/analytics-worker.mjs --once"
   },
   "dependencies": {
-    "next": "16.3.5",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -46,7 +48,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,7 +1,10 @@
 import { JobStore } from "../services/JobStore.mjs";
 import { PublicationService } from "../services/publications/PublicationService.mjs";
 import { PublishingReadinessService } from "../services/publishing/PublishingReadinessService.mjs";
-import { PublishingService } from "../services/publishing/PublishingService.mjs";
+import {
+  PublishingService,
+  globalRealPublishingEnabled,
+} from "../services/publishing/PublishingService.mjs";
 
 const once = process.argv.includes("--once");
 const pollMs = Math.max(
@@ -19,12 +22,19 @@ process.on("SIGTERM", () => { stopping = true; });
 process.on("SIGINT", () => { stopping = true; });
 
 console.log("ClipForge publishing worker started.");
+if (!globalRealPublishingEnabled()) {
+  console.log(
+    "Real publishing gate is OFF; provider submission and provider status refresh are paused.",
+  );
+}
 
 while (!stopping) {
   try {
-    await enqueueDuePublications();
-    await refreshSubmittedPublications();
-    await processOnePublishJob();
+    if (globalRealPublishingEnabled()) {
+      await enqueueDuePublications();
+      await refreshSubmittedPublications();
+      await processOnePublishJob();
+    }
   } catch (error) {
     console.error("Publishing worker cycle failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -88,9 +98,13 @@ async function processOnePublishJob() {
       status: result.publication?.status,
     });
   } catch (error) {
-    await jobs.fail(job, error, { retryable: false });
-    console.error("Publish job failed without automatic resubmission", {
+    const retryable = error?.retryable === true;
+    const savedJob = await jobs.fail(job, error, { retryable });
+    console.error(retryable ? "Publish job failed; retry scheduled" : "Publish job failed", {
       publicationId,
+      retryable,
+      jobStatus: savedJob.status,
+      nextAttemptAt: savedJob.nextAttemptAt,
       error: error instanceof Error ? error.message : String(error),
     });
   }

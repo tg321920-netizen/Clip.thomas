@@ -45,6 +45,7 @@ export class WorkflowService {
       projectId,
       version: 1,
       enabled: input.enabled !== false,
+      autonomyMode: normalizeAutonomyMode(input.autonomyMode),
       steps,
       createdAt: now,
       updatedAt: now,
@@ -85,6 +86,7 @@ export class WorkflowService {
       workflowVersion: workflow.version,
       projectId,
       idempotencyKey,
+      autonomyMode: normalizeAutonomyMode(workflow.autonomyMode),
       status: "queued",
       currentStepIndex: 0,
       currentStepId: workflow.steps[0].id,
@@ -417,6 +419,15 @@ function assertMutable(execution) {
   if (["completed", "cancelled"].includes(execution.status)) {
     throw new Error(`Execution is ${execution.status}.`);
   }
+}
+
+function normalizeAutonomyMode(value) {
+  const normalized = String(value || "MANUAL").trim().toUpperCase();
+  if (normalized === "AUTOPILOT") return "AUTO";
+  if (!["MANUAL", "SEMI_AUTO", "AUTO"].includes(normalized)) {
+    throw new Error("Invalid workflow autonomy mode.");
+  }
+  return normalized;
 }
 
 function normalizeOptionalProjectId(value) {

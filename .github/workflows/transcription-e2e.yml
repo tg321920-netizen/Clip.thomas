@@ -1,21 +1,19 @@
 name: ClipForge Whisper E2E
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/transcription/**"
-      - "services/JobStore.mjs"
-      - "lib/transcript-normalizer.mjs"
-      - "lib/project-files.mjs"
-      - "lib/storage-paths.mjs"
-      - "scripts/transcription-worker.mjs"
-      - "scripts/transcription-e2e.mjs"
-      - ".github/workflows/transcription-e2e.yml"
+  # These checks download models and may generate audio/video. Run only after
+  # the owner's explicit approval; normal repair commits verify code only.
   workflow_dispatch:
+    inputs:
+      owner_approved_media_test:
+        description: "El propietario autorizó expresamente esta prueba audiovisual"
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   whisper-e2e:
+    if: ${{ inputs.owner_approved_media_test == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

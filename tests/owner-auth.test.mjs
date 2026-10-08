@@ -20,6 +20,12 @@ test("owner auth config requires sufficiently strong server secrets", () => {
     sessionKey: "",
   });
 
+  const tooShort = getOwnerAuthConfig({
+    CLIPFORGE_OWNER_ACCESS_KEY: "short-key1",
+    CLIPFORGE_SESSION_KEY: sessionKey,
+  });
+  assert.equal(tooShort.configured, false);
+
   const configured = getOwnerAuthConfig({
     CLIPFORGE_OWNER_ACCESS_KEY: "owner-access-key-123456",
     CLIPFORGE_SESSION_KEY: sessionKey,
