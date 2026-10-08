@@ -81,6 +81,24 @@ jobs:
       - name: Phase 1 end-to-end
         run: npm run phase1:e2e
 
+      - name: Six-scene narrated story acceptance
+        run: node scripts/story-scenes-e2e.mjs
+
+      - name: Complete video silence editing acceptance
+        run: node scripts/video-autoedit-e2e.mjs
+
+      - name: Story and edited video evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipforge-story-and-edit-media
+          path: |
+            artifacts/story-scenes/maya-60s.mp4
+            artifacts/story-scenes/evidence.json
+            artifacts/story-scenes/scene-*.jpg
+            artifacts/video-autoedit/*.mp4
+            artifacts/video-autoedit/evidence.json
+
       - name: Clip render end-to-end
         run: npm run render:e2e
 

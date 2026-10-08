@@ -25,6 +25,7 @@ let shuttingDown = false;
 const processes = [
   ["ingest", ["scripts/ingest-worker.mjs"]],
   ["transcription", ["scripts/transcription-worker.mjs"]],
+  ["media", ["scripts/media-worker.mjs"]],
   ["analysis", ["scripts/analysis-worker.mjs"]],
   ["autoedit", ["scripts/autoedit-worker.mjs"]],
   ["render", ["scripts/render-worker.mjs"]],

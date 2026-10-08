@@ -50,6 +50,7 @@ let activeWorker = null;
 const workerScripts = [
   "scripts/autopilot-worker.mjs",
   "scripts/transcription-worker.mjs",
+  "scripts/media-worker.mjs",
   "scripts/analysis-worker.mjs",
   "scripts/autoedit-worker.mjs",
   "scripts/render-worker.mjs",

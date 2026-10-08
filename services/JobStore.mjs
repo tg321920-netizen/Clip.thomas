@@ -21,6 +21,9 @@ const JOB_PREFIX = {
   OWNED_CONTENT: "ownedcontent",
   PUBLISH_POST: "publish",
   FETCH_ANALYTICS: "analytics",
+  MEDIA_STORY: "story",
+  MEDIA_EDIT: "videoedit",
+  MEDIA_CLIPS: "bestclips",
 };
 
 const ENTITY_JOB_TYPES = new Set([
@@ -34,6 +37,21 @@ export class JobStore {
     this.maxAttempts = options.maxAttempts ?? 3;
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60 * 1000;
     this.renderStaleAfterMs = options.renderStaleAfterMs ?? 2 * 60 * 1000;
+  }
+
+  async enqueueMedia(type, id, payload = {}) {
+    if (!["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"].includes(type)) throw new Error("Unsupported media job.");
+    return this.enqueue(type, id, { payload });
+  }
+
+  async transition(id, status, stage, progress = null, patch = {}) {
+    const job = await this.get(id);
+    if (!job || job.status === "CANCELLED") return job;
+    if (!["PROCESSING", "VALIDATING", "WAITING_RESOURCE", "FAILED", "CANCELLED"].includes(status)) throw new Error("Invalid media state.");
+    const history = [...(job.history || []), { status, stage, at: new Date().toISOString() }].slice(-100);
+    const updated = { ...job, ...patch, status, stage, history, updatedAt: new Date().toISOString(),
+      progress: progress === null ? job.progress : Math.max(0, Math.min(99, Math.round(progress))) };
+    await this.#write(updated); return updated;
   }
 
   async enqueueTranscription(projectId, options = {}) {
@@ -107,8 +125,8 @@ export class JobStore {
     const existing = await this.get(id);
     const restartCompleted = options.restartCompleted === true;
 
-    if (existing && ["QUEUED", "PROCESSING"].includes(existing.status)) return existing;
-    if (existing?.status === "COMPLETED" && !restartCompleted) return existing;
+    if (existing && ["QUEUED", "PROCESSING", "VALIDATING"].includes(existing.status)) return existing;
+    if (["COMPLETED", "READY"].includes(existing?.status) && !restartCompleted) return existing;
 
     const now = new Date().toISOString();
     const job = {
@@ -127,6 +145,8 @@ export class JobStore {
       startedAt: null,
       completedAt: null,
       nextAttemptAt: now,
+      stage: "QUEUED",
+      history: [...(existing?.history || []), { status: "QUEUED", stage: "QUEUED", at: now }].slice(-100),
     };
     await this.#write(job);
     return job;
@@ -190,7 +210,7 @@ export class JobStore {
 
   async heartbeat(id) {
     const job = await this.get(id);
-    if (!job || job.status !== "PROCESSING") return false;
+    if (!job || !["PROCESSING", "VALIDATING"].includes(job.status)) return false;
     const lockPath = this.#lockPath(id);
     try {
       await stat(lockPath);
@@ -203,9 +223,15 @@ export class JobStore {
   }
 
   async complete(job) {
+    const media = job.type.startsWith("MEDIA_");
+    if (media && job.result?.validation?.valid !== true) throw new Error("Media jobs need real validation evidence before READY.");
+    const fresh = await this.get(job.id);
+    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
     const completed = {
       ...job,
-      status: "COMPLETED",
+      status: media ? "READY" : "COMPLETED",
+      stage: media ? "READY" : "COMPLETED",
+      history: [...(fresh?.history || job.history || []), { status: media ? "READY" : "COMPLETED", stage: "COMPLETE", at: new Date().toISOString() }].slice(-100),
       progress: 100,
       updatedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
@@ -260,7 +286,7 @@ export class JobStore {
         const job = await this.get(id);
         const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
         if (Date.now() - info.mtimeMs < staleAfterMs) continue;
-        if (job?.status === "PROCESSING") {
+        if (["PROCESSING", "VALIDATING"].includes(job?.status)) {
           await this.#write({
             ...job,
             status: "QUEUED",
@@ -332,7 +358,7 @@ function jobId(type, projectId, entityId = null) {
 function assertJobType(type) { if (!Object.hasOwn(JOB_PREFIX, type)) throw new Error("Unsupported job type."); }
 function safeJobId(value) {
   const text = String(value);
-  for (const prefix of ["transcribe", "analyze", "autoedit", "newsrender", "ownedcontent"]) {
+  for (const prefix of ["transcribe", "analyze", "autoedit", "newsrender", "ownedcontent", "story", "videoedit", "bestclips"]) {
     const marker = `${prefix}-`;
     if (text.startsWith(marker) && isProjectId(text.slice(marker.length))) return text;
   }

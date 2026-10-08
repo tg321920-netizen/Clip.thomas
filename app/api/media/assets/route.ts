@@ -1,0 +1,27 @@
+import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rename, rm } from "node:fs/promises";
+import path from "node:path";
+import { getStorageRoot } from "@/lib/storage-paths.mjs";
+import { writeAll } from "@/lib/write-all.mjs";
+import { probeMediaFile } from "@/services/media-processing/MediaValidationService.mjs";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export async function POST(request: Request) {
+  const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a" };
+  const mime = request.headers.get("content-type") || "", extension = extensions[mime];
+  if (!extension || !request.body || request.headers.get("x-rights-confirmed") !== "true") return NextResponse.json({ error: "Elige una imagen o audio compatible y confirma que tienes derechos de uso." }, { status: 400 });
+  const relativePath = path.posix.join("story-assets", `${randomUUID()}.${extension}`);
+  const filename = path.join(getStorageRoot(), relativePath), temporary = `${filename}.part`;
+  let handle;
+  try {
+    await mkdir(path.dirname(filename), { recursive: true }); handle = await open(temporary, "wx"); let bytes = 0;
+    for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > 4 * 1024 * 1024) throw new Error("El recurso supera 4 MB. Utiliza una versión más pequeña."); await writeAll(handle, chunk); }
+    await handle.sync(); await handle.close(); handle = null;
+    const probe = await probeMediaFile(temporary);
+    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 12000 || probe.video.height > 12000 : !probe.audio) throw new Error("El recurso no contiene una imagen o pista de audio válida.");
+    await rename(temporary, filename);
+    return NextResponse.json({ relativePath, sizeBytes: bytes, rights: "USER_CONFIRMED" });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo guardar el recurso." }, { status: 422 }); }
+  finally { await handle?.close(); await rm(temporary, { force: true }); }
+}

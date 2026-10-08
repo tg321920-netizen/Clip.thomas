@@ -1,0 +1,34 @@
+import { JobStore } from "../services/JobStore.mjs";
+import { loadProjectFile } from "../lib/project-files.mjs";
+import { resolveStoragePath } from "../lib/storage-paths.mjs";
+import { SceneStoryService } from "../services/owned-content/SceneStoryService.mjs";
+import { VideoAutoEditService } from "../services/autoedit/VideoAutoEditService.mjs";
+import { BestClipsService } from "../services/analysis/BestClipsService.mjs";
+import { validateMp4 } from "../services/media-processing/MediaValidationService.mjs";
+import { ResumableUploadStore } from "../services/ingest/ResumableUploadStore.mjs";
+const store = new JobStore(), once = process.argv.includes("--once"); let stopping = false;
+process.on("SIGTERM", () => { stopping = true; }); process.on("SIGINT", () => { stopping = true; });
+while (!stopping) {
+  await new ResumableUploadStore().cleanup();
+  const job = await store.claimNext(["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"]);
+  if (!job) { if (once) break; await new Promise(r => setTimeout(r, 2500)); continue; }
+  const heartbeat = setInterval(() => { void store.heartbeat(job.id).catch(() => {}); }, 15_000);
+  try {
+    // A crash after persisting the validated project need not render it again.
+    const existing = await loadProjectFile(job.projectId); let result;
+    if (existing?.clips?.length && existing.clips.every(c => c.status === "READY" && c.render?.relativePath)) {
+      const clips = [];
+      for (const c of existing.clips) clips.push({ clipId: c.id, sourceUrl: c.render.sourceUrl, downloadUrl: `${c.render.sourceUrl}?download=1`, relativePath: c.render.relativePath, validation: await validateMp4(resolveStoragePath(c.render.relativePath), { requireAudio: existing.source.hasAudio !== false, duration: c.duration }) });
+      result = clips.length === 1 ? { ...clips[0], projectId: job.projectId, title: existing.source.originalName } : { projectId: job.projectId, title: existing.source.originalName, clips, validation: { valid: clips.every(c => c.validation.valid), clipCount: clips.length } };
+    } else {
+      const service = job.type === "MEDIA_STORY" ? new SceneStoryService() : job.type === "MEDIA_EDIT" ? new VideoAutoEditService() : new BestClipsService();
+      result = await service.render(job.projectId, job.payload, async (status, stage, progress) => store.transition(job.id, status, stage, progress));
+    }
+    await store.complete({ ...(await store.get(job.id)), result, resultPath: result.relativePath || null, validation: result.validation });
+  } catch (error) {
+    if (error.code === "WAITING_RESOURCE") {
+      await store.transition(job.id, "WAITING_RESOURCE", "WAITING_RESOURCE", null, { error: error.message }); await store.release(job.id);
+    } else await store.fail({ ...(await store.get(job.id)) }, error, { retryable: false });
+  } finally { clearInterval(heartbeat); }
+  if (once) break;
+}

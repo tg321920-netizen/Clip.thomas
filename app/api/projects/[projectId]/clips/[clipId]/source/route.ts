@@ -20,6 +20,8 @@ export async function GET(
   },
 ) {
   const { projectId, clipId } = await context.params;
+  const download = new URL(request.url).searchParams.get("download") === "1";
+  const disposition = download ? { "Content-Disposition": `attachment; filename="clip-${clipId}.mp4"` } : {};
 
   if (!isProjectId(projectId) || !isProjectId(clipId)) {
     return NextResponse.json(
@@ -65,7 +67,7 @@ export async function GET(
       const stream = createReadStream(filePath);
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 200,
-        headers: headersFor(fileStat.size),
+        headers: { ...headersFor(fileStat.size), ...disposition },
       });
     }
 
@@ -87,6 +89,7 @@ export async function GET(
       status: 206,
       headers: {
         ...headersFor(end - start + 1),
+        ...disposition,
         "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
       },
     });
