@@ -23,7 +23,8 @@ await runMedia("ffmpeg", ["-v","error","-y","-f","lavfi","-i","testsrc2=size=640
 const before = createHash("sha256").update(await readFile(original)).digest("hex");
 const probe = await probeMediaFile(original);
 await replaceProjectFile(id, { id, createdAt: new Date().toISOString(), source: { projectId:id, originalName:"authorized-spoken-fixture.mp4", relativePath:`uploads/${id}/source.mp4`, durationSeconds:probe.duration, width:640,height:360,hasAudio:true, codec:"h264",container:"mp4",fps:30,aspectRatio:"16:9" }, clips:[] });
-const result = await new VideoAutoEditService({ width:360,height:640 }).render(randomUUID(), { projectId:id,intensity:"NORMAL",subtitles:false });
+const withWhisper = process.argv.includes("--with-whisper");
+const result = await new VideoAutoEditService({ width:360,height:640 }).render(randomUUID(), { projectId:id,intensity:"NORMAL",subtitles:withWhisper });
 assert.equal(result.validation.valid,true);
 assert.ok(result.cuts.removedSeconds > 2, "A real four-second pause must be shortened");
 assert.ok(result.cuts.ranges.length >= 2, "The edit must contain internal cuts");
@@ -32,7 +33,8 @@ assert.equal(createHash("sha256").update(await readFile(original)).digest("hex")
 const edited = path.join(root,result.relativePath);
 assert.notEqual(createHash("sha256").update(await readFile(edited)).digest("hex"),before);
 const project = await loadProjectFile(result.projectId); assert.equal(project.clips[0].status,"READY");
+if (withWhisper) { assert.equal(project.transcript.provider,"whisper.cpp"); assert.ok(project.clips[0].subtitles.cues.length>0); }
 const originalValidation = await validateMp4(original,{requireAudio:true,duration:probe.duration});
 await copyFile(original,path.join(output,"original.mp4")); await copyFile(edited,path.join(output,"edited.mp4"));
-await writeFile(path.join(output,"evidence.json"),JSON.stringify({result,originalValidation,originalSha256:before,subtitles:"EXPLICITLY_DISABLED_FOR_THIS_TEST",fixture:"Original synthesized Spanish narration and generated test pattern; actual media, no mocked rendering."},null,2));
+await writeFile(path.join(output,"evidence.json"),JSON.stringify({result,originalValidation,originalSha256:before,subtitles:withWhisper?"REAL_WHISPER_TRANSCRIPTION":"EXPLICITLY_DISABLED_FOR_THIS_TEST",fixture:"Original synthesized Spanish narration and generated test pattern; actual media, no mocked rendering."},null,2));
 console.log(JSON.stringify({passed:true,original:originalValidation,edited:result.validation,cuts:result.cuts},null,2));

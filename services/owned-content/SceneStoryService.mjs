@@ -65,7 +65,7 @@ export class SceneStoryService {
     this.images = options.imageProvider || new LocalImageProvider();
     this.scriptProvider = options.scriptProvider;
     this.tts = options.ttsProvider || new EspeakNewsTtsProvider({ voice: "es-419", speed: 165 });
-    this.width = options.width || 1080; this.height = options.height || 1920;
+    this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920);
   }
   async render(projectId, input, onStage = async () => {}) {
     const plan = await planStory(input, { scriptProvider: this.scriptProvider });

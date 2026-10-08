@@ -87,6 +87,14 @@ jobs:
       - name: Complete video silence editing acceptance
         run: node scripts/video-autoedit-e2e.mjs
 
+      - name: Install isolated browser test tooling
+        run: |
+          npm install --prefix /tmp/clipforge-browser --no-save --no-package-lock playwright@1.56.1
+          node /tmp/clipforge-browser/node_modules/playwright/cli.js install --with-deps chromium
+
+      - name: Android-equivalent browser, real APIs and downloads
+        run: node scripts/mobile-browser-e2e.mjs
+
       - name: Story and edited video evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -98,6 +106,7 @@ jobs:
             artifacts/story-scenes/scene-*.jpg
             artifacts/video-autoedit/*.mp4
             artifacts/video-autoedit/evidence.json
+            artifacts/mobile-browser/*
 
       - name: Clip render end-to-end
         run: npm run render:e2e
@@ -130,6 +139,8 @@ jobs:
         run: bash scripts/setup-whisper-ci.sh
       - name: Twenty-minute recording and three real clips
         run: node scripts/best-clips-e2e.mjs
+      - name: Full editing with real Whisper subtitles
+        run: node scripts/video-autoedit-e2e.mjs --with-whisper
       - name: Preserve clips and validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -141,3 +152,5 @@ jobs:
             artifacts/best-clips/podcast-20m.mp4
             artifacts/best-clips/evidence.json
             artifacts/best-clips/authored-narration.txt
+            artifacts/video-autoedit/*.mp4
+            artifacts/video-autoedit/evidence.json

@@ -36,7 +36,7 @@ export function remapTranscript(transcript, ranges) {
 }
 
 export class VideoAutoEditService {
-  constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; }
+  constructor(options = {}) { this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920); }
   async render(outputProjectId, input, onStage = async () => {}) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
