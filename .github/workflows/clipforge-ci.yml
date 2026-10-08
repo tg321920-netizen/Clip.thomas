@@ -62,9 +62,10 @@ jobs:
         run: npm ci
 
       - name: Install media tools
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
 
       - name: Verify code
         run: npm run verify
@@ -145,7 +146,10 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install free local media tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends ffmpeg espeak-ng tesseract-ocr tesseract-ocr-spa
       - name: Build existing pinned Whisper implementation
         run: bash scripts/setup-whisper-ci.sh
       - name: Twenty-minute recording and three real clips
