@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { buildSpeechZoomFilter } from "../reframe/AutoReframeService.mjs";
+import { validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { buildAssDocument } from "../subtitles/SubtitleService.mjs";
 
 const QUALITY = {
@@ -12,6 +13,7 @@ const QUALITY = {
 };
 
 export class RenderService {
+  constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; }
   async renderClip({
     project,
     clip,
@@ -39,7 +41,7 @@ export class RenderService {
     }
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
-    let filter = buildVideoFilter(clip?.edit?.framingMode || "FILL");
+    let filter = buildVideoFilter(clip?.edit?.framingMode || "FIT", this.width, this.height);
     let subtitlesBurned = false;
     let autoReframeApplied = false;
 
@@ -74,6 +76,8 @@ export class RenderService {
       "-v",
       "error",
       "-y",
+      "-filter_threads", "1",
+      "-threads", "2",
       "-i",
       sourcePath,
       "-ss",
@@ -92,6 +96,8 @@ export class RenderService {
       quality.preset,
       "-crf",
       quality.crf,
+      "-threads", "2",
+      "-r", "30",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
@@ -113,8 +119,9 @@ export class RenderService {
       onProgress,
     );
 
+    const validation = await validateMp4(outputPath, { requireAudio: project.source.hasAudio !== false, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
     const probe = await probeVideo(outputPath);
-    if (probe.width !== 1080 || probe.height !== 1920) {
+    if (probe.width !== this.width || probe.height !== this.height) {
       throw new Error(
         `Rendered clip has unexpected resolution ${probe.width}x${probe.height}.`,
       );
@@ -123,6 +130,7 @@ export class RenderService {
     const outputStat = await stat(outputPath);
 
     return {
+      validation,
       relativePath: path.posix.join(
         "clips",
         project.id,
@@ -141,11 +149,12 @@ export class RenderService {
   }
 }
 
-export function buildVideoFilter(mode = "FILL") {
+export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {
+  if (![width, height].every(n => Number.isSafeInteger(n) && n >= 144 && n <= 3840 && n % 2 === 0)) throw new Error("Invalid output resolution.");
   if (mode === "FIT") {
     return [
-      "scale=1080:1920:force_original_aspect_ratio=decrease",
-      "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
+      `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
       "setsar=1",
     ].join(",");
   }
@@ -155,8 +164,8 @@ export function buildVideoFilter(mode = "FILL") {
   }
 
   return [
-    "scale=1080:1920:force_original_aspect_ratio=increase",
-    "crop=1080:1920",
+    `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+    `crop=${width}:${height}`,
     "setsar=1",
   ].join(",");
 }

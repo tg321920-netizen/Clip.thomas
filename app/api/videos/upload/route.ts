@@ -7,6 +7,7 @@ import {
   sanitizeOriginalName,
   validateUploadDescriptor,
 } from "@/lib/upload-policy.mjs";
+import { writeAll } from "@/lib/write-all.mjs";
 import { ProjectStore } from "@/services/ProjectStore";
 import { getStorageRoot } from "@/services/StorageService";
 import {
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
         );
       }
 
-      await file.write(value);
+      await writeAll(file, value);
     }
   } catch (error) {
     await file.close().catch(() => undefined);
@@ -123,12 +124,14 @@ export async function POST(request: Request) {
     );
   }
 
+  const actualSize = (await file.stat()).size;
+  await file.sync();
   await file.close();
 
-  if (bytesWritten === 0 || bytesWritten !== declaredSize) {
+  if (bytesWritten === 0 || bytesWritten !== declaredSize || actualSize !== declaredSize) {
     await rm(uploadDir, { recursive: true, force: true });
     return NextResponse.json(
-      { error: "La subida quedó incompleta. Intenta nuevamente." },
+      { error: `La subida quedó incompleta: recibidos ${bytesWritten} de ${declaredSize} bytes y guardados ${actualSize}. Usa la subida reanudable.`, code: "UPLOAD_INCOMPLETE", expectedBytes: declaredSize, receivedBytes: bytesWritten, savedBytes: actualSize },
       { status: 400 },
     );
   }

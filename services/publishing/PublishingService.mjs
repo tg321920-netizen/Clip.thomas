@@ -5,6 +5,7 @@ import { OAuthConnectionService } from "../oauth/OAuthConnectionService.mjs";
 import { PublicationService } from "../publications/PublicationService.mjs";
 import { CredentialVault } from "../security/CredentialVault.mjs";
 import { createPublishingProvider } from "./createPublishingProvider.mjs";
+import { assertPublishingAllowed } from "../../lib/publishing-policy.mjs";
 
 export class PublishingService {
   constructor(options = {}) {
@@ -95,6 +96,7 @@ export class PublishingService {
     }
 
     const provider = this.providerFactory(channel.platform);
+    assertPublishingAllowed(provider);
     const publishing = await this.publications.markPublishing(publication.id);
 
     try {

@@ -10,14 +10,17 @@ import {
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { MAX_UPLOAD_BYTES } from "../../lib/upload-policy.mjs";
-import { getStorageRoot } from "../../lib/storage-paths.mjs";
-import { replaceProjectFile } from "../../lib/project-files.mjs";
+import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
+import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { hashFile } from "./ResumableUploadStore.mjs";
 import { parsePublicSourceUrl } from "../../lib/public-source-url.mjs";
 
 export async function ingestUrlJob(job, options = {}) {
   const projectId = job.projectId || job.id;
-  const sourceUrl = await parsePublicSourceUrl(job?.source?.url);
   const mode = String(job?.source?.mode || "IMPORT").toUpperCase();
+  const sourceUrl = mode === "UPLOAD" ? null : await parsePublicSourceUrl(job?.source?.url);
+  const existing = mode === "UPLOAD" ? await loadProjectFile(projectId) : null;
+  if (existing?.source && existing.ingest?.jobId === job.id) return { projectId, video: existing.source };
   const root = getStorageRoot();
   const uploadDir = path.join(root, "uploads", projectId);
   const posterPath = path.join(uploadDir, "poster.jpg");
@@ -29,7 +32,13 @@ export async function ingestUrlJob(job, options = {}) {
   await onProgress(2, "VALIDATING");
 
   let mediaPath;
-  if (mode === "STREAM") {
+  if (mode === "UPLOAD") {
+    mediaPath = resolveStoragePath(job.source.relativePath);
+    const info = await stat(mediaPath);
+    if (info.size !== job.source.size || await hashFile(mediaPath) !== job.source.sha256) {
+      throw new Error("El archivo guardado no supera la comprobación de integridad.");
+    }
+  } else if (mode === "STREAM") {
     mediaPath = await captureSegmentedStream({
       url: sourceUrl.toString(),
       uploadDir,
@@ -68,12 +77,12 @@ export async function ingestUrlJob(job, options = {}) {
   const video = {
     projectId,
     videoId,
-    originalName: makeOriginalName(sourceUrl, storedName, mode),
+    originalName: mode === "UPLOAD" ? job.source.filename : makeOriginalName(sourceUrl, storedName, mode),
     storedName,
     sizeBytes: fileStats.size,
     posterUrl: `/api/projects/${projectId}/poster`,
     sourceUrl: `/api/projects/${projectId}/source`,
-    originUrl: redactUrlForMetadata(sourceUrl),
+    ...(sourceUrl ? { originUrl: redactUrlForMetadata(sourceUrl) } : {}),
     ingestMode: mode,
     ...technical,
   };
@@ -89,7 +98,8 @@ export async function ingestUrlJob(job, options = {}) {
     ingest: {
       jobId: job.id,
       mode,
-      sourceHost: sourceUrl.hostname,
+      sourceHost: sourceUrl?.hostname || null,
+      sha256: job.source.sha256 || null,
       completedAt: new Date().toISOString(),
     },
   });
@@ -139,6 +149,9 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
     );
   } catch (error) {
     if (getErrorCode(error) !== "ENOENT") {
+      if (/sign in to confirm|not a bot|confirm you(?:'|’)re not a bot/i.test(compactError(error))) {
+        throw new Error("YouTube bloqueó la importación porque exige una verificación de acceso. ClipForge no puede completarla automáticamente. Sube un archivo propio o autorizado usando Subir video.");
+      }
       throw new Error(
         `No se pudo importar esa URL. ${compactError(error)} ` +
           "Si la plataforma exige sesión, cookies o permisos privados, usa una fuente autorizada o sube el archivo.",
@@ -332,6 +345,7 @@ async function probeMedia(filePath) {
     fps: round(parseRate(video.avg_frame_rate || video.r_frame_rate)),
     codec: video.codec_name || "desconocido",
     container: parsed?.format?.format_name?.split(",")[0] || "desconocido",
+    hasAudio: parsed?.streams?.some((stream) => stream.codec_type === "audio"),
     aspectRatio:
       normalizeAspectRatio(video.display_aspect_ratio) ||
       reduceRatio(Number(video.width), Number(video.height)),

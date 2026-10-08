@@ -7,6 +7,7 @@ import {
   validateUploadDescriptor,
 } from "@/lib/upload-policy.mjs";
 import type { UploadedVideo } from "@/types/video";
+import { uploadResumable } from "@/lib/resumable-upload-client";
 import { ProjectPipeline } from "@/components/ProjectPipeline";
 import { NewsModePanel } from "@/components/NewsModePanel";
 
@@ -16,7 +17,9 @@ const PROJECT_OPEN_EVENT = "clipforge:project-open";
 
 export function UploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [stage, setStage] = useState("Subiendo");
+  const [queuedId, setQueuedId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<UploadState>("idle");
   const [progress, setProgress] = useState<number | null>(null);
@@ -70,7 +73,7 @@ export function UploadPanel() {
   }
 
   async function upload() {
-    if (!file || state === "checking" || state === "uploading" || error) return;
+    if (!file || state === "checking" || state === "uploading") return;
 
     setState("checking");
     setError(null);
@@ -103,58 +106,23 @@ export function UploadPanel() {
     setState("uploading");
     setProgress(0);
 
-    const xhr = new XMLHttpRequest();
-    xhrRef.current = xhr;
-    xhr.open("POST", "/api/videos/upload");
-    xhr.setRequestHeader(
-      "Content-Type",
-      file.type || "application/octet-stream",
-    );
-    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
-    xhr.setRequestHeader("X-File-Size", String(file.size));
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || event.total <= 0) {
-        setProgress(null);
-        return;
-      }
-      setProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
-    };
-
-    xhr.onload = () => {
-      xhrRef.current = null;
-      const payload = parsePayload(xhr.responseText);
-
-      if (xhr.status >= 200 && xhr.status < 300 && payload.video) {
-        setProgress(100);
-        setResult(payload.video);
-        setState("done");
-        window.dispatchEvent(new Event("clipforge:project-created"));
-        return;
-      }
-
-      setError(payload.error || `La subida falló (HTTP ${xhr.status}).`);
+    const abort = new AbortController();
+    abortRef.current = abort;
+    try {
+      const video = await uploadResumable(file, {
+        signal: abort.signal,
+        onProgress: (percent, nextStage) => { setProgress(percent); setStage(nextStage); },
+        onQueued: (id) => { setQueuedId(id); window.dispatchEvent(new Event("clipforge:project-created")); },
+      });
+      setResult(video as UploadedVideo); setState("done"); setProgress(100);
+      window.dispatchEvent(new Event("clipforge:project-created"));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Conexión interrumpida. Puedes reanudar seleccionando el mismo archivo.");
       setState("error");
-    };
-
-    xhr.onerror = () => {
-      xhrRef.current = null;
-      setError("No se pudo conectar con el servidor.");
-      setState("error");
-    };
-
-    xhr.onabort = () => {
-      xhrRef.current = null;
-      setError("Subida cancelada.");
-      setState("error");
-    };
-
-    xhr.send(file);
+    } finally { abortRef.current = null; }
   }
 
-  function cancel() {
-    xhrRef.current?.abort();
-  }
+  function cancel() { abortRef.current?.abort(); }
 
   const busy = state === "checking" || state === "uploading";
 
@@ -223,7 +191,7 @@ export function UploadPanel() {
           {state === "uploading" && (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
-                <span>{progress === null ? "Subiendo…" : "Subida real"}</span>
+                <span>{stage}</span>
                 <span>{progress === null ? "—" : `${progress}%`}</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
@@ -242,10 +210,10 @@ export function UploadPanel() {
               <button
                 type="button"
                 onClick={() => void upload()}
-                disabled={Boolean(error)}
+                disabled={Boolean(!file || !validateUploadDescriptor({ filename: file.name, mimeType: file.type || "application/octet-stream", size: file.size }).ok)}
                 className="flex-1 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Analizar video real
+                {state === "error" ? "Reanudar subida" : "Subir y analizar"}
               </button>
             ) : state === "uploading" ? (
               <button
@@ -253,7 +221,7 @@ export function UploadPanel() {
                 onClick={cancel}
                 className="flex-1 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm font-medium text-red-300"
               >
-                Cancelar
+                Pausar
               </button>
             ) : (
               <button
@@ -267,6 +235,8 @@ export function UploadPanel() {
           </div>
         </div>
       )}
+
+      {queuedId && !result && <p role="status" className="mt-4 text-sm text-emerald-300">Subida completa. El análisis continúa en el servidor aunque cierres esta pantalla. Trabajo: {queuedId}</p>}
 
       {error && (
         <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-200">
@@ -335,17 +305,6 @@ function Metric({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 font-medium text-zinc-200">{value}</dd>
     </div>
   );
-}
-
-function parsePayload(value: string): {
-  error?: string;
-  video?: UploadedVideo;
-} {
-  try {
-    return JSON.parse(value) as { error?: string; video?: UploadedVideo };
-  } catch {
-    return {};
-  }
 }
 
 function extensionOf(name: string): string {

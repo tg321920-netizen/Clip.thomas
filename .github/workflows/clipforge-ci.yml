@@ -2,7 +2,7 @@ name: ClipForge CI
 
 on:
   push:
-    branches: [main, "chatgpt/**", "work/**"]
+    branches: [main, "chatgpt/**", "work/**", "codex/clipforge-core-rescue"]
     paths:
       - "app/**"
       - "components/**"
@@ -67,6 +67,16 @@ jobs:
 
       - name: Build
         run: npx next build
+
+      - name: Resumable upload service and real MP4
+        run: node scripts/core-rescue-e2e.mjs
+
+      - name: Upload acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipforge-core-rescue-media
+          path: artifacts/core-rescue/first-validated.mp4
 
       - name: Phase 1 end-to-end
         run: npm run phase1:e2e

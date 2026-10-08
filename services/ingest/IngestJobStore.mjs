@@ -19,6 +19,22 @@ export class IngestJobStore {
     this.staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
   }
 
+  async enqueueUpload(input) {
+    assertId(input.id);
+    await this.#ensureDirectory();
+    const existing = await this.get(input.id);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    const job = { id: input.id, projectId: input.id, type: "INGEST_UPLOAD",
+      source: { kind: "FILE", mode: "UPLOAD", relativePath: input.relativePath,
+        filename: input.filename, size: input.size, sha256: input.sha256 },
+      status: "QUEUED", stage: "QUEUED", progress: 0, attempts: 0, maxAttempts: this.maxAttempts,
+      error: null, result: null, createdAt: now, updatedAt: now, startedAt: null,
+      completedAt: null, nextAttemptAt: now };
+    await this.#write(job);
+    return job;
+  }
+
   async create(input = {}) {
     await this.#ensureDirectory();
     const now = new Date().toISOString();

@@ -1,3 +1,5 @@
+import { validateMp4 } from "../media-processing/MediaValidationService.mjs";
+import { resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { randomUUID } from "node:crypto";
 import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
 import { RenderService } from "./RenderService.mjs";
@@ -73,7 +75,11 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
   if (!clip) throw new Error("Clip not found.");
 
   if (clip.status === "READY" && clip.render?.relativePath) {
-    return { clip, reused: true };
+    try {
+      clip.render.validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: project.source.hasAudio !== false, duration: clip.duration, allowDarkVideo: project.allowDarkVideo });
+      await replaceProjectFile(projectId, project);
+      return { clip, reused: true };
+    } catch { clip.render = null; }
   }
 
   clip.status = "RENDERING";

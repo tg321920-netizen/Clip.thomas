@@ -63,7 +63,7 @@ test("PublishingService persists a real provider post URL alongside the external
       },
       providerFactory() {
         return {
-          requirements() { return {}; },
+          requirements() { return { mock: true }; },
           async publish() {
             return {
               externalPostId: "youtube-video-123",

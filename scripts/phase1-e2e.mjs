@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { IngestJobStore } from "../services/ingest/IngestJobStore.mjs";
+import { ingestUrlJob } from "../services/ingest/UrlIngestService.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
@@ -75,6 +78,38 @@ try {
     uploadResponse.ok,
     `Upload failed: ${upload.error || uploadResponse.status}`,
   );
+
+  const created = await fetch(`${baseUrl}/api/videos/uploads`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: "resume.mp4", mimeType: "video/mp4", size: media.length }),
+  });
+  const { session } = await created.json();
+  assert(created.ok && session.id, "Resumable session creation failed");
+  const uploadHeaders = { "X-Upload-Token": session.token };
+  const hash = createHash("sha256").update(media).digest("hex");
+  const chunkUrl = `${baseUrl}/api/videos/uploads/${session.id}/chunks/0`;
+  const partial = await fetch(chunkUrl, { method: "PUT", headers: { ...uploadHeaders, "X-Chunk-SHA256": hash }, body: media.subarray(0, 50) });
+  assert(partial.status === 409, "Interrupted fragment must remain retryable");
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const chunk = await fetch(chunkUrl, { method: "PUT", headers: { ...uploadHeaders, "X-Chunk-SHA256": hash }, body: media });
+    assert(chunk.ok, "Chunk upload/retry failed");
+    const result = await chunk.json(); assert(result.duplicate === (repeat === 1), "Duplicate detection failed");
+  }
+  const finish = await fetch(`${baseUrl}/api/videos/uploads/${session.id}`, { method: "POST", headers: uploadHeaders });
+  assert(finish.status === 202, "Finalization must enqueue server processing");
+  const previousRoot = process.env.CLIPFORGE_STORAGE_DIR;
+  process.env.CLIPFORGE_STORAGE_DIR = storagePath;
+  try {
+    const jobs = new IngestJobStore(); const job = await jobs.claimNext();
+    assert(job.id === session.id, "Upload was not persisted in the worker queue");
+    const result = await ingestUrlJob(job); await jobs.complete(job, result);
+  } finally {
+    if (previousRoot === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
+    else process.env.CLIPFORGE_STORAGE_DIR = previousRoot;
+  }
+  const finished = await fetch(`${baseUrl}/api/videos/uploads/${session.id}`, { headers: uploadHeaders });
+  const finishStatus = await finished.json();
+  assert(finishStatus.job.status === "COMPLETED" && finishStatus.job.result.video, "Worker result not visible over HTTP");
 
   const video = upload.video;
   assert(video, "Upload response is missing video metadata");

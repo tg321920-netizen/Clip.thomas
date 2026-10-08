@@ -159,7 +159,7 @@ test("PublishingService submits a due scheduled publication through injected cre
         assert.equal(platform, "YOUTUBE");
         return {
           requirements() {
-            return { oauthScopes: ["youtube.upload"] };
+            return { mock: true, oauthScopes: ["youtube.upload"] };
           },
           async publish(context) {
             providerCalls.push(context);

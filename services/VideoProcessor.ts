@@ -92,6 +92,7 @@ export class VideoProcessor {
 
     return {
       durationSeconds: round(duration, 3),
+      hasAudio: parsed.streams?.some(stream => stream.codec_type === "audio") === true,
       width: video.width,
       height: video.height,
       fps: round(parseRate(video.avg_frame_rate || video.r_frame_rate), 3),

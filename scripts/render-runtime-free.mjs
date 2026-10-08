@@ -55,7 +55,6 @@ const workerScripts = [
   "scripts/render-worker.mjs",
   "scripts/news-worker.mjs",
   "scripts/owned-content-worker.mjs",
-  "scripts/publishing-worker.mjs",
   "scripts/analytics-worker.mjs",
 ];
 

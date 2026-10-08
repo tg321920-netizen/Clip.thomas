@@ -1,5 +1,6 @@
 export type ProbeMetadata = {
   durationSeconds: number;
+  hasAudio?: boolean;
   width: number;
   height: number;
   fps: number;
@@ -17,5 +18,5 @@ export type UploadedVideo = ProbeMetadata & {
   posterUrl: string;
   sourceUrl: string;
   originUrl?: string;
-  ingestMode?: "IMPORT" | "STREAM";
+  ingestMode?: "IMPORT" | "STREAM" | "UPLOAD";
 };
