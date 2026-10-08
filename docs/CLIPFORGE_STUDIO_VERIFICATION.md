@@ -49,18 +49,18 @@ Los logs se conservan en `artifacts/studio-verification/` del paquete local. No 
 | Edición y extracción de clips reales | NO VERIFICADO; no se autorizó render nuevo |
 | Historia con imágenes nuevas de IA | NO VERIFICADO; adaptador probado con mocks, sin proveedor activo ni llamadas pagas |
 | Android físico | NO VERIFICADO |
-| Render del código reparado | NO VERIFICADO; servicio de producción no modificado |
+| Render del código reparado | **PASS de build y despliegue del ensayo**: `dep-db416uid0e5s73fe0pp0`, commit `5e91dfc0cc2be67f4e4b7a6429650242016c7708`, estado `live`. HTTP/health y flujos reales: NO VERIFICADOS desde estas herramientas |
 | Descarga/reproducción MP4 en Android | NO VERIFICADO |
 | Producción | NO MODIFICADA |
-| Gastos, servicios nuevos y publicaciones | NO ACTIVADOS |
+| Gastos y publicaciones | NO ACTIVADOS. Se creó únicamente el ensayo gratuito expresamente autorizado |
 
-El build ya está verificado en GitHub. No se puede declarar terminada una aplicación comercial mientras falten el ensayo desplegado autorizado y las pruebas audiovisuales/editoriales reales. Los cambios posteriores de documentación no modifican el código comprobado por ese run.
+El build ya está verificado en GitHub. No se puede declarar terminada una aplicación comercial mientras falten la aceptación en Android, la comprobación HTTP del ensayo y las pruebas audiovisuales/editoriales reales. Los cambios posteriores de documentación no modifican el código comprobado por ese run.
 
 ## Almacenamiento
 
 El servicio observado es gratuito y no muestra disco persistente. En Render Free los archivos pueden perderse al reiniciar, desplegar o suspender la instancia. Tener `CLIPFORGE_STORAGE_DIR` configurado no demuestra persistencia. La bandera `CLIPFORGE_STORAGE_PERSISTENT=true` solo debe usarse después de verificar un montaje real; `/tmp` siempre se clasifica como temporal.
 
-`render.studio-trial.yaml` es una propuesta de ensayo aislado, gratuito, con despliegue automático desactivado. No se ha creado ni desplegado ese servicio. El disco de `render.production.yaml` es otra propuesta existente que sigue sin activarse. Para clientes reales se necesitan tanto medios persistentes como estado recuperable de proyectos/trabajos; el KV de credenciales no conserva los MP4.
+El propietario autorizó el ensayo gratuito y confirmó **My Workspace** (`tea-d2bvocfdiees73f5gpv0`). Se creó `clipforge-studio-trial` (`srv-db416uad0e5s73fe0omg`) conforme a los comandos y variables de `render.studio-trial.yaml`, mediante creación directa del servicio. El despliegue inicial terminó con estado `live` a las 22:08:32 UTC del 2026-10-08. Plan de servicio `free`, auto-deploy `no`, sin disco ni proveedores pagos. [Acceso al ensayo](https://clipforge-studio-trial.onrender.com/login). Las claves nuevas del ensayo se configuraron en Render y se entregan al propietario por un archivo privado, separado del repositorio. El disco de `render.production.yaml` es otra propuesta existente que sigue sin activarse. Para clientes reales se necesitan tanto medios persistentes como estado recuperable de proyectos/trabajos; el KV de credenciales no conserva los MP4.
 
 R2 Standard: USD 0,015/GB-mes; 10 GB-mes gratis, 1 millón de operaciones A y 10 millones B gratis; después USD 4,50/millón A y USD 0,36/millón B; egreso gratuito. Ejemplo orientativo: 20 GB-mes, tras 10 gratis, USD 0,15 solo por almacenamiento, sujeto a medición, redondeo, operaciones e impuestos. R2 requiere un adaptador de objetos y migración de referencias de archivos, además de estado durable; no está activado ni se presenta como integrado.
 
@@ -85,17 +85,17 @@ Fuentes oficiales, consultadas 2026-10-08:
 - [API de generación de imágenes](https://developers.openai.com/api/docs/guides/image-generation).
 - [BFL: opciones y tarifas](https://bfl.ai/pricing).
 
-## Prueba de ensayo preparada, pendiente de autorización
+## Ensayo desplegado y aceptación pendiente
 
 1. Lint, TypeScript y build completados con PASS en GitHub CI. El guard también pasa fuera del sandbox. Revisar la comparación y commits concretos antes de cambiar Render; el PR permanece bloqueado por permisos.
-2. Autorizar un ensayo aislado usando el blueprint preparado. Confirmar claves de propietario existentes y límites; no cambiar `clipforge-runtime-free` ni `storymotion`.
+2. Ensayo aislado autorizado y desplegado. Next.js registró `Ready in 3.0s`; Render confirmó `live` y `deployStatus: succeeded`. El build incluyó FFmpeg, FFprobe, whisper.cpp/tiny, yt-dlp y eSpeak NG. Los workers se ejecutan con `--once` en un bucle secuencial; sus mensajes `started/stopped` corresponden a ese diseño, no a un fallo acreditado. La consulta de logs de nivel error desde el arranque no devolvió entradas. Esto NO demuestra funcionamiento multimedia. El navegador de herramientas no pudo abrir `/api/health`, `/login` ni `/`; no se inventa un HTTP 200. La alternativa de lectura de URL tampoco estuvo disponible. La configuración original de `clipforge-runtime-free` sigue en foundation, con `updatedAt` de 2026-10-06; no se modificó. `storymotion` no se tocó.
 3. Subir desde Android `1000227410.mp4`, aproximadamente 73,9 MB, propio o autorizado. Pausar una vez, reanudar y comparar SHA-256/FFprobe/proyecto único. Esta es la primera aceptación exigida y no genera un video nuevo.
 4. Con un original autorizado y una aprobación separada, generar UN lote de tres clips distintos de 30–60 s. Sin material suficiente, detener y pedir ajuste, sin completar con clips repetidos. Límite: un intento inicial por pieza; conservar parciales/logs ante fallo, diagnosticar antes de autorizar otro render. Render de clip: máximo 15 minutos. Medir tiempo y costo reales.
 5. Historia: seis imágenes diferentes, idea propia y relato original. Imágenes propias permiten probar montaje sin gasto externo; eso no valida generación IA. La prueba completa de IA exige proveedor, costo máximo y autorización explícitos, seis imágenes nuevas, voz y subtítulos.
 6. Probar UNA URL compatible y autorizada; registrar la causa real si la plataforma la bloquea. No cookies obtenidas sin permiso ni elusión de controles.
 7. Descargar los MP4 al teléfono y reproducir completos. Registrar resolución, pistas, duración, decodificación y sincronía; realizar además revisión visual y auditiva de ideas completas, encuadre, legibilidad, audio, imágenes y transiciones.
 
-El propietario no tiene que ejecutar Termux ni comandos. Las autorizaciones pendientes corresponden al ensayo, archivos reales y generación audiovisual, no a las reparaciones de código ya realizadas.
+El propietario no tiene que ejecutar Termux ni comandos. El ensayo ya está autorizado. La subida del MP4 de 73,9 MB queda pendiente de que el propietario lo seleccione desde Android. Las nuevas generaciones audiovisuales o llamadas pagas requieren aprobación separada; no se ejecutaron. Antes de generar clips o historias, conservar evidencia de la subida completa, el proyecto único, la duración y el acceso al original.
 
 ## Negocio
 
