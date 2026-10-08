@@ -122,6 +122,13 @@ jobs:
 
       - name: News Mode end-to-end
         run: npm run news:e2e
+      - name: Read-only deployed runtime health
+        run: node scripts/deployed-runtime-check.mjs
+      - name: Preserve deployed status
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipforge-deployed-status
+          path: artifacts/deployed-runtime/evidence.json
 
   real-whisper-clips:
     runs-on: ubuntu-latest
@@ -163,3 +170,24 @@ jobs:
             artifacts/video-autoedit/*.mp4
             artifacts/video-autoedit/evidence.json
             artifacts/mobile-browser/*
+
+
+  prepare-rescue-pr:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/clipforge-core-rescue'
+    needs: [verify, real-whisper-clips]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare requested draft pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TASK_EXISTING_PR=$(gh pr list --base main --head codex/clipforge-core-rescue --state open --json number --jq '.[0].number')
+          if [ -n "$TASK_EXISTING_PR" ]; then
+            gh pr view "$TASK_EXISTING_PR" --json url --jq .url
+          else
+            gh pr create --draft --base main --head codex/clipforge-core-rescue --title "Repair resumable uploads and three real MP4 production tools" --body-file docs/CORE_RESCUE_PR.md
+          fi
