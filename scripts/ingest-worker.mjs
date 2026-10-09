@@ -1,5 +1,6 @@
 import { IngestJobStore } from "../services/ingest/IngestJobStore.mjs";
 import { ingestUrlJob } from "../services/ingest/UrlIngestService.mjs";
+import { isRetryableIngestError } from "../lib/ingest-error-policy.mjs";
 
 const once = process.argv.includes("--once");
 const pollMs = Math.max(
@@ -42,7 +43,7 @@ while (!stopping) {
       mode: job.source?.mode,
     });
   } catch (error) {
-    const failed = await store.fail(job, error);
+    const failed = await store.fail(job, error, { retryable: isRetryableIngestError(error) });
     console.error("URL ingest failed", {
       jobId: job.id,
       mode: job.source?.mode,

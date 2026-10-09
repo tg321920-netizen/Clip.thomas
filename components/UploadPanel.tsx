@@ -136,7 +136,18 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
       window.dispatchEvent(new Event("clipforge:project-created"));
     } catch (failure) {
       if (!current()) return;
-      setError(failure instanceof Error ? failure.message : "Conexión interrumpida. Puedes reanudar seleccionando el mismo archivo.");
+      const problem = failure instanceof Error ? failure.message : "Conexión interrumpida.";
+      const unreadable = (failure instanceof Error && failure.name === "NotReadableError") ||
+        /requested file could not be read|file could not be read|permission problems after a reference|notreadableerror/i.test(problem);
+      if (unreadable) {
+        // Android may revoke a document-provider File handle when the tab is suspended.
+        // Never try to reuse the unreadable File; ask the owner to select it again.
+        setFile(null);
+        if (inputRef.current) inputRef.current.value = "";
+        setError("Android perdió el acceso al archivo seleccionado. Pulsa Elegir archivo y selecciona de nuevo el mismo video. Los fragmentos ya confirmados podrán recuperarse.");
+      } else {
+        setError(problem);
+      }
       setState("error");
     } finally { if (abortRef.current === abort) abortRef.current = null; }
   }

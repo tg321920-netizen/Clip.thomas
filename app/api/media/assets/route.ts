@@ -7,6 +7,7 @@ import { writeAll } from "@/lib/write-all.mjs";
 import { probeMediaFile } from "@/services/media-processing/MediaValidationService.mjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+class InvalidAssetError extends Error {}
 export async function POST(request: Request) {
   const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a" };
   const mime = request.headers.get("content-type") || "", extension = extensions[mime];
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
   let handle;
   try {
     await mkdir(path.dirname(filename), { recursive: true }); handle = await open(temporary, "wx"); let bytes = 0;
-    for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > 4 * 1024 * 1024) throw new Error("El recurso supera 4 MB. Utiliza una versión más pequeña."); await writeAll(handle, chunk); }
+    for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > 4 * 1024 * 1024) throw new InvalidAssetError("El recurso supera 4 MB. Utiliza una versión más pequeña."); await writeAll(handle, chunk); }
     await handle.sync(); await handle.close(); handle = null;
     const prefixHandle = await open(temporary, "r"); const prefix = Buffer.alloc(16); await prefixHandle.read(prefix,0,16,0); await prefixHandle.close();
     const signatures: Record<string, boolean> = {
@@ -27,11 +28,17 @@ export async function POST(request: Request) {
       mp3: prefix.toString("ascii",0,3) === "ID3" || (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0),
       m4a: prefix.toString("ascii",4,8) === "ftyp",
     };
-    if (!signatures[extension]) throw new Error("El contenido del recurso no corresponde al tipo de archivo declarado.");
+    if (!signatures[extension]) throw new InvalidAssetError("El contenido del recurso no corresponde al tipo de archivo declarado.");
     const probe = await probeMediaFile(temporary);
-    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000 : !probe.audio) throw new Error("El recurso no contiene una imagen válida de hasta doce megapíxeles o una pista de audio compatible.");
+    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000 : !probe.audio) throw new InvalidAssetError("El recurso no contiene una imagen válida de hasta doce megapíxeles o una pista de audio compatible.");
     await rename(temporary, filename);
     return NextResponse.json({ relativePath, sizeBytes: bytes, rights: "USER_CONFIRMED" });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo guardar el recurso." }, { status: 422 }); }
-  finally { await handle?.close(); await rm(temporary, { force: true }); }
+  } catch (error) {
+    const invalid = error instanceof InvalidAssetError;
+    if (!invalid) console.error("Story asset upload failed", error);
+    return NextResponse.json({ error: invalid ? error.message : "El servidor interrumpió la carga del recurso. Intenta nuevamente.", code: invalid ? "INVALID_ASSET" : "ASSET_UPLOAD_UNAVAILABLE" }, { status: invalid ? 422 : 503 });
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }

@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { uploadStoryAssets } from "@/lib/story-asset-client";
 import { UploadPanel } from "@/components/UploadPanel";
 import { UrlImportPanel } from "@/components/UrlImportPanel";
 import type { UploadedVideo } from "@/types/video";
@@ -14,10 +15,10 @@ const STATUS: Record<string,string> = { QUEUED:"En cola", PROCESSING:"Procesando
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base text-white";
 const button = "min-h-12 rounded-xl bg-violet-500 px-5 py-3 text-base font-semibold text-white disabled:opacity-40";
 async function request(url: string, init?: RequestInit) { const response = await fetch(url,init); const body = await response.json(); if (!response.ok) throw new Error(body.error || body.message || "No se pudo completar la operación."); return body; }
-async function uploadAsset(file: File) { if (file.size > 4*1024*1024) throw new Error(`${file.name} supera 4 MB.`); return (await request("/api/media/assets",{method:"POST",headers:{"Content-Type":file.type || "application/octet-stream","X-Rights-Confirmed":"true"},body:file})).relativePath as string; }
 
 export function MediaTools() {
   const [tool,setTool] = useState<Tool>("MEDIA_CLIPS");
+  const savedStoryAssets = useRef(new Map<File, string>());
   const [topic,setTopic] = useState("");
   const [narration,setNarration] = useState(""); const [duration,setDuration] = useState(60); const [custom,setCustom] = useState(false);
   const [format,setFormat] = useState("9:16"); const [style,setStyle] = useState("cinematográfico");
@@ -52,8 +53,9 @@ export function MediaTools() {
       if(generationMode==="OWN"&&images.length<sceneCount)throw new Error(`Elige ${sceneCount} imágenes distintas.`);
       if(generationMode==="AI"&&!storyStatus?.automaticReady)throw new Error(storyStatus?.message||"La generación automática todavía no está configurada.");
       const paths:string[]=[];
-      if(generationMode==="OWN")for(const image of images.slice(0,sceneCount)){paths.push(await uploadAsset(image));setMessage(`Imágenes guardadas: ${paths.length}/${sceneCount}`);}
-      payload={topic,narration,duration,format,style,sceneCount,generationMode,images:paths,subtitles,music:music?await uploadAsset(music):undefined};
+      if(generationMode==="OWN"){const saved = await uploadStoryAssets(images.slice(0,sceneCount),savedStoryAssets.current,{onProgress:(count,total)=>setMessage(`Imágenes guardadas: ${count}/${total}`)});paths.push(...saved);}
+      const savedMusic = music ? (await uploadStoryAssets([music],savedStoryAssets.current))[0] : undefined;
+      payload={topic,narration,duration,format,style,sceneCount,generationMode,images:paths,subtitles,music:savedMusic};
     }else{if(!original)throw new Error("Primero sube y analiza el video original.");payload={projectId:original.projectId,intensity,subtitles,count,minDuration,maxDuration,format:"9:16"};}
     const body=await request("/api/media/jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:tool,id:crypto.randomUUID(),payload})});
     setJobs(previous=>[body.job,...previous.filter(j=>j.id!==body.job.id)]);setMessage("Trabajo guardado. Puedes cerrar la página y consultar el resultado en Mis videos.");window.dispatchEvent(new Event("clipforge:project-created"));
