@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 }
 export async function GET() {
   const [jobs, ingests] = await Promise.all([new JobStore().listMedia(),new IngestJobStore().list(30)]);
-  const uploads = ingests.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,error:job.error,createdAt:job.createdAt }));
+  const uploads = ingests.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,retryable:job.retryable,error:job.error,createdAt:job.createdAt }));
   return NextResponse.json({ jobs,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
 }
 

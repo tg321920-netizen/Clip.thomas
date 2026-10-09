@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { UploadedVideo } from "@/types/video";
 
-type ImportJob = { id: string; status: string; stage: string; progress: number; error?: string; result?: { video?: UploadedVideo } };
+type ImportJob = { id: string; status: string; stage: string; progress: number; retryable?: boolean; error?: string; result?: { video?: UploadedVideo } };
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base";
 export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void }) {
   const [url, setUrl] = useState("");
@@ -56,7 +56,7 @@ export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: Uploade
     <label className="flex min-h-12 items-center gap-3"><input className="h-5 w-5" type="checkbox" checked={rights} onChange={event => setRights(event.target.checked)} disabled={busy}/>Tengo autorización para importar este material.</label>
     <button type="button" className="min-h-12 rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-40" disabled={busy || !rights || !url.trim()} onClick={() => void importVideo()}>{busy ? "Importando…" : "Importar video"}</button>
     {job && <div role="status" className="rounded-xl border border-white/15 p-4"><p>{job.status} · {job.stage}</p><progress aria-label="Progreso del trabajo en el servidor" className="mt-2 w-full" max={100} value={job.progress}/><p className="mt-2 text-sm text-zinc-400">El trabajo continúa en el servidor si cierras esta pantalla. Su conservación depende del almacenamiento configurado.</p></div>}
-    {error && <div role="alert" className="text-sm text-red-300"><p>{error}</p>{job?.status === "FAILED" && <button type="button" className="mt-3 min-h-12 rounded-xl border border-white/20 px-4 py-3" disabled={busy} onClick={() => void importVideo(true)}>Reintentar importación</button>}</div>}
+    {error && <div role="alert" className="text-sm text-red-300"><p>{error}</p>{job?.status === "FAILED" && job.retryable !== false && <button type="button" className="mt-3 min-h-12 rounded-xl border border-white/20 px-4 py-3" disabled={busy} onClick={() => void importVideo(true)}>Reintentar importación</button>}</div>}
     <button type="button" className="min-h-12 rounded-xl border border-white/20 px-4 py-3" onClick={onUpload}>Subir un archivo autorizado</button>
   </div>;
 }

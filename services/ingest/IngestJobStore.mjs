@@ -210,6 +210,7 @@ export class IngestJobStore {
       status: terminal ? "FAILED" : "QUEUED",
       stage: terminal ? "FAILED" : "RETRY_WAIT",
       error: error instanceof Error ? error.message : String(error),
+      retryable,
       updatedAt: new Date(now).toISOString(),
       completedAt: terminal ? new Date(now).toISOString() : null,
       nextAttemptAt: terminal ? null : new Date(now + delayMs).toISOString(),

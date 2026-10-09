@@ -113,6 +113,21 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
   const ytdlp = process.env.YTDLP_PATH?.trim() || "yt-dlp";
   const template = path.join(uploadDir, "source.%(ext)s");
 
+  // Direct media links are not web pages. Stream them through FFmpeg instead
+  // of depending on a provider-specific yt-dlp extractor.
+  if (isDirectMediaUrl(url)) {
+    await onProgress(8, "DOWNLOADING");
+    try {
+      await downloadDirectWithFfmpeg(url, path.join(uploadDir, "source.mp4"));
+    } catch (error) {
+      throw new Error(`No se pudo importar el enlace multimedia directo. ${compactError(error)}`);
+    }
+    const direct = await findDownloadedMedia(uploadDir);
+    if (!direct) throw new Error("La URL directa no produjo un archivo de video válido.");
+    await onProgress(90, "DOWNLOADED");
+    return direct;
+  }
+
   try {
     await runProcess(
       ytdlp,
@@ -152,8 +167,7 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
         throw new Error("YouTube bloqueó la importación porque exige una verificación de acceso. ClipForge no puede completarla automáticamente. Sube un archivo propio o autorizado usando Subir video.");
       }
       throw new Error(
-        `No se pudo importar esa URL. ${compactError(error)} ` +
-          "Si la plataforma exige sesión, cookies o permisos privados, usa una fuente autorizada o sube el archivo.",
+        formatRemoteImportFailure(url, error),
       );
     }
 
@@ -287,6 +301,33 @@ export async function captureSegmentedStream({
   );
 
   return output;
+}
+
+export function isDirectMediaUrl(rawUrl) {
+  try {
+    const source = new URL(rawUrl);
+    return ["http:", "https:"].includes(source.protocol) &&
+      /\.(?:mp4|mov|webm|m3u8)$/i.test(source.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** A provider-level 404 is not a transport error and cannot be retried into success. */
+export function formatRemoteImportFailure(rawUrl, error) {
+  const message = compactError(error);
+  try {
+    const source = new URL(rawUrl);
+    if (/(?:^|\.)kick\.com$/i.test(source.hostname) &&
+      /\b(?:HTTP Error|HTTP)\s*(?:403|404)\b/i.test(message)) {
+      return "Kick rechazó la consulta de metadatos de este video (HTTP 403/404). " +
+        "El extractor actual no puede importar este enlace. No es un fallo del botón: " +
+        "comprueba que el video sea público y accesible; para contenido propio o autorizado, usa Subir video. " +
+        message;
+    }
+  } catch { /* Keep the original useful failure. */ }
+  return "No se pudo importar esa URL. " + message +
+    " Si la plataforma exige sesión, cookies o permisos privados, usa una fuente autorizada o sube el archivo.";
 }
 
 async function downloadDirectWithFfmpeg(url, output) {
