@@ -1,5 +1,7 @@
 FROM node:22-bookworm-slim
 
+ARG YTDLP_KICK_REF=04d2933856d7ddc5e088dab2d8328952c6986896
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -19,7 +21,9 @@ RUN apt-get update \
 
 RUN python3 -m venv /opt/clipforge-venv \
   && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-  && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir openai-whisper yt-dlp
+  && /opt/clipforge-venv/bin/python -m pip install --no-cache-dir openai-whisper \
+    "yt-dlp[default,curl-cffi] @ git+https://github.com/doe1080/yt-dlp.git@${YTDLP_KICK_REF}" \
+  && /opt/clipforge-venv/bin/yt-dlp --list-impersonate-targets | grep -q 'Chrome-'
 
 WORKDIR /app
 

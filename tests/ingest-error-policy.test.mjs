@@ -13,7 +13,7 @@ test("timeouts, server errors and temporary disconnections keep bounded retries"
   assert.equal(isRetryableIngestError(new Error("ECONNRESET")), true);
 });
 
-import { isDirectMediaUrl, formatRemoteImportFailure } from "../services/ingest/UrlIngestService.mjs";
+import { isDirectMediaUrl, isDirectStreamInputUrl, formatRemoteImportFailure, providerYtDlpArgs } from "../services/ingest/UrlIngestService.mjs";
 
 test("direct MP4 and HLS links with signed query parameters choose the direct path", () => {
   assert.equal(isDirectMediaUrl("https://media.example/video.mp4?signature=abc"), true);
@@ -24,6 +24,12 @@ test("direct MP4 and HLS links with signed query parameters choose the direct pa
   assert.equal(isDirectMediaUrl("file:///etc/passwd.mp4"), false);
 });
 
+test("RTMP inputs remain direct stream sources instead of being sent to yt-dlp", () => {
+  assert.equal(isDirectStreamInputUrl("rtmp://stream.example/live/key"), true);
+  assert.equal(isDirectStreamInputUrl("rtmps://stream.example/live/key"), true);
+  assert.equal(isDirectStreamInputUrl("https://kick.com/westcol"), false);
+});
+
 test("Kick provider 404 explains platform incompatibility without pretending a completed download", () => {
   const message = formatRemoteImportFailure(
     "https://kick.com/westcol/videos/01a11cba-0720-7045-b89a-c2c8fe18849f",
@@ -32,6 +38,11 @@ test("Kick provider 404 explains platform incompatibility without pretending a c
   assert.match(message, /Kick rechazó/);
   assert.match(message, /Subir video/);
   assert.equal(isRetryableIngestError(new Error(message)), false);
+});
+
+test("Kick URLs request the browser impersonation required by its playback CDN", () => {
+  assert.deepEqual(providerYtDlpArgs("https://kick.com/westcol/videos/example"), ["--impersonate", "chrome"]);
+  assert.deepEqual(providerYtDlpArgs("https://www.youtube.com/watch?v=example"), []);
 });
 
 test("an offline Kick livestream is a permanent failure for this attempt, not RETRY_WAIT", () => {

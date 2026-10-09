@@ -7,12 +7,23 @@ type ImportJob = { id: string; status: string; stage: string; progress: number; 
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base";
 export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void }) {
   const [url, setUrl] = useState("");
+  const [mode, setMode] = useState<"IMPORT" | "STREAM">("IMPORT");
+  const [captureSeconds, setCaptureSeconds] = useState(180);
   const [rights, setRights] = useState(false);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const observer = useRef<AbortController | null>(null);
   useEffect(() => () => observer.current?.abort(), []);
+
+  function changeMode(nextMode: "IMPORT" | "STREAM") {
+    if (busy || nextMode === mode) return;
+    setMode(nextMode);
+    setUrl("");
+    setJob(null);
+    setError("");
+    onReady(null);
+  }
 
   async function importVideo(retry = false) {
     if (busy) return;
@@ -22,7 +33,12 @@ export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: Uploade
       const endpoint = retry && job ? `/api/ingest/url/${job.id}` : "/api/ingest/url";
       const response = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-        body: JSON.stringify(retry ? { action: "RETRY" } : { url: url.trim(), mode: "IMPORT", rightsConfirmed: rights }),
+        body: JSON.stringify(retry ? { action: "RETRY" } : {
+          url: url.trim(),
+          mode,
+          ...(mode === "STREAM" ? { captureSeconds } : {}),
+          rightsConfirmed: rights,
+        }),
       });
       const body = await response.json() as { job?: ImportJob; error?: string };
       if (!response.ok || !body.job) throw new Error(body.error || `Error HTTP ${response.status}`);
@@ -52,9 +68,14 @@ export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: Uploade
   }
   return <div className="grid gap-4">
     <p className="text-sm leading-6 text-zinc-300">Importa un video propio o autorizado desde una fuente compatible. Si la plataforma exige acceso o bloquea la descarga, mostraremos la causa y podrás subir el archivo.</p>
-    <label>Enlace del video<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder="https://…" value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setJob(null); setError(""); onReady(null); }}/></label>
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/15 p-1">
+      <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "IMPORT" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("IMPORT")}>Video grabado</button>
+      <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "STREAM" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("STREAM")}>Directo activo</button>
+    </div>
+    <label>{mode === "STREAM" ? "Enlace del canal o del directo" : "Enlace del video"}<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder={mode === "STREAM" ? "https://kick.com/canal" : "https://…/videos/…"} value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setJob(null); setError(""); onReady(null); }}/></label>
+    {mode === "STREAM" && <label>Tiempo a capturar (segundos)<input type="number" min={60} max={900} step={30} className={field} value={captureSeconds} disabled={busy} onChange={event => setCaptureSeconds(Math.max(60, Math.min(900, Math.round(Number(event.target.value) || 180))))}/><span className="mt-2 block text-sm text-zinc-400">El canal debe estar transmitiendo ahora. ClipForge captura este tramo y después permite buscar los mejores momentos.</span></label>}
     <label className="flex min-h-12 items-center gap-3"><input className="h-5 w-5" type="checkbox" checked={rights} onChange={event => setRights(event.target.checked)} disabled={busy}/>Tengo autorización para importar este material.</label>
-    <button type="button" className="min-h-12 rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-40" disabled={busy || !rights || !url.trim()} onClick={() => void importVideo()}>{busy ? "Importando…" : "Importar video"}</button>
+    <button type="button" className="min-h-12 rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-40" disabled={busy || !rights || !url.trim()} onClick={() => void importVideo()}>{busy ? mode === "STREAM" ? "Capturando directo…" : "Importando…" : mode === "STREAM" ? `Capturar ${captureSeconds} segundos` : "Importar video"}</button>
     {job && <div role="status" className="rounded-xl border border-white/15 p-4"><p>{job.status === "FAILED" ? "Error · Importación detenida" : job.status === "COMPLETED" ? "Video importado" : job.stage === "RETRY_WAIT" ? "Esperando otro intento" : `${job.status} · ${job.stage}`}</p>{job.status !== "FAILED" && <progress aria-label="Progreso del trabajo en el servidor" className="mt-2 w-full" max={100} value={job.progress}/>}<p className="mt-2 text-sm text-zinc-400">{job.status === "FAILED" ? "El trabajo terminó sin importar el video. Cambia de fuente o sube un archivo autorizado." : job.status === "COMPLETED" ? "El video está listo para continuar." : "El trabajo continúa en el servidor si cierras esta pantalla. Su conservación depende del almacenamiento configurado."}</p></div>}
     {error && <div role="alert" className="text-sm text-red-300"><p>{error}</p>{job?.status === "FAILED" && job.retryable !== false && <button type="button" className="mt-3 min-h-12 rounded-xl border border-white/20 px-4 py-3" disabled={busy} onClick={() => void importVideo(true)}>Reintentar importación</button>}</div>}
     <button type="button" className="min-h-12 rounded-xl border border-white/20 px-4 py-3" onClick={onUpload}>Subir un archivo autorizado</button>

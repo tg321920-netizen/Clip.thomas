@@ -9,7 +9,9 @@ WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggm
 ESPEAK_SRC="$RUNTIME_ROOT/src/espeak-ng"
 ESPEAK_PREFIX="$RUNTIME_ROOT/espeak"
 ESPEAK_COMMIT="4870adfa25b1a32b4361592f1be8a40337c58d6c"
-YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
+YTDLP_KICK_REF="04d2933856d7ddc5e088dab2d8328952c6986896"
+YTDLP_PYTHON_ROOT="$RUNTIME_ROOT/yt-dlp-python"
+YTDLP_MARKER="$YTDLP_PYTHON_ROOT/.clipforge-ref"
 TOOLING_ROOT="$RUNTIME_ROOT/tooling"
 
 cd "$ROOT"
@@ -42,17 +44,30 @@ else
   chmod +x "$RUNTIME_ROOT/bin/ffmpeg" "$RUNTIME_ROOT/bin/ffprobe"
 fi
 
-# A normal YouTube/Twitch/web page is not itself a media stream. Bundle the
-# official standalone yt-dlp Linux executable so URL ingestion can resolve
-# supported public pages without adding a paid service.
-if [ ! -x "$RUNTIME_ROOT/bin/yt-dlp" ]; then
-  curl --fail --location --retry 3 \
-    "$YTDLP_URL" \
-    --output "$RUNTIME_ROOT/bin/yt-dlp"
-  chmod +x "$RUNTIME_ROOT/bin/yt-dlp"
+# A normal YouTube/Twitch/web page is not itself a media stream. Kick changed
+# its VOD routes in July 2026 and the stable yt-dlp extractor still returns
+# 404 for those URLs. Until upstream PR #17322 is merged, install its exact
+# reviewed head instead of following a mutable branch. curl-cffi supplies the
+# browser impersonation required by Kick's playback CDN.
+if [ ! -f "$YTDLP_MARKER" ] || [ "$(cat "$YTDLP_MARKER" 2>/dev/null || true)" != "$YTDLP_KICK_REF" ]; then
+  rm -rf "$YTDLP_PYTHON_ROOT"
+  python3 -m pip install \
+    --target "$YTDLP_PYTHON_ROOT" \
+    --disable-pip-version-check \
+    --no-cache-dir \
+    "yt-dlp[default,curl-cffi] @ git+https://github.com/doe1080/yt-dlp.git@$YTDLP_KICK_REF"
+  printf '%s' "$YTDLP_KICK_REF" > "$YTDLP_MARKER"
 else
-  echo "[render-native] reusing cached yt-dlp."
+  echo "[render-native] reusing pinned Kick-compatible yt-dlp."
 fi
+
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+  'PYTHON_ROOT="$(cd "$SCRIPT_DIR/../yt-dlp-python" && pwd)"' \
+  'PYTHONPATH="$PYTHON_ROOT${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m yt_dlp "$@"' \
+  > "$RUNTIME_ROOT/bin/yt-dlp"
+chmod +x "$RUNTIME_ROOT/bin/yt-dlp"
 
 export PATH="$RUNTIME_ROOT/bin:$PATH"
 "$RUNTIME_ROOT/bin/ffmpeg" -version >/dev/null

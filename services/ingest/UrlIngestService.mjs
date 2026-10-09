@@ -133,6 +133,7 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
       ytdlp,
       [
         "--no-playlist",
+        ...providerYtDlpArgs(url),
         "--continue",
         "--newline",
         "--no-warnings",
@@ -205,6 +206,10 @@ export async function captureSegmentedStream({
   const partsDir = path.join(uploadDir, ".stream-parts");
   await mkdir(partsDir, { recursive: true });
 
+  const resolvedUrl = isDirectStreamInputUrl(url)
+    ? url
+    : await resolveStreamUrl(url);
+
   const existing = await listStreamParts(partsDir);
   const approximateCaptured = Math.min(totalSeconds, existing.length * chunkSeconds);
   const remaining = Math.max(0, totalSeconds - approximateCaptured);
@@ -220,7 +225,7 @@ export async function captureSegmentedStream({
       "-protocol_whitelist",
       "file,http,https,tcp,tls,crypto,rtmp,rtmps",
       "-i",
-      url,
+      resolvedUrl,
       "-t",
       String(remaining),
       "-map",
@@ -303,11 +308,57 @@ export async function captureSegmentedStream({
   return output;
 }
 
+export async function resolveStreamUrl(url) {
+  const ytdlp = process.env.YTDLP_PATH?.trim() || "yt-dlp";
+  try {
+    const { stdout } = await runProcess(
+      ytdlp,
+      [
+        "--no-playlist",
+        ...providerYtDlpArgs(url),
+        "--get-url",
+        "-f",
+        "best[protocol^=m3u8]/best",
+        url,
+      ],
+      { timeoutMs: 2 * 60 * 1000 },
+    );
+    const candidates = stdout
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const resolved = candidates.find((value) => /^https?:\/\//i.test(value));
+    if (!resolved) throw new Error("El extractor no devolvió una fuente HLS reproducible.");
+    return resolved;
+  } catch (error) {
+    throw new Error(formatRemoteImportFailure(url, error));
+  }
+}
+
+export function providerYtDlpArgs(rawUrl) {
+  try {
+    const source = new URL(rawUrl);
+    if (/(?:^|\.)kick\.com$/i.test(source.hostname)) {
+      return ["--impersonate", "chrome"];
+    }
+  } catch { /* URL validation happens before this helper. */ }
+  return [];
+}
+
 export function isDirectMediaUrl(rawUrl) {
   try {
     const source = new URL(rawUrl);
     return ["http:", "https:"].includes(source.protocol) &&
       /\.(?:mp4|mov|webm|m3u8)$/i.test(source.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function isDirectStreamInputUrl(rawUrl) {
+  try {
+    const source = new URL(rawUrl);
+    return ["rtmp:", "rtmps:"].includes(source.protocol) || isDirectMediaUrl(rawUrl);
   } catch {
     return false;
   }
