@@ -206,6 +206,12 @@ export async function captureSegmentedStream({
   const partsDir = path.join(uploadDir, ".stream-parts");
   await mkdir(partsDir, { recursive: true });
 
+  // Older releases wrote ordinary MP4 fragments. If FFmpeg was killed while
+  // transcoding on a small instance, those files had no final moov atom and a
+  // retry would keep selecting the corrupt fragment forever. MPEG-TS is both
+  // cheap to stream-copy and remains readable when a capture is interrupted.
+  await removeLegacyMp4StreamParts(partsDir);
+
   const resolvedUrl = isDirectStreamInputUrl(url)
     ? url
     : await resolveStreamUrl(url);
@@ -216,43 +222,14 @@ export async function captureSegmentedStream({
 
   if (remaining > 0) {
     const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
-    const outputPattern = path.join(partsDir, "part-%06d.mp4");
-    const args = [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-y",
-      "-protocol_whitelist",
-      "file,http,https,tcp,tls,crypto,rtmp,rtmps",
-      "-i",
+    const outputPattern = path.join(partsDir, "part-%06d.ts");
+    const args = buildStreamCaptureArgs({
       resolvedUrl,
-      "-t",
-      String(remaining),
-      "-map",
-      "0:v:0?",
-      "-map",
-      "0:a:0?",
-      "-c:v",
-      "mpeg4",
-      "-q:v",
-      "5",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-f",
-      "segment",
-      "-segment_time",
-      String(chunkSeconds),
-      "-segment_start_number",
-      String(existing.length),
-      "-reset_timestamps",
-      "1",
-      "-progress",
-      "pipe:1",
-      "-nostats",
+      remaining,
+      chunkSeconds,
+      startNumber: existing.length,
       outputPattern,
-    ];
+    });
 
     await runProcess(ffmpeg, args, {
       timeoutMs: (remaining + 180) * 1000,
@@ -298,6 +275,8 @@ export async function captureSegmentedStream({
       concatPath,
       "-c",
       "copy",
+      "-bsf:a",
+      "aac_adtstoasc",
       "-movflags",
       "+faststart",
       output,
@@ -306,6 +285,41 @@ export async function captureSegmentedStream({
   );
 
   return output;
+}
+
+export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern }) {
+  return [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-protocol_whitelist",
+    "file,http,https,tcp,tls,crypto,rtmp,rtmps",
+    "-i",
+    resolvedUrl,
+    "-t",
+    String(remaining),
+    "-map",
+    "0:v:0?",
+    "-map",
+    "0:a:0?",
+    "-c",
+    "copy",
+    "-f",
+    "segment",
+    "-segment_format",
+    "mpegts",
+    "-segment_time",
+    String(chunkSeconds),
+    "-segment_start_number",
+    String(startNumber),
+    "-reset_timestamps",
+    "1",
+    "-progress",
+    "pipe:1",
+    "-nostats",
+    outputPattern,
+  ];
 }
 
 export async function resolveStreamUrl(url) {
@@ -485,7 +499,16 @@ async function findDownloadedMedia(uploadDir) {
 
 async function listStreamParts(partsDir) {
   const names = await readdir(partsDir).catch(() => []);
-  return names.filter((name) => /^part-\d{6}\.mp4$/.test(name)).sort();
+  return names.filter((name) => /^part-\d{6}\.ts$/.test(name)).sort();
+}
+
+async function removeLegacyMp4StreamParts(partsDir) {
+  const names = await readdir(partsDir).catch(() => []);
+  await Promise.all(
+    names
+      .filter((name) => /^part-\d{6}\.mp4$/.test(name))
+      .map((name) => rm(path.join(partsDir, name), { force: true })),
+  );
 }
 
 async function cleanupIngestArtifacts(uploadDir, storedName) {

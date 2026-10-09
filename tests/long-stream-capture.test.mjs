@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createReadStream } from "node:fs";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -14,6 +16,7 @@ test("segmented stream capture processes more than the old 120 second limit", {
   const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-long-stream-"));
   const input = path.join(root, "long-source.mp4");
   const uploadDir = path.join(root, "capture");
+  let server;
   await mkdir(uploadDir, { recursive: true });
 
   try {
@@ -22,18 +25,28 @@ test("segmented stream capture processes more than the old 120 second limit", {
       "-f", "lavfi", "-i", "testsrc=size=64x64:rate=1",
       "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=8000",
       "-t", "125",
-      "-c:v", "mpeg4",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
       "-g", "10",
-      "-q:v", "20",
       "-c:a", "aac",
       "-b:a", "32k",
+      "-movflags", "+faststart",
       "-shortest",
       input,
     ]);
 
+    server = createServer((_request, response) => {
+      response.writeHead(200, { "Content-Type": "video/mp4" });
+      createReadStream(input).pipe(response);
+    });
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
     const stages = [];
     const output = await captureSegmentedStream({
-      url: input,
+      url: `http://127.0.0.1:${address.port}/authorized.mp4`,
       uploadDir,
       captureSeconds: 125,
       segmentSeconds: 30,
@@ -55,6 +68,7 @@ test("segmented stream capture processes more than the old 120 second limit", {
     assert.ok(stages.includes("CAPTURING_STREAM"));
     assert.ok(stages.includes("MERGING_SEGMENTS"));
   } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
     await rm(root, { recursive: true, force: true });
   }
 });

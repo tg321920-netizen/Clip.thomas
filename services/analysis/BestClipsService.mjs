@@ -16,8 +16,9 @@ export class BestClipsService {
   async render(outputProjectId, input, onStage = async () => {}) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
-    const count = Number(input.count ?? 3), minDuration = Number(input.minDuration ?? 30), maxDuration = Number(input.maxDuration ?? 60);
-    if (!Number.isSafeInteger(count) || count < 1 || count > 10 || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 15 || minDuration > 120 || maxDuration < minDuration || maxDuration > 180) throw new Error("Elige entre uno y diez clips de 15 a 180 segundos.");
+    const count = Number(input.count ?? 3), minDuration = Number(input.minDuration ?? 30), maxDuration = Number(input.maxDuration ?? 60), targetDuration = Number(input.targetDuration ?? ((minDuration + maxDuration) / 2));
+    if (!Number.isSafeInteger(count) || count < 1 || count > 10 || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 15 || minDuration > 180 || maxDuration < minDuration || maxDuration > 180) throw new Error("Elige entre uno y diez clips de 15 a 180 segundos.");
+    if (!Number.isFinite(targetDuration) || targetDuration < minDuration || targetDuration > maxDuration) throw new Error("La duración aproximada debe estar dentro del intervalo permitido.");
     if (original.transcript?.status !== "COMPLETED") {
       try { await transcribeProject(input.projectId, { onProgress: async p => onStage("PROCESSING", "TRANSCRIBING", Math.round(p * 0.35)) }); original = await loadProjectFile(input.projectId); }
       catch (error) { if (/not installed|ENOENT|MODEL_PATH|required|not found/i.test(error.message)) throw new WaitingResourceError("Whisper no está configurado. Se necesita una transcripción real para elegir momentos y crear subtítulos."); throw error; }
@@ -25,7 +26,7 @@ export class BestClipsService {
     await onStage("PROCESSING", "SELECTING", 35);
     const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
     const selectionTranscript = { ...original.transcript, segments: sentenceSegments(original.transcript.segments) };
-    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, options: { minDuration, maxDuration, targetDuration: (minDuration + maxDuration) / 2, maxCandidates: 50, requireCompleteSentences: true } });
+    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true } });
     const selected = [];
     for (const candidate of candidates) {
       if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
