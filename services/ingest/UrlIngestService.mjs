@@ -319,6 +319,13 @@ export function formatRemoteImportFailure(rawUrl, error) {
   try {
     const source = new URL(rawUrl);
     if (/(?:^|\.)kick\.com$/i.test(source.hostname) &&
+      /\[kick:live\].*\b(?:not currently live|channel is offline|livestream is offline)\b/i.test(message)) {
+      return "El canal de Kick no está transmitiendo en vivo en este momento. " +
+        "Un enlace al canal solo puede importarse durante un directo activo. " +
+        "Para una grabación necesitarías el enlace específico del video; la importación de grabaciones de Kick sigue limitada por el extractor actual. " +
+        "Si el contenido es tuyo o tienes autorización, también puedes subir el archivo. " + message;
+    }
+    if (/(?:^|\.)kick\.com$/i.test(source.hostname) &&
       /\b(?:HTTP Error|HTTP)\s*(?:403|404)\b/i.test(message)) {
       return "Kick rechazó la consulta de metadatos de este video (HTTP 403/404). " +
         "El extractor actual no puede importar este enlace. No es un fallo del botón: " +

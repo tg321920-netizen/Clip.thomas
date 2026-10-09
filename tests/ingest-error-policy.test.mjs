@@ -33,3 +33,20 @@ test("Kick provider 404 explains platform incompatibility without pretending a c
   assert.match(message, /Subir video/);
   assert.equal(isRetryableIngestError(new Error(message)), false);
 });
+
+test("an offline Kick livestream is a permanent failure for this attempt, not RETRY_WAIT", () => {
+  const offline = new Error("No se pudo importar esa URL. ERROR: [kick:live] westcol: The channel is not currently live");
+  assert.equal(isRetryableIngestError(offline), false);
+  assert.equal(isRetryableIngestError(new Error("The channel is offline")), false);
+  assert.equal(isRetryableIngestError(new Error("HTTP Error 502: Bad Gateway")), true);
+});
+
+test("Kick offline errors explain that a channel link is not a recorded video", () => {
+  const message = formatRemoteImportFailure(
+    "https://kick.com/westcol",
+    new Error("ERROR: [kick:live] westcol: The channel is not currently live"),
+  );
+  assert.match(message, /no está transmitiendo en vivo/);
+  assert.match(message, /grabaciones de Kick sigue limitada/);
+  assert.equal(isRetryableIngestError(new Error(message)), false);
+});
