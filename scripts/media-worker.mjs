@@ -13,6 +13,17 @@ while (!stopping) {
   for(const completed of await store.listMedia())await cleanupCompletedMedia(completed).catch(error=>console.error("Media temporary cleanup:",error.message));
   const job = await store.claimNext(["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"]);
   if (!job) { if (once) break; await new Promise(r => setTimeout(r, 2500)); continue; }
+  const startedAt = Date.now();
+  let stageStartedAt = startedAt, previousStage = "WAITING_TO_START";
+  const logStage = async (status, stage, progress) => {
+    const now = Date.now();
+    if (stage !== previousStage) {
+      console.info("[media-timing]", { jobId: job.id, type: job.type, stage: previousStage, elapsedMs: now - stageStartedAt, totalMs: now - startedAt });
+      stageStartedAt = now;
+      previousStage = stage;
+    }
+    return store.transition(job.id, status, stage, progress);
+  };
   const heartbeat = setInterval(() => { void store.heartbeat(job.id).catch(() => {}); }, 15_000);
   try {
     // A crash after persisting the validated project need not render it again.
@@ -20,7 +31,7 @@ while (!stopping) {
     let result = await recoverMediaResult(existing, job);
     if (!result) {
       const service = job.type === "MEDIA_STORY" ? new SceneStoryService() : job.type === "MEDIA_EDIT" ? new VideoAutoEditService() : new BestClipsService();
-      result = await service.render(job.projectId, job.payload, async (status, stage, progress) => store.transition(job.id, status, stage, progress));
+      result = await service.render(job.projectId, job.payload, logStage);
     }
     const completed=await store.complete({ ...(await store.get(job.id)), result, resultPath: result.relativePath || null, validation: result.validation });
     await cleanupCompletedMedia(completed).catch(error=>console.error("Media temporary cleanup:",error.message));
@@ -28,7 +39,10 @@ while (!stopping) {
     if (error.code === "WAITING_RESOURCE") {
       await store.transition(job.id, "WAITING_RESOURCE", "WAITING_RESOURCE", null, { error: error.message }); await store.release(job.id);
     } else await store.fail({ ...(await store.get(job.id)) }, error, { retryable: false });
-  } finally { clearInterval(heartbeat); }
+  } finally {
+    console.info("[media-timing]", { jobId: job.id, type: job.type, stage: previousStage, elapsedMs: Date.now() - stageStartedAt, totalMs: Date.now() - startedAt });
+    clearInterval(heartbeat);
+  }
   if (once) break;
 }
 
