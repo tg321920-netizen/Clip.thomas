@@ -1,43 +1,11 @@
 name: ClipForge CI
 
+# Always run on pull requests; path filters can leave critical changes untested.
 on:
   push:
     branches: [main, "chatgpt/**", "work/**"]
-    paths:
-      - "app/**"
-      - "components/**"
-      - "services/**"
-      - "lib/**"
-      - "types/**"
-      - "tests/**"
-      - "scripts/**"
-      - "services/clip/**"
-      - "services/news/**"
-      - "types/clip.ts"
-      - "types/news.ts"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "next.config.ts"
-      - "postcss.config.mjs"
-      - "eslint.config.mjs"
-      - "vercel.json"
-      - "clipforge/vercel.json"
-      - ".github/workflows/clipforge-ci.yml"
   pull_request:
-    paths:
-      - "app/**"
-      - "components/**"
-      - "services/**"
-      - "lib/**"
-      - "types/**"
-      - "tests/**"
-      - "scripts/**"
-      - "package.json"
-      - "package-lock.json"
-      - "vercel.json"
-      - "clipforge/vercel.json"
-      - ".github/workflows/clipforge-ci.yml"
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -85,3 +53,19 @@ jobs:
 
       - name: News Mode end-to-end
         run: npm run news:e2e
+
+  quality-gate:
+    name: Required Quality Gate
+    if: ${{ always() }}
+    needs: [verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject failed, cancelled, or skipped verification
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: |
+          echo "Verification result: $VERIFY_RESULT"
+          if [ "$VERIFY_RESULT" != "success" ]; then
+            echo "::error::ClipForge verification did not succeed; refusing approval."
+            exit 1
+          fi
