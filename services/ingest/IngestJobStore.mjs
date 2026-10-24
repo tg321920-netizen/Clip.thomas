@@ -248,6 +248,12 @@ export class IngestJobStore {
     if (!new Set(["FAILED", "QUEUED", "CANCELLED"]).has(job.status)) {
       throw new Error(`Ingest job cannot be retried from ${job.status}.`);
     }
+    if (job.status === "CANCELLED") {
+      try {
+        const lock = await stat(this.#lockPath(id));
+        if (Date.now() - lock.mtimeMs < this.staleAfterMs) throw new Error("La captura todavía está deteniéndose. Espera unos segundos antes de reanudar.");
+      } catch (error) { if (getErrorCode(error) !== "ENOENT") throw error; }
+    }
     await rm(`${this.#jobPath(id)}.cancel`, { force: true });
     const retried = {
       ...job,
@@ -292,13 +298,16 @@ export class IngestJobStore {
 
       if (lockAge < this.staleAfterMs) continue;
 
+      const exhausted = Number(job.attempts || 0) >= Number(job.maxAttempts || this.maxAttempts);
       await this.#write({
         ...job,
-        status: "QUEUED",
-        stage: "RECOVERED",
+        status: exhausted ? "FAILED" : "QUEUED",
+        stage: exhausted ? "FAILED" : "RECOVERED",
+        retryable: !exhausted,
+        completedAt: exhausted ? new Date().toISOString() : null,
         error: "Recovered after an interrupted ingest worker.",
         updatedAt: new Date().toISOString(),
-        nextAttemptAt: new Date().toISOString(),
+        nextAttemptAt: exhausted ? null : new Date().toISOString(),
       });
       await this.release(id);
     }

@@ -69,6 +69,7 @@ test("cancellation survives stale progress and worker completion; explicit retry
     const created = await store.create({ url: "https://example.com/live.m3u8", mode: "STREAM" });
     const claimed = await store.claimNext();
     await store.cancel(created.id);
+    await assert.rejects(store.retry(created.id), /deteniéndose/);
     await store.update(created.id, { status: "PROCESSING", progress: 70 });
     assert.equal((await store.complete(claimed, {})).status, "CANCELLED");
     assert.equal((await store.fail(claimed, new Error("late exit"))).status, "CANCELLED");
@@ -78,6 +79,26 @@ test("cancellation survives stale progress and worker completion; explicit retry
   } finally {
     if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
     else process.env.CLIPFORGE_STORAGE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test("repeated worker crashes cannot bypass the maximum attempt count", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-crash-limit-"));
+  const previous = process.env.CLIPFORGE_STORAGE_DIR;
+  process.env.CLIPFORGE_STORAGE_DIR = root;
+  try {
+    const store = new IngestJobStore({ maxAttempts: 1, staleAfterMs: 5 });
+    const job = await store.create({ url: "https://example.com/live.m3u8", mode: "STREAM" });
+    await store.claimNext();
+    const old = new Date(Date.now() - 1000);
+    await utimes(path.join(root, "ingest-jobs", `${job.id}.lock`), old, old);
+    assert.equal(await store.claimNext(), null);
+    assert.equal((await store.get(job.id)).status, "FAILED");
+    assert.equal((await store.get(job.id)).nextAttemptAt, null);
+  } finally {
+    if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR; else process.env.CLIPFORGE_STORAGE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });

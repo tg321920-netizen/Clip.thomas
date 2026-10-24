@@ -1,3 +1,4 @@
+import { EnvHttpProxyAgent, fetch } from "undici";
 import { KickLiveAdapter } from './adapters/KickLiveAdapter.mjs';
 import { TwitchLiveAdapter } from './adapters/TwitchLiveAdapter.mjs';
 import { YouTubeLiveAdapter } from './adapters/YouTubeLiveAdapter.mjs';
@@ -24,9 +25,11 @@ export async function inspectLiveSource(rawUrl, options = {}) {
   }
 }
 
+const dispatcher = new EnvHttpProxyAgent();
+
 async function officialRequest(url, headers) {
   // Never expose URL/query strings, headers or provider bodies in errors.
-  const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000), redirect: 'error' });
+  const response = await fetch(url, { dispatcher, headers, signal: AbortSignal.timeout(15000), redirect: 'error' });
   if (!response.ok) {
     const error = new Error(`La API oficial respondió HTTP ${response.status}. Revisa permisos, credenciales y cuota.`);
     if ([401, 403].includes(response.status)) error.code = 'PLATFORM_ACCESS_DENIED';

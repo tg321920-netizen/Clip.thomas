@@ -658,6 +658,7 @@ function runProcess(command, args, options = {}) {
       ? setTimeout(() => {
           if (settled) return;
           settled = true;
+          if (resourceTimer) clearInterval(resourceTimer);
           child.kill("SIGKILL");
           reject(new Error("El proceso de ingesta excedió su tiempo máximo."));
         }, timeoutMs)

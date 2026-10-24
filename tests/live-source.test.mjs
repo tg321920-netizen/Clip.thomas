@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLiveAdapter } from '../services/live/LiveSourceService.mjs';
+import { createLiveAdapter, inspectLiveSource } from '../services/live/LiveSourceService.mjs';
 import { scoreCandidate } from '../services/analysis/ViralScoreService.mjs';
 import { sceneActivity } from '../services/analysis/AudioEnergyService.mjs';
 
@@ -44,4 +44,23 @@ test('profiles retain measurable evidence, missing signals and redundancy penalt
   assert.equal(scoreCandidate(candidate, { redundancyPenalty: 12 }).viralScore, score.baseScore - 12);
   assert.equal(sceneActivity(candidate, null), null);
   assert.equal(sceneActivity({ startTime: 0, endTime: 30, duration: 30 }, []), 0);
+});
+
+
+test('restricted official access is explicit, without exposing provider credentials', async () => {
+  const previous = process.env.KICK_ACCESS_TOKEN;
+  process.env.KICK_ACCESS_TOKEN = 'test-token';
+  try {
+    const result = await inspectLiveSource('https://kick.com/owner', { request: async () => {
+      const error = new Error('La API oficial respondió HTTP 403.');
+      error.code = 'PLATFORM_ACCESS_DENIED';
+      throw error;
+    } });
+    assert.equal(result.state, 'ACCESS_DENIED');
+    assert.ok(!JSON.stringify(result).includes('test-token'));
+    await assert.rejects(inspectLiveSource('https://user:password@kick.com/owner'), /credenciales/);
+    await assert.rejects(inspectLiveSource('http://kick.com/owner'), /HTTPS/);
+  } finally {
+    if (previous === undefined) delete process.env.KICK_ACCESS_TOKEN; else process.env.KICK_ACCESS_TOKEN = previous;
+  }
 });
