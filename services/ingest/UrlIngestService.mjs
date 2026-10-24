@@ -48,7 +48,7 @@ export async function ingestUrlJob(job, options = {}) {
       segmentSeconds: Number(job.source.segmentSeconds || 300),
       onProgress,
       signal: options.signal,
-      onSegment: job.source.autoClip ? async (file, index) => {
+      onSegment: job.source.autoClip && job.source.clipMode !== "CAPTURE" ? async (file, index) => {
         await queueCapturedSegment({ file, index, job, signal: options.signal });
       } : undefined,
     });
@@ -111,9 +111,14 @@ export async function ingestUrlJob(job, options = {}) {
     },
   });
 
+  let clipsJob = null;
+  if (mode === "STREAM" && job.source.autoClip && job.source.clipMode === "CAPTURE") {
+    options.signal?.throwIfAborted();
+    clipsJob = await queueCapturedBatch({ projectId, job });
+  }
   await cleanupIngestArtifacts(uploadDir, storedName);
   await onProgress(100, "COMPLETED");
-  return { projectId, video };
+  return { projectId, video, ...(clipsJob ? { clipsJobId: clipsJob.id, requestedClipCount: clipsJob.payload.count } : {}) };
 }
 
 export async function importRemoteVideo({ url, uploadDir, onProgress = async () => {}, signal }) {
@@ -334,6 +339,23 @@ export async function captureSegmentedStream({
   );
 
   return output;
+}
+
+/** One count for the whole captured source, independent of its segment count. */
+export async function queueCapturedBatch({ projectId, job }) {
+  const count = Number(job.source.clipCount ?? 5);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 10) throw new Error("Elige una cantidad total de 1 a 10 clips.");
+  const targetDuration = Math.min(90, Math.max(15, Number(job.source.clipDuration) || 30));
+  const digest = createHash("sha256").update(`${job.id}:capture-clips`).digest("hex");
+  const outputId = `${digest.slice(0,8)}-${digest.slice(8,12)}-5${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`;
+  const store = new JobStore();
+  const existing = await store.get(`bestclips-${outputId}`);
+  if (existing) return existing;
+  return store.enqueueMedia("MEDIA_CLIPS", outputId, {
+    projectId, count, minDuration: 15, maxDuration: targetDuration + 10,
+    targetDuration, subtitles: job.source.subtitles !== false,
+    contentProfile: job.source.contentProfile || "GAMING",
+  });
 }
 
 /** Idempotent bridge from each closed recorder segment into existing media jobs. */

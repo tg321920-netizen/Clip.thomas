@@ -146,3 +146,14 @@ Se probó el instalador idempotente del entorno (npm ci, herramientas locales y 
 La aceptación final volvió a ejecutar fuente → Whisper → tres renders → OCR → recuperación de checkpoints → ZIP: passed=true, checkpointReuse=true, OCR=true. El archivo ZIP final tiene 14.117.333 bytes. Ninguna publicación real se ejecutó.
 
 La última observación de la política de red del runtime fue `state=unknown`; los dominios y credenciales guardados en el borrador no se presentan como requisitos ya aplicados. La evidencia de lecturas HTTP concretas y el modelo descargado no acredita una política general ni autorización de plataformas.
+
+
+## Selección de cinco clips por captura
+
+Se añadió cantidad total 1–10 al modo de directo, con 5 por defecto cuando se activa generación automática. CAPTURE analiza la grabación completa al finalizar y encola un único lote con la cantidad elegida. El modo incremental SEGMENTS mantiene un clip por segmento como opción separada; sus cantidades no se confunden con el total de una captura.
+
+La prueba `source /workspace/clipforge-tools/activate.sh; node scripts/live-five-clips-e2e.mjs` usa una fuente propia ya generada por live-clipping-e2e: captura segmentada de 180 s → fuente → JobStore → media worker → Whisper → cinco MP4 distintos de 1080×1920 H.264/AAC con audio. Permite `--resume` para recuperar su ejecución guardada, sin repetir captura ni renders válidos. No llama a una plataforma.
+
+La primera ejecución detectó timestamps de Whisper posteriores al final del medio y falló correctamente al validar un render incompleto. Se limitan ahora los tiempos de segmentos/palabras a la duración medida de la fuente, con marca timingAdjustedToSource; también se limita la selección sobre transcripciones previamente guardadas. La evidencia final contiene cinco archivos validados de 31,64 / 28,48 / 29,56 / 30,08 / 30,80 s, sin solapamientos. La marca de tiempo ajustada no garantiza exactitud lingüística: sigue pendiente la revisión editorial.
+
+Se excluyen `artifacts/` y `storage/` de ESLint y TypeScript: los segmentos MPEG-TS generados tienen extensión .ts pero no son código TypeScript. Suite y build: 303 aprobadas, 0 fallidas, 0 omitidas. Evidencia en `artifacts/live-five-clips/evidence.json`.

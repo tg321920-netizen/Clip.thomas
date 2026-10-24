@@ -50,6 +50,7 @@ export class IngestJobStore {
       type: "INGEST_URL",
       source: {
         autoClip: mode === "STREAM" && input.autoClip === true,
+        ...(mode === "STREAM" ? normalizeLiveClipSettings(input) : {}),
         clipDuration: Math.max(15, Math.min(90, Number(input.clipDuration) || 30)),
         contentProfile: String(input.contentProfile || "GAMING"),
         subtitles: input.subtitles !== false,
@@ -373,4 +374,14 @@ function assertId(id) {
 
 function getErrorCode(error) {
   return error instanceof Error && "code" in error ? error.code : undefined;
+}
+
+
+export function normalizeLiveClipSettings(input = {}) {
+  // Older jobs keep their incremental one-per-segment behavior.
+  const clipMode = String(input.clipMode || (input.clipCount === undefined ? "SEGMENTS" : "CAPTURE")).toUpperCase();
+  if (!["CAPTURE", "SEGMENTS"].includes(clipMode)) throw new Error("El modo de clips debe ser CAPTURE o SEGMENTS.");
+  const clipCount = Number(input.clipCount ?? 5);
+  if (!Number.isSafeInteger(clipCount) || clipCount < 1 || clipCount > 10) throw new Error("Elige una cantidad total de 1 a 10 clips.");
+  return { clipMode, clipCount };
 }

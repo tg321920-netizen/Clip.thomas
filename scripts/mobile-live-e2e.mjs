@@ -14,10 +14,17 @@ await page.route('**/api/streams/status', route => route.fulfill({ json: { sourc
 await page.getByRole('button', { name: 'Consultar si está en directo' }).click();
 await page.getByText(/Consulta sin configurar/).waitFor();
 assert.equal(await page.getByRole('button', { name: 'Capturar 180 segundos', exact: true }).isDisabled(), true);
+await page.getByLabel('Generar clips automáticamente', { exact: true }).check();
+await page.getByLabel('Cantidad total de clips del directo', { exact: true }).fill('5');
 await page.getByLabel('Tengo autorización para importar este material.').check();
 assert.equal(await page.getByRole('button', { name: 'Capturar 180 segundos', exact: true }).isEnabled(), true);
 const fixture = { id: 'mobile-fixture', status: 'QUEUED', stage: 'QUEUED', progress: 0 };
-await page.route('**/api/ingest/url', route => route.fulfill({ status: 202, json: { job: fixture } }));
+await page.route('**/api/ingest/url', route => {
+  const submitted = route.request().postDataJSON();
+  assert.equal(submitted.clipCount, 5);
+  assert.equal(submitted.clipMode, 'CAPTURE');
+  return route.fulfill({ status: 202, json: { job: fixture } });
+});
 await page.route('**/api/ingest/url/mobile-fixture', route => route.fulfill({ json: { job: route.request().method() === 'POST' ? { ...fixture, status: 'CANCELLED' } : fixture } }));
 await page.getByRole('button', { name: 'Capturar 180 segundos', exact: true }).click();
 await page.getByRole('button', { name: 'Cancelar trabajo en el servidor' }).click();
@@ -26,5 +33,5 @@ await page.getByRole('button', { name: 'Reanudar desde los segmentos guardados' 
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'No horizontal overflow');
 await page.screenshot({ path: 'artifacts/mobile-live.png', fullPage: true });
 assert.deepEqual(errors, []);
-await writeFile('artifacts/mobile-check.json', JSON.stringify({ passed: true, viewport: '393x851', checks: ['source URL input', 'official unconfigured state', 'rights gate', 'no horizontal overflow', 'cancel and resume controls with explicit mock API', 'no JavaScript errors'], device: 'Chromium emulation; not a physical Android device' }, null, 2));
+await writeFile('artifacts/mobile-check.json', JSON.stringify({ passed: true, viewport: '393x851', checks: ['source URL input', 'official unconfigured state', 'rights gate', 'five clips total requested for the whole capture', 'no horizontal overflow', 'cancel and resume controls with explicit mock API', 'no JavaScript errors'], device: 'Chromium emulation; not a physical Android device' }, null, 2));
 await browser.close();

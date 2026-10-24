@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parsePublicSourceUrl } from "@/lib/public-source-url.mjs";
-import { IngestJobStore } from "@/services/ingest/IngestJobStore.mjs";
+import { IngestJobStore, normalizeLiveClipSettings } from "@/services/ingest/IngestJobStore.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Confirma que tienes autorización para procesar esta fuente." }, { status: 400 });
   }
 
+  let liveSettings = {};
+  try { if (mode === "STREAM") liveSettings = normalizeLiveClipSettings(body); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Cantidad de clips inválida." }, { status: 400 }); }
+
   let url: URL;
   try {
     url = await parsePublicSourceUrl(rawUrl);
@@ -37,6 +41,7 @@ export async function POST(request: Request) {
     const job = await store.create({
       url: url.toString(),
       mode,
+      ...liveSettings,
       captureSeconds: body.captureSeconds,
       segmentSeconds: body.segmentSeconds,
       autoClip: body.autoClip,

@@ -1,3 +1,4 @@
+import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -115,11 +116,11 @@ export async function transcribeProject(projectId, options = {}) {
           audioPath,
           path.join(chunkDir, `result-${String(index).padStart(4, "0")}`),
         );
-        const shifted = shiftSegments(
+        const shifted = boundTranscriptSegments(shiftSegments(
           result.segments,
           chunk.startTime,
           project.transcript.segments.length,
-        );
+        ), chunk.endTime);
 
         project.transcript.segments.push(...shifted);
         project.transcript.text = project.transcript.segments

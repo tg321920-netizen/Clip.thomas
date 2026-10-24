@@ -1,3 +1,4 @@
+import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, copyFile } from "node:fs/promises";
 import path from "node:path";
@@ -26,7 +27,7 @@ export class BestClipsService {
     await onStage("PROCESSING", "SELECTING", 35);
     const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
     const sceneChanges = await measureSceneChanges(resolveStoragePath(original.source.relativePath));
-    const selectionTranscript = { ...original.transcript, segments: sentenceSegments(original.transcript.segments) };
+    const selectionTranscript = { ...original.transcript, segments: sentenceSegments(boundTranscriptSegments(original.transcript.segments, original.source.durationSeconds)) };
     const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, sceneChanges, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
     const selected = [];
     for (const candidate of candidates) {

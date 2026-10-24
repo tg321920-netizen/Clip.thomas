@@ -40,6 +40,7 @@ jobs:
           echo 'WHISPER_CPP_MODEL_PATH=/tmp/ggml-tiny.bin' >> "$GITHUB_ENV"
       - run: npm run build
       - run: node scripts/live-clipping-e2e.mjs
+      - run: node scripts/live-five-clips-e2e.mjs
       - run: npx playwright install --with-deps chromium
       - name: Mobile browser acceptance
         shell: bash

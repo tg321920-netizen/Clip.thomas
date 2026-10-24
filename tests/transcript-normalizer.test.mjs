@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeWhisperResult } from "../lib/transcript-normalizer.mjs";
+import { normalizeWhisperResult, boundTranscriptSegments } from "../lib/transcript-normalizer.mjs";
 
 test("normalizes Whisper segments and word timestamps", () => {
   const result = normalizeWhisperResult({
@@ -49,4 +49,15 @@ test("drops invalid or empty transcript segments", () => {
   assert.equal(result.segments.length, 1);
   assert.equal(result.segments[0].text, "valid");
   assert.equal(result.text, "valid");
+});
+
+
+test("timestamps beyond measured EOF cannot produce an incomplete render", () => {
+  const segments = [{ startTime: 151.6, endTime: 181.12, text: "A recognized sentence.", words: [{ startTime: 179, endTime: 181, text: "sentence" }] }, { startTime: 182, endTime: 183, text: "Outside audio" }];
+  const result = boundTranscriptSegments(segments, 180.047);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].endTime, 180.047);
+  assert.equal(result[0].words[0].endTime, 180.047);
+  assert.equal(result[0].timingAdjustedToSource, true);
+  assert.equal(segments[0].endTime, 181.12, "Original ASR evidence is not mutated");
 });
