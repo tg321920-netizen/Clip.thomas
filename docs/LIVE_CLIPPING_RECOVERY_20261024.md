@@ -134,6 +134,20 @@ Se probó el instalador idempotente del entorno (npm ci, herramientas locales y 
 
 `.github/workflows/live-clipping-ci.yml` proporciona aceptación audiovisual manual por workflow_dispatch y artefactos; fue preparado, no ejecutado en GitHub.
 
+### Credenciales de aplicación Kick
+
+El formulario de Kick entrega Client ID y Client Secret, no un access token. Se amplió el adaptador Kick existente para aceptar `KICK_CLIENT_ID` y `KICK_CLIENT_SECRET` y obtener un App Access Token mediante POST form-urlencoded a `https://id.kick.com/oauth/token` con `grant_type=client_credentials`. El token solo se conserva en memoria, se comparte entre consultas simultáneas y se renueva antes de caducar. Una respuesta 401 permite una única renovación; 403 no se reintenta. El error de OAuth nunca propaga cuerpos del proveedor ni credenciales. `KICK_ACCESS_TOKEN` sigue disponible como alternativa explícita y tiene prioridad; un token manual inválido no provoca cambio silencioso a otras credenciales.
+
+No se añadió otro módulo OAuth: `OAuthConnectionService` sigue gestionando consentimiento de usuario y publicación de los canales existentes. La consulta pública de Kick no necesita un callback, permisos de moderación, chat ni una clave de emisión. La URL de ensayo registrada en el formulario no se anuncia como un callback funcional de Kick. Crear esta app no activa captura, publicación ni derechos sobre un directo.
+
+Configuración segura: introducir el ID en la variable `KICK_CLIENT_ID` y el secreto vigente en el binding `KICK_CLIENT_SECRET`, con destino HTTPS `id.kick.com`. El borrador conserva el acceso a `api.kick.com` y `kick.com`; se añadió `id.kick.com` para el intercambio oficial. Revisar/guardar la configuración y publicar el entorno antes de validar la conectividad. El binding alternativo `KICK_ACCESS_TOKEN` puede omitirse si se utiliza el par ID/secreto. Los valores nunca se entregan por chat ni se incluyen en Git o informes. Si un secreto fue compartido, regenerarlo en Kick y guardar exclusivamente el nuevo mediante el panel seguro.
+
+En Kick basta conservar la lectura de información de usuario que el formulario exige y la lectura de canal. No solicitar permisos de escritura, moderación ni lectura de clave de emisión para esta integración. La creación de credenciales es independiente del permiso del propietario del contenido.
+
+Referencia oficial revisada: [OAuth 2.1 de Kick](https://docs.kick.com/getting-started/generating-tokens-oauth2-flow), sección App Access Token Endpoint. Las regresiones de `tests/kick-app-token.test.mjs` verifican el grant, cache concurrente, caducidad, rotación, 401/403, alternativa manual, ausencia de credenciales e invalidación sin filtraciones usando respuestas locales. No equivalen a un intercambio real con Kick: siguen faltando credenciales aplicadas y conectividad habilitada en este runtime. No se generó el clip externo solicitado.
+
+Verificación posterior: `CLIPFORGE_RUN_MEDIA_TESTS=true CLIPFORGE_REDIS_URL= REDIS_URL= npm run build` completó lint, TypeScript, 311 tests aprobados (0 fallidos, 0 omitidos) y compilación de Next.js. `render:e2e` y `reframe:e2e` también terminaron correctamente. Los logs de esta revisión son `/tmp/clipforge-kick-app-build.log`, `/tmp/clipforge-kick-app-render-e2e.log` y `/tmp/clipforge-kick-app-reframe-e2e.log`. Se mantienen los tres controles de publicación real desactivados; no se hizo push ni despliegue.
+
 ## Commits de implementación de esta sesión
 
 - `1bb617f`: cancelación persistente y duración real de captura.

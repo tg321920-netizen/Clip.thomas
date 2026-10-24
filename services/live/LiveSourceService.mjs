@@ -4,7 +4,7 @@ import { TwitchLiveAdapter } from './adapters/TwitchLiveAdapter.mjs';
 import { YouTubeLiveAdapter } from './adapters/YouTubeLiveAdapter.mjs';
 
 export function createLiveAdapter(url, options = {}) {
-  const dependencies = { request: options.request || officialRequest };
+  const dependencies = { request: options.request || officialRequest, env: options.env || process.env, tokenProvider: options.kickTokenProvider };
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
   if (host === 'kick.com') return new KickLiveAdapter(dependencies);
   if (host === 'twitch.tv' || host === 'm.twitch.tv') return new TwitchLiveAdapter(dependencies);
@@ -27,11 +27,12 @@ export async function inspectLiveSource(rawUrl, options = {}) {
 
 const dispatcher = new EnvHttpProxyAgent();
 
-async function officialRequest(url, headers) {
+async function officialRequest(url, headers, options = {}) {
   // Never expose URL/query strings, headers or provider bodies in errors.
-  const response = await fetch(url, { dispatcher, headers, signal: AbortSignal.timeout(15000), redirect: 'error' });
+  const response = await fetch(url, { dispatcher, headers, method: options.method || 'GET', body: options.body, signal: AbortSignal.timeout(15000), redirect: 'error' });
   if (!response.ok) {
     const error = new Error(`La API oficial respondió HTTP ${response.status}. Revisa permisos, credenciales y cuota.`);
+    error.status = response.status;
     if ([401, 403].includes(response.status)) error.code = 'PLATFORM_ACCESS_DENIED';
     throw error;
   }
