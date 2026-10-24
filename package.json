@@ -38,10 +38,12 @@
     "worker:analytics:once": "node scripts/analytics-worker.mjs --once"
   },
   "dependencies": {
+    "archiver": "7.0.1",
     "geist": "1.8.2",
     "next": "16.3.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "undici": "8.12.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -50,6 +52,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "playwright": "1.64.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

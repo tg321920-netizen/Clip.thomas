@@ -1,0 +1,64 @@
+name: ClipForge Live Clipping Acceptance
+# Audiovisual work is explicit and bounded; this never deploys or publishes.
+on:
+  workflow_dispatch:
+jobs:
+  local-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLIPFORGE_AGENT_REAL_PUBLISHING: "false"
+      CLIPFORGE_CONTENT_REAL_PUBLISHING: "false"
+      CLIPFORGE_SMART_PUBLISH_ON_BOOT: "false"
+      CLIPFORGE_AGENT_ENABLED: "false"
+      CLIPFORGE_REDIS_URL: ""
+      REDIS_URL: ""
+      CLIPFORGE_RUN_MEDIA_TESTS: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      WHISPER_PROVIDER: cpp
+      WHISPER_CPP_THREADS: "2"
+      WHISPER_LANGUAGE: en
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng cmake tesseract-ocr-spa
+      - run: npm ci
+      - name: Install pinned local recognizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/ggml-org/whisper.cpp.git /tmp/whisper.cpp
+          git -C /tmp/whisper.cpp checkout --detach d09f61a708f3487afa956ff578e60eae5e7a233c
+          cmake -S /tmp/whisper.cpp -B /tmp/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build /tmp/whisper.cpp/build --target whisper-cli --parallel 2
+          curl --fail --location --retry 2 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin -o /tmp/ggml-tiny.bin
+          echo 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /tmp/ggml-tiny.bin' | sha256sum -c -
+          echo 'WHISPER_CPP_COMMAND=/tmp/whisper.cpp/build/bin/whisper-cli' >> "$GITHUB_ENV"
+          echo 'WHISPER_CPP_MODEL_PATH=/tmp/ggml-tiny.bin' >> "$GITHUB_ENV"
+      - run: npm run build
+      - run: node scripts/live-clipping-e2e.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Mobile browser acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm start -- -H 127.0.0.1 -p 3000 > /tmp/clipforge-web.log 2>&1 &
+          web_pid=$!
+          trap 'kill "$web_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /tmp/clipforge-health.json; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          export CHROMIUM_PATH="$(node --input-type=module -e 'import {chromium} from "playwright"; process.stdout.write(chromium.executablePath())')"
+          node scripts/mobile-live-e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-clipping-evidence
+          path: artifacts/
+          retention-days: 7

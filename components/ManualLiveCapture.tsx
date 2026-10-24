@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { MAX_UPLOAD_BYTES, validateUploadDescriptor } from "@/lib/upload-policy.mjs";
 import type { UploadedVideo } from "@/types/video";
 import { ProjectPipeline } from "@/components/ProjectPipeline";
@@ -35,15 +35,13 @@ export function ManualLiveCapture() {
     };
   }, [previewUrl]);
 
-  const recorderSupported = typeof MediaRecorder !== "undefined";
-  const screenSupported =
-    typeof navigator !== "undefined" &&
-    Boolean(navigator.mediaDevices?.getDisplayMedia) &&
-    recorderSupported;
-  const cameraSupported =
-    typeof navigator !== "undefined" &&
-    Boolean(navigator.mediaDevices?.getUserMedia) &&
-    recorderSupported;
+  const capabilities = useSyncExternalStore(
+    subscribeToCapabilities,
+    browserCaptureCapabilities,
+    () => 0,
+  );
+  const screenSupported = Boolean(capabilities & 1);
+  const cameraSupported = Boolean(capabilities & 2);
   const supported = screenSupported || cameraSupported;
 
   async function startCapture(nextSource: CaptureSource) {
@@ -408,4 +406,12 @@ function formatBytes(bytes: number) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+
+function subscribeToCapabilities() { return () => {}; }
+function browserCaptureCapabilities() {
+  if (typeof navigator === "undefined" || typeof MediaRecorder === "undefined") return 0;
+  return (typeof navigator.mediaDevices?.getDisplayMedia === "function" ? 1 : 0) |
+    (typeof navigator.mediaDevices?.getUserMedia === "function" ? 2 : 0);
 }

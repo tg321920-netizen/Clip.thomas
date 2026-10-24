@@ -1,5 +1,9 @@
 // Own synthetic audiovisual fixture; real local speech recognition and rendering.
 import assert from 'node:assert/strict';
+import { verifySubtitleFrame, selectSubtitleReviewCue } from './verify-subtitle-frame.mjs';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { createClipArchive } from '../lib/clip-archive.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -48,5 +52,11 @@ for (let a = 0; a < result.clips.length; a++) for (let b = a + 1; b < result.cli
   assert.ok(Math.min(result.clips[a].endTime, result.clips[b].endTime) <= Math.max(result.clips[a].startTime, result.clips[b].startTime));
 }
 assert.equal(await hashFile(source), checksum, 'Original file must remain intact');
-await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ passed: true, fixture: 'Original synthesized narration; no external footage or mock transcription.', originalDuration: probe.duration, originalSha256: checksum, result, transcriptProvider: project.transcript.provider, publication: 'DISABLED' }, null, 2));
+const subtitleEvidence = await verifySubtitleFrame({ file: path.join(root, project.clips[0].render.relativePath), cue: selectSubtitleReviewCue(project.clips[0].subtitles.cues), width: 1080, height: 1920, output: path.join(output, 'subtitle-review') });
+const resumed = await service.render(renderedId, input);
+assert.deepEqual(resumed.clips.map(clip => clip.clipId), result.clips.map(clip => clip.clipId), 'Validated render checkpoints must be reused');
+const archivePath = path.join(output, 'clips.zip');
+await pipeline(await createClipArchive(project), createWriteStream(archivePath));
+await runMedia('python3', ['-c', 'import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); assert len(z.namelist())==3; assert z.testzip() is None; assert all(n.endswith(".mp4") for n in z.namelist())', archivePath]);
+await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ passed: true, subtitleEvidence, checkpointReuse: true, fixture: 'Original synthesized narration; no external footage or mock transcription.', originalDuration: probe.duration, originalSha256: checksum, result, transcriptProvider: project.transcript.provider, publication: 'DISABLED' }, null, 2));
 console.log('Live clipping local media pipeline PASSED', result.clips.map(clip => ({ file: clip.relativePath, duration: clip.duration })));
