@@ -39,7 +39,9 @@ test("one recovered clip keeps the same clips-array response shape", async () =>
 });
 
 test("incomplete checkpoints cannot be treated as a finished three-clip delivery", async () => {
-  await assert.rejects(recoverMediaResult(fixture(2), job), /cantidad de clips/);
+  let prematureValidation = false;
+  assert.equal(await recoverMediaResult(fixture(2), job, { validate: async () => { prematureValidation = true; } }), null);
+  assert.equal(prematureValidation, false, "A partial checkpoint must reach the resume service instead of being completed or failed");
   const project = fixture();
   project.clips[1].status = "PROCESSING";
   assert.equal(await recoverMediaResult(project, job), null);

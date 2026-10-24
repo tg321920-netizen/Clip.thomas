@@ -5,7 +5,9 @@ import { validateMp4 } from "./MediaValidationService.mjs";
 export async function recoverMediaResult(project, job, { validate = validateMp4 } = {}) {
   if (!project?.clips?.length || project.clips.some(clip => clip.status !== "READY" || !clip.render?.relativePath)) return null;
   if (job.type === "MEDIA_CLIPS" && project.clips.length !== Number(job.payload?.count ?? 3)) {
-    throw new Error("El proyecto recuperado no contiene la cantidad de clips solicitada. Revisa el diagnóstico antes de reintentar.");
+    // A validated subset is a checkpoint, not a completed delivery. Return
+    // control to BestClipsService so it can reuse it and render the remainder.
+    return null;
   }
 
   const clips = [];

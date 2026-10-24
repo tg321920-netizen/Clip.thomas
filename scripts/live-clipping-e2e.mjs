@@ -11,6 +11,7 @@ import { EspeakNewsTtsProvider } from '../services/news/EspeakNewsTtsProvider.mj
 import { runMedia, probeMediaFile, validateMp4 } from '../services/media-processing/MediaValidationService.mjs';
 import { BestClipsService } from '../services/analysis/BestClipsService.mjs';
 import { replaceProjectFile, loadProjectFile } from '../lib/project-files.mjs';
+import { recoverMediaResult } from '../services/media-processing/MediaResultRecovery.mjs';
 import { hashFile } from '../services/ingest/ResumableUploadStore.mjs';
 
 const output = path.resolve('artifacts/live-clipping');
@@ -39,7 +40,17 @@ const checksum = await hashFile(source);
 await replaceProjectFile(id, { id, createdAt: new Date().toISOString(), source: { projectId: id, originalName: 'authorized-original-narration.mp4', relativePath: `uploads/${id}/source.mp4`, sizeBytes: (await stat(source)).size, durationSeconds: probe.duration, width: 640, height: 360, hasAudio: true }, clips: [] });
 const service = new BestClipsService();
 const input = { projectId: id, count: 3, minDuration: 15, maxDuration: 45, targetDuration: 30, subtitles: true, contentProfile: 'PODCAST' };
+const interruption = new Error('Intentional acceptance interruption after first saved clip');
+await assert.rejects(service.render(renderedId, input, async (_status, stage, progress) => {
+  console.log(stage, progress);
+  if (stage === 'RENDERING_CLIPS') throw interruption;
+}), error => error === interruption);
+const partial = await loadProjectFile(renderedId);
+assert.equal(partial.clips.length, 1);
+assert.equal(await recoverMediaResult(partial, { type: 'MEDIA_CLIPS', projectId: renderedId, payload: input }), null);
+const firstClipId = partial.clips[0].id;
 const result = await service.render(renderedId, input, async (_status, stage, progress) => console.log(stage, progress));
+assert.equal(result.clips[0].clipId, firstClipId, 'Resume must reuse the first validated MP4 after interruption');
 assert.equal(result.clips.length, 3);
 const project = await loadProjectFile(renderedId);
 assert.equal(project.transcript.status, 'COMPLETED');
@@ -58,5 +69,5 @@ assert.deepEqual(resumed.clips.map(clip => clip.clipId), result.clips.map(clip =
 const archivePath = path.join(output, 'clips.zip');
 await pipeline(await createClipArchive(project), createWriteStream(archivePath));
 await runMedia('python3', ['-c', 'import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); assert len(z.namelist())==3; assert z.testzip() is None; assert all(n.endswith(".mp4") for n in z.namelist())', archivePath]);
-await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ passed: true, subtitleEvidence, checkpointReuse: true, fixture: 'Original synthesized narration; no external footage or mock transcription.', originalDuration: probe.duration, originalSha256: checksum, result, transcriptProvider: project.transcript.provider, publication: 'DISABLED' }, null, 2));
+await writeFile(path.join(output, 'evidence.json'), JSON.stringify({ passed: true, subtitleEvidence, checkpointReuse: true, partialCheckpointResume: true, fixture: 'Original synthesized narration; no external footage or mock transcription.', originalDuration: probe.duration, originalSha256: checksum, result, transcriptProvider: project.transcript.provider, publication: 'DISABLED' }, null, 2));
 console.log('Live clipping local media pipeline PASSED', result.clips.map(clip => ({ file: clip.relativePath, duration: clip.duration })));

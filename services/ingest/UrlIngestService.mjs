@@ -258,7 +258,7 @@ export async function captureSegmentedStream({
   }
   await deliverParts(true);
   if (remaining > 0) {
-    const resolvedUrl = path.isAbsolute(url) || isDirectStreamInputUrl(url) ? url : await resolveStreamUrl(url);
+    const resolvedUrl = path.isAbsolute(url) || isDirectStreamInputUrl(url) ? url : await resolveStreamUrl(url, { signal });
     const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
     const outputPattern = path.join(partsDir, "part-%06d.ts");
     const args = buildStreamCaptureArgs({
@@ -415,7 +415,7 @@ function isSeekableCaptureInput(url) {
   catch { return /\.(mp4|mov|webm)$/i.test(url); }
 }
 
-export async function resolveStreamUrl(url) {
+export async function resolveStreamUrl(url, { signal } = {}) {
   const ytdlp = process.env.YTDLP_PATH?.trim() || "yt-dlp";
   try {
     const { stdout } = await runProcess(
@@ -428,7 +428,7 @@ export async function resolveStreamUrl(url) {
         "best[protocol^=m3u8]/best",
         url,
       ],
-      { timeoutMs: 2 * 60 * 1000 },
+      { signal, timeoutMs: 2 * 60 * 1000 },
     );
     const candidates = stdout
       .split(/\r?\n/)
@@ -438,6 +438,7 @@ export async function resolveStreamUrl(url) {
     if (!resolved) throw new Error("El extractor no devolvió una fuente HLS reproducible.");
     return resolved;
   } catch (error) {
+    signal?.throwIfAborted();
     throw new Error(formatRemoteImportFailure(url, error));
   }
 }
