@@ -58,3 +58,26 @@ test("ingest jobs persist, retry and recover an interrupted worker without infin
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("cancellation survives stale progress and worker completion; explicit retry resumes", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "clipforge-cancel-"));
+  const previous = process.env.CLIPFORGE_STORAGE_DIR;
+  process.env.CLIPFORGE_STORAGE_DIR = root;
+  try {
+    const store = new IngestJobStore();
+    const created = await store.create({ url: "https://example.com/live.m3u8", mode: "STREAM" });
+    const claimed = await store.claimNext();
+    await store.cancel(created.id);
+    await store.update(created.id, { status: "PROCESSING", progress: 70 });
+    assert.equal((await store.complete(claimed, {})).status, "CANCELLED");
+    assert.equal((await store.fail(claimed, new Error("late exit"))).status, "CANCELLED");
+    assert.equal(await store.claimNext(), null);
+    assert.equal((await store.retry(created.id)).status, "QUEUED");
+    assert.equal((await store.claimNext()).id, created.id);
+  } finally {
+    if (previous === undefined) delete process.env.CLIPFORGE_STORAGE_DIR;
+    else process.env.CLIPFORGE_STORAGE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

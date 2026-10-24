@@ -28,12 +28,13 @@ export async function POST(
 ) {
   const { jobId } = await context.params;
   const body = await safeJson(request);
-  if (String(body.action || "").toUpperCase() !== "RETRY") {
+  const action = String(body.action || "").toUpperCase();
+  if (!["RETRY", "CANCEL"].includes(action)) {
     return NextResponse.json({ error: "Acción no soportada." }, { status: 400 });
   }
 
   try {
-    const job = await store.retry(jobId);
+    const job = action === "CANCEL" ? await store.cancel(jobId) : await store.retry(jobId);
     if (!job) {
       return NextResponse.json({ error: "Trabajo de ingesta no encontrado." }, { status: 404 });
     }

@@ -44,12 +44,14 @@ export async function ingestUrlJob(job, options = {}) {
       captureSeconds: Number(job.source.captureSeconds || 30),
       segmentSeconds: Number(job.source.segmentSeconds || 300),
       onProgress,
+      signal: options.signal,
     });
   } else if (mode === "IMPORT") {
     mediaPath = await importRemoteVideo({
       url: sourceUrl.toString(),
       uploadDir,
       onProgress,
+      signal: options.signal,
     });
   } else {
     throw new Error(`Unsupported ingest mode: ${mode}.`);
@@ -108,7 +110,7 @@ export async function ingestUrlJob(job, options = {}) {
   return { projectId, video };
 }
 
-export async function importRemoteVideo({ url, uploadDir, onProgress = async () => {} }) {
+export async function importRemoteVideo({ url, uploadDir, onProgress = async () => {}, signal }) {
   await mkdir(uploadDir, { recursive: true });
   const ytdlp = process.env.YTDLP_PATH?.trim() || "yt-dlp";
   const template = path.join(uploadDir, "source.%(ext)s");
@@ -118,7 +120,7 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
   if (isDirectMediaUrl(url)) {
     await onProgress(8, "DOWNLOADING");
     try {
-      await downloadDirectWithFfmpeg(url, path.join(uploadDir, "source.mp4"));
+      await downloadDirectWithFfmpeg(url, path.join(uploadDir, "source.mp4"), signal);
     } catch (error) {
       throw new Error(`No se pudo importar el enlace multimedia directo. ${compactError(error)}`);
     }
@@ -150,6 +152,7 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
         url,
       ],
       {
+        signal,
         timeoutMs: normalizeTimeout(process.env.CLIPFORGE_URL_IMPORT_TIMEOUT_MS, 6 * 60 * 60 * 1000),
         onStdoutLine(line) {
           const match = /^download:\s*([0-9.]+)%/.exec(line.trim());
@@ -176,7 +179,7 @@ export async function importRemoteVideo({ url, uploadDir, onProgress = async () 
     // cannot be resolved by FFmpeg and return an explicit error below.
     await onProgress(8, "DOWNLOADING");
     try {
-      await downloadDirectWithFfmpeg(url, path.join(uploadDir, "source.mp4"));
+      await downloadDirectWithFfmpeg(url, path.join(uploadDir, "source.mp4"), signal);
     } catch (fallbackError) {
       throw new Error(
         "yt-dlp no está disponible en el runtime y FFmpeg tampoco pudo leer la URL como video directo. " +
@@ -199,6 +202,7 @@ export async function captureSegmentedStream({
   uploadDir,
   captureSeconds,
   segmentSeconds = 300,
+  signal,
   onProgress = async () => {},
 }) {
   const totalSeconds = Math.max(5, Math.min(24 * 60 * 60, Math.round(Number(captureSeconds) || 30)));
@@ -217,7 +221,15 @@ export async function captureSegmentedStream({
     : await resolveStreamUrl(url);
 
   const existing = await listStreamParts(partsDir);
-  const approximateCaptured = Math.min(totalSeconds, existing.length * chunkSeconds);
+  // Probe completed data, never infer duration from the number of files. A
+  // killed recorder can leave a readable but short transport-stream segment.
+  let capturedSeconds = 0;
+  for (const name of existing) {
+    signal?.throwIfAborted();
+    const technical = await probeMedia(path.join(partsDir, name));
+    capturedSeconds += technical.durationSeconds;
+  }
+  const approximateCaptured = Math.min(totalSeconds, capturedSeconds);
   const remaining = Math.max(0, totalSeconds - approximateCaptured);
 
   if (remaining > 0) {
@@ -227,11 +239,13 @@ export async function captureSegmentedStream({
       resolvedUrl,
       remaining,
       chunkSeconds,
-      startNumber: existing.length,
+      startNumber: existing.length ? Number(existing.at(-1).match(/(\d+)\.ts$/)[1]) + 1 : 0,
+      seekSeconds: isSeekableCaptureInput(url) ? capturedSeconds : 0,
       outputPattern,
     });
 
     await runProcess(ffmpeg, args, {
+      signal,
       timeoutMs: (remaining + 180) * 1000,
       onStdoutLine(line) {
         const match = /^out_time_(?:us|ms)=(\d+)/.exec(line.trim());
@@ -281,13 +295,13 @@ export async function captureSegmentedStream({
       "+faststart",
       output,
     ],
-    { cwd: partsDir, timeoutMs: 30 * 60 * 1000 },
+    { signal, cwd: partsDir, timeoutMs: 30 * 60 * 1000 },
   );
 
   return output;
 }
 
-export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern }) {
+export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern, seekSeconds = 0 }) {
   return [
     "-hide_banner",
     "-loglevel",
@@ -295,6 +309,7 @@ export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, s
     "-y",
     "-protocol_whitelist",
     "file,http,https,tcp,tls,crypto,rtmp,rtmps",
+    ...(seekSeconds > 0 ? ["-ss", String(seekSeconds)] : []),
     "-i",
     resolvedUrl,
     "-t",
@@ -320,6 +335,11 @@ export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, s
     "-nostats",
     outputPattern,
   ];
+}
+
+function isSeekableCaptureInput(url) {
+  try { return /\.(mp4|mov|webm)$/i.test(new URL(url).pathname); }
+  catch { return /\.(mp4|mov|webm)$/i.test(url); }
 }
 
 export async function resolveStreamUrl(url) {
@@ -402,7 +422,7 @@ export function formatRemoteImportFailure(rawUrl, error) {
     " Si la plataforma exige sesión, cookies o permisos privados, usa una fuente autorizada o sube el archivo.";
 }
 
-async function downloadDirectWithFfmpeg(url, output) {
+async function downloadDirectWithFfmpeg(url, output, signal) {
   const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
   await runProcess(
     ffmpeg,
@@ -425,7 +445,7 @@ async function downloadDirectWithFfmpeg(url, output) {
       "+faststart",
       output,
     ],
-    { timeoutMs: normalizeTimeout(process.env.CLIPFORGE_URL_IMPORT_TIMEOUT_MS, 6 * 60 * 60 * 1000) },
+    { signal, timeoutMs: normalizeTimeout(process.env.CLIPFORGE_URL_IMPORT_TIMEOUT_MS, 6 * 60 * 60 * 1000) },
   );
 }
 
@@ -525,6 +545,8 @@ function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
+      signal: options.signal,
+      killSignal: "SIGKILL",
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],

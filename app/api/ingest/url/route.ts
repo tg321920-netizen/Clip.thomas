@@ -19,6 +19,10 @@ export async function POST(request: Request) {
     );
   }
 
+  if (body.rightsConfirmed !== true) {
+    return NextResponse.json({ error: "Confirma que tienes autorización para procesar esta fuente." }, { status: 400 });
+  }
+
   let url: URL;
   try {
     url = await parsePublicSourceUrl(rawUrl);

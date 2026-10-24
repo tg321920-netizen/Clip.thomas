@@ -78,7 +78,12 @@ export class IngestJobStore {
   async get(id) {
     assertId(id);
     try {
-      return JSON.parse(await readFile(this.#jobPath(id), "utf8"));
+      const job = JSON.parse(await readFile(this.#jobPath(id), "utf8"));
+      try {
+        const cancelledAt = await readFile(`${this.#jobPath(id)}.cancel`, "utf8");
+        return { ...job, status: "CANCELLED", stage: "CANCELLED", completedAt: cancelledAt, nextAttemptAt: null };
+      } catch (error) { if (getErrorCode(error) !== "ENOENT") throw error; }
+      return job;
     } catch (error) {
       if (getErrorCode(error) === "ENOENT") return null;
       throw error;
@@ -178,7 +183,17 @@ export class IngestJobStore {
     }
   }
 
+  async cancel(id) {
+    const job = await this.get(id);
+    if (!job || ["COMPLETED", "FAILED", "CANCELLED"].includes(job.status)) return job;
+    await writeFile(`${this.#jobPath(id)}.cancel`, new Date().toISOString(), "utf8");
+    return this.get(id);
+  }
+
   async complete(job, result) {
+    const fresh = await this.get(job.id);
+    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    job = fresh || job;
     const completed = {
       ...job,
       status: "COMPLETED",
@@ -196,6 +211,9 @@ export class IngestJobStore {
   }
 
   async fail(job, error, options = {}) {
+    const fresh = await this.get(job.id);
+    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    job = fresh || job;
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
     const retryable = options.retryable !== false;
@@ -223,9 +241,10 @@ export class IngestJobStore {
   async retry(id) {
     const job = await this.get(id);
     if (!job) return null;
-    if (!new Set(["FAILED", "QUEUED"]).has(job.status)) {
+    if (!new Set(["FAILED", "QUEUED", "CANCELLED"]).has(job.status)) {
       throw new Error(`Ingest job cannot be retried from ${job.status}.`);
     }
+    await rm(`${this.#jobPath(id)}.cancel`, { force: true });
     const retried = {
       ...job,
       status: "QUEUED",

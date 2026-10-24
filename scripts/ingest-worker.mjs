@@ -23,6 +23,11 @@ while (!stopping) {
     continue;
   }
 
+  const controller = new AbortController();
+  const cancellation = setInterval(async () => {
+    try { if (stopping || (await store.get(job.id))?.status === "CANCELLED") controller.abort(); }
+    catch { controller.abort(); }
+  }, 1000);
   const heartbeat = setInterval(() => {
     void store.heartbeat(job.id).catch(() => undefined);
   }, 15_000);
@@ -30,6 +35,7 @@ while (!stopping) {
 
   try {
     const result = await ingestUrlJob(job, {
+      signal: controller.signal,
       onProgress: async (progress, stage) => {
         await store.updateProgress(job.id, progress, stage);
         await store.heartbeat(job.id);
@@ -54,6 +60,7 @@ while (!stopping) {
     });
   } finally {
     clearInterval(heartbeat);
+    clearInterval(cancellation);
   }
 
   if (once) break;
