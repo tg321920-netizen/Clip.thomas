@@ -18,6 +18,7 @@ export function StreamCapturePanel() {
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<IngestMode>("IMPORT");
   const [durationSeconds, setDurationSeconds] = useState(30);
+  const [rights, setRights] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadedVideo | null>(null);
@@ -25,7 +26,7 @@ export function StreamCapturePanel() {
 
   async function startIngest() {
     const cleanUrl = url.trim();
-    if (!cleanUrl || busy) return;
+    if (!cleanUrl || busy || !rights) return;
 
     setBusy(true);
     setError(null);
@@ -38,6 +39,7 @@ export function StreamCapturePanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: cleanUrl,
+          rightsConfirmed: rights,
           mode,
           ...(mode === "STREAM" ? { captureSeconds: durationSeconds } : {}),
         }),
@@ -137,6 +139,7 @@ export function StreamCapturePanel() {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1">
+        <label className="flex min-h-12 items-center gap-3"><input type="checkbox" checked={rights} onChange={event => setRights(event.target.checked)} disabled={busy}/>Tengo autorización para procesar esta fuente.</label>
         <button
           type="button"
           onClick={() => setMode("IMPORT")}
@@ -194,7 +197,7 @@ export function StreamCapturePanel() {
         <button
           type="button"
           onClick={() => void startIngest()}
-          disabled={busy || !url.trim()}
+          disabled={busy || !url.trim() || !rights}
           className="rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy

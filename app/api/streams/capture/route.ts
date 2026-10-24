@@ -14,6 +14,7 @@ export async function POST(request: Request) {
   const body = await safeJson(request);
   const rawUrl = String(body.url || "").trim();
 
+  if (body.rightsConfirmed !== true) return NextResponse.json({ error: "Confirma que tienes autorización para capturar esta fuente." }, { status: 400 });
   let sourceUrl: URL;
   try {
     sourceUrl = await parsePublicSourceUrl(rawUrl);

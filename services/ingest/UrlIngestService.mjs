@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 import {
   mkdir,
   readdir,
+  rename,
+  statfs,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { JobStore } from "../JobStore.mjs";
 import { MAX_UPLOAD_BYTES } from "../../lib/upload-policy.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
@@ -45,6 +48,9 @@ export async function ingestUrlJob(job, options = {}) {
       segmentSeconds: Number(job.source.segmentSeconds || 300),
       onProgress,
       signal: options.signal,
+      onSegment: job.source.autoClip ? async (file, index) => {
+        await queueCapturedSegment({ file, index, job, signal: options.signal });
+      } : undefined,
     });
   } else if (mode === "IMPORT") {
     mediaPath = await importRemoteVideo({
@@ -203,6 +209,7 @@ export async function captureSegmentedStream({
   captureSeconds,
   segmentSeconds = 300,
   signal,
+  onSegment,
   onProgress = async () => {},
 }) {
   const totalSeconds = Math.max(5, Math.min(24 * 60 * 60, Math.round(Number(captureSeconds) || 30)));
@@ -216,9 +223,6 @@ export async function captureSegmentedStream({
   // cheap to stream-copy and remains readable when a capture is interrupted.
   await removeLegacyMp4StreamParts(partsDir);
 
-  const resolvedUrl = isDirectStreamInputUrl(url)
-    ? url
-    : await resolveStreamUrl(url);
 
   const existing = await listStreamParts(partsDir);
   // Probe completed data, never infer duration from the number of files. A
@@ -226,13 +230,35 @@ export async function captureSegmentedStream({
   let capturedSeconds = 0;
   for (const name of existing) {
     signal?.throwIfAborted();
-    const technical = await probeMedia(path.join(partsDir, name));
-    capturedSeconds += technical.durationSeconds;
+    try {
+      const technical = await probeMedia(path.join(partsDir, name));
+      capturedSeconds += technical.durationSeconds;
+    } catch {
+      // Retain damaged recorder output for diagnosis, but never merge it.
+      await rename(path.join(partsDir, name), path.join(partsDir, `${name}.invalid-${Date.now()}`));
+    }
   }
   const approximateCaptured = Math.min(totalSeconds, capturedSeconds);
   const remaining = Math.max(0, totalSeconds - approximateCaptured);
 
+  const delivered = new Set();
+  let delivery = Promise.resolve();
+  function deliverParts(final = false) {
+    if (!onSegment) return Promise.resolve();
+    delivery = delivery.then(async () => {
+    const parts = await listStreamParts(partsDir);
+    for (const name of final ? parts : parts.slice(0, -1)) {
+      if (delivered.has(name)) continue;
+      signal?.throwIfAborted();
+      await onSegment(path.join(partsDir, name), Number(name.match(/(\d+)\.ts$/)[1]));
+      delivered.add(name);
+    }
+    });
+    return delivery;
+  }
+  await deliverParts(true);
   if (remaining > 0) {
+    const resolvedUrl = path.isAbsolute(url) || isDirectStreamInputUrl(url) ? url : await resolveStreamUrl(url);
     const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
     const outputPattern = path.join(partsDir, "part-%06d.ts");
     const args = buildStreamCaptureArgs({
@@ -246,6 +272,14 @@ export async function captureSegmentedStream({
 
     await runProcess(ffmpeg, args, {
       signal,
+      async checkResources() {
+        await deliverParts();
+        const names = await readdir(partsDir);
+        const sizes = await Promise.all(names.map(async name => (await stat(path.join(partsDir, name))).size));
+        if (sizes.reduce((sum, size) => sum + size, 0) >= MAX_UPLOAD_BYTES) throw new Error("La captura alcanzó el límite de almacenamiento de 1 GB. Conserva los segmentos y reduce la duración.");
+        const space = await statfs(uploadDir);
+        if (space.bavail * space.bsize < 128 * 1024 * 1024) throw new Error("Espacio libre insuficiente para continuar la captura y finalizar el MP4.");
+      },
       timeoutMs: (remaining + 180) * 1000,
       onStdoutLine(line) {
         const match = /^out_time_(?:us|ms)=(\d+)/.exec(line.trim());
@@ -259,6 +293,7 @@ export async function captureSegmentedStream({
     });
   }
 
+  await deliverParts(true);
   const parts = await listStreamParts(partsDir);
   if (parts.length === 0) {
     throw new Error("FFmpeg no pudo obtener ningún segmento del stream.");
@@ -299,6 +334,44 @@ export async function captureSegmentedStream({
   );
 
   return output;
+}
+
+/** Idempotent bridge from each closed recorder segment into existing media jobs. */
+export async function queueCapturedSegment({ file, index, job, signal }) {
+  const digest = createHash("sha256").update(`${job.id}:segment:${index}`).digest("hex");
+  const projectId = `${digest.slice(0,8)}-${digest.slice(8,12)}-5${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`;
+  const outputDigest = createHash("sha256").update(`${projectId}:clips`).digest("hex");
+  const outputId = `${outputDigest.slice(0,8)}-${outputDigest.slice(8,12)}-5${outputDigest.slice(13,16)}-a${outputDigest.slice(17,20)}-${outputDigest.slice(20,32)}`;
+  const directory = path.join(getStorageRoot(), "uploads", projectId);
+  await mkdir(directory, { recursive: true });
+  let project = await loadProjectFile(projectId);
+  if (!project) {
+    signal?.throwIfAborted();
+    const media = path.join(directory, "source.mp4");
+    await runProcess(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-y", "-i", file, "-c", "copy", "-movflags", "+faststart", media], { signal, timeoutMs: 120000 });
+    const technical = await probeMedia(media);
+    await createPoster(media, path.join(directory, "poster.jpg"), Math.min(1, technical.durationSeconds / 2));
+    project = { id: projectId, createdAt: new Date().toISOString(), source: {
+      projectId, originalName: `live-segment-${index}.mp4`, storedName: "source.mp4",
+      relativePath: path.posix.join("uploads", projectId, "source.mp4"),
+      sizeBytes: (await stat(media)).size, ...technical,
+    }, liveCapture: { ingestJobId: job.id, segmentIndex: index, publication: "DISABLED" } };
+    await replaceProjectFile(projectId, project);
+  }
+  // A short final fragment stays reviewable as source, rather than inventing a
+  // full-length highlight. Failed jobs stay failed until an explicit retry.
+  if (project.source.durationSeconds < 15) return { projectId, queued: false };
+  const store = new JobStore();
+  const existing = await store.get(`bestclips-${outputId}`);
+  if (existing) return { projectId, job: existing, reused: true };
+  const targetDuration = Math.min(90, Math.max(15, Number(job.source.clipDuration) || 30));
+  const mediaJob = await store.enqueueMedia("MEDIA_CLIPS", outputId, {
+    projectId, count: 1, minDuration: 15,
+    maxDuration: Math.min(project.source.durationSeconds, targetDuration + 10),
+    targetDuration: Math.min(project.source.durationSeconds, targetDuration),
+    subtitles: job.source.subtitles !== false, contentProfile: job.source.contentProfile || "GAMING",
+  });
+  return { projectId, job: mediaJob, reused: false };
 }
 
 export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern, seekSeconds = 0 }) {
@@ -556,6 +629,16 @@ function runProcess(command, args, options = {}) {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let resourceFailure = null;
+    let checkingResources = false;
+    const resourceTimer = options.checkResources ? setInterval(async () => {
+      if (checkingResources || settled) return;
+      checkingResources = true;
+      try { await options.checkResources(); }
+      catch (error) { resourceFailure = error; child.kill("SIGKILL"); }
+      finally { checkingResources = false; }
+    }, 1000) : null;
+    resourceTimer?.unref?.();
     const stdoutBuffer = { value: "" };
     const stderrBuffer = { value: "" };
 
@@ -585,13 +668,16 @@ function runProcess(command, args, options = {}) {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (resourceTimer) clearInterval(resourceTimer);
       reject(error);
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr });
+      if (resourceTimer) clearInterval(resourceTimer);
+      if (resourceFailure) reject(resourceFailure);
+      else if (code === 0) resolve({ stdout, stderr });
       else reject(
         new Error(
           stderr.trim().slice(-4000) ||

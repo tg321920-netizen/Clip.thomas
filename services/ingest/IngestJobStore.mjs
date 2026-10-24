@@ -49,6 +49,10 @@ export class IngestJobStore {
       projectId: id,
       type: "INGEST_URL",
       source: {
+        autoClip: mode === "STREAM" && input.autoClip === true,
+        clipDuration: Math.max(15, Math.min(90, Number(input.clipDuration) || 30)),
+        contentProfile: String(input.contentProfile || "GAMING"),
+        subtitles: input.subtitles !== false,
         kind: mode === "STREAM" ? "STREAM_URL" : "URL",
         url: String(input.url || ""),
         mode,

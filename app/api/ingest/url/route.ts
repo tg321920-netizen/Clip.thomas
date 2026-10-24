@@ -39,6 +39,10 @@ export async function POST(request: Request) {
       mode,
       captureSeconds: body.captureSeconds,
       segmentSeconds: body.segmentSeconds,
+      autoClip: body.autoClip,
+      clipDuration: body.clipDuration,
+      contentProfile: body.contentProfile,
+      subtitles: body.subtitles,
     });
 
     return NextResponse.json(
