@@ -60,11 +60,11 @@ export async function GET(
   }
 
   try {
-    const fileStat = await stat(filePath);
+    const fileStat = await stat(/* turbopackIgnore: true */ filePath);
     const range = request.headers.get("range");
 
     if (!range) {
-      const stream = createReadStream(filePath);
+      const stream = createReadStream(/* turbopackIgnore: true */ filePath);
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 200,
         headers: { ...headersFor(fileStat.size), ...disposition },
@@ -83,7 +83,7 @@ export async function GET(
     }
 
     const { start, end } = parsed;
-    const stream = createReadStream(filePath, { start, end });
+    const stream = createReadStream(/* turbopackIgnore: true */ filePath, { start, end });
 
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 206,

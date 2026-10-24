@@ -5,7 +5,7 @@ import type { UploadedVideo } from "@/types/video";
 
 type ImportJob = { id: string; status: string; stage: string; progress: number; retryable?: boolean; error?: string; result?: { video?: UploadedVideo; clipsJobId?: string; requestedClipCount?: number } };
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base";
-export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void }) {
+export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void; defaultLiveSource?: string }) {
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<"IMPORT" | "STREAM">("IMPORT");
   const [captureSeconds, setCaptureSeconds] = useState(180);
@@ -26,7 +26,8 @@ export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: Uploade
   function changeMode(nextMode: "IMPORT" | "STREAM") {
     if (busy || nextMode === mode) return;
     setMode(nextMode);
-    setUrl("");
+    setUrl(nextMode === 'STREAM' ? defaultLiveSource : '');
+    setRights(false);
     setJob(null);
     setError("");
     onReady(null);
@@ -102,7 +103,7 @@ export function UrlImportPanel({ onReady, onUpload }: { onReady: (video: Uploade
       <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "IMPORT" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("IMPORT")}>Video grabado</button>
       <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "STREAM" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("STREAM")}>Directo activo</button>
     </div>
-    <label>{mode === "STREAM" ? "Enlace del canal o del directo" : "Enlace del video"}<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder={mode === "STREAM" ? "https://kick.com/canal" : "https://…/videos/…"} value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setJob(null); setError(""); onReady(null); }}/></label>
+    <label>{mode === "STREAM" ? "Enlace del canal o del directo" : "Enlace del video"}<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder={mode === "STREAM" ? "https://kick.com/canal" : "https://…/videos/…"} value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setRights(false); setJob(null); setError(""); onReady(null); }}/></label>
     {mode === "STREAM" && <><button type="button" disabled={checking || busy || !url.trim()} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 disabled:opacity-40" onClick={() => void checkLive()}>{checking ? "Consultando API oficial…" : "Consultar si está en directo"}</button><p role="status" className="text-sm text-zinc-300">{liveStatus || "Kick, Twitch y YouTube tienen consultas independientes. El acceso al medio depende de los permisos y de cada plataforma."}</p></>}
     {mode === "STREAM" && <label>Tiempo a capturar (segundos)<input type="number" min={60} max={900} step={30} className={field} value={captureSeconds} disabled={busy} onChange={event => setCaptureSeconds(Math.max(60, Math.min(900, Math.round(Number(event.target.value) || 180))))}/><span className="mt-2 block text-sm text-zinc-400">El canal debe estar transmitiendo ahora. ClipForge captura este tramo y después permite buscar los mejores momentos.</span></label>}
     {mode === "STREAM" && <label>Duración de segmento<select className={field} value={segmentSeconds} disabled={busy} onChange={event => setSegmentSeconds(Number(event.target.value))}>{[30, 60, 120, 300].map(seconds => <option key={seconds} value={seconds}>{seconds} segundos</option>)}</select></label>}

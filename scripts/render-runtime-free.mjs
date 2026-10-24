@@ -54,6 +54,7 @@ const workerScripts = [
   "scripts/agent-worker.mjs",
   "scripts/transcription-worker.mjs",
   "scripts/media-worker.mjs",
+  ...(process.env.CLIPFORGE_MEDIA_STORAGE_PROVIDER === 'r2' ? ["scripts/storage-worker.mjs"] : []),
   "scripts/analysis-worker.mjs",
   "scripts/autoedit-worker.mjs",
   "scripts/render-worker.mjs",

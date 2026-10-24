@@ -1,0 +1,43 @@
+import { chromium } from 'playwright';
+import { mkdir, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+try {
+  const page = await browser.newPage({ viewport: { width: 393, height: 851 }, isMobile: true, hasTouch: true });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const id = 'a'.repeat(64);
+  let configured = false, failKeep = false;
+  let clip = { id, projectId: 'fixture-project', clipId: 'fixture-clip', title: 'Momento de prueba', duration: 30, reason: 'Fixture de interfaz', keep: false, expiresAt: '2026-11-23T12:00:00Z', sourceUrl: `/api/media/library/${id}/source`, downloadUrl: `/api/media/library/${id}/source?download=1` };
+  await page.route('**/api/media/jobs', route => route.fulfill({ json: { jobs: [], uploads: [] } }));
+  await page.route('**/api/media/library', route => route.fulfill({ json: { configured, message: configured ? 'Guardados por 30 días' : 'Guardado en nube pendiente de configurar.', warning: configured ? 'Un clip necesita reintentar el guardado.' : undefined, clips: configured ? [clip] : [], usedBytes: 1024, maxBytes: 8e9 } }));
+  await page.route(`**/api/media/library/${id}`, async route => {
+    const input = route.request().postDataJSON(); assert.equal(typeof input.keep, 'boolean');
+    if (failKeep) return route.fulfill({ status: 409, json: { error: 'No se confirmó el cambio. Reintenta.' } });
+    clip = { ...clip, keep: input.keep, expiresAt: input.keep ? null : '2026-11-23T12:00:00Z' };
+    return route.fulfill({ json: { clip } });
+  });
+  await page.goto(process.env.CLIPFORGE_TEST_BASE_URL || 'http://127.0.0.1:3135', { waitUntil: 'networkidle' });
+  const library = page.getByRole('region', { name: 'Clips guardados en nube' });
+  await library.getByText('Guardado en nube pendiente de configurar.').waitFor();
+  configured = true; await library.getByRole('button', { name: 'Actualizar biblioteca' }).click();
+  await library.getByText('Momento de prueba').waitFor();
+  await library.getByText('Un clip necesita reintentar el guardado.').waitFor();
+  const keep = library.getByRole('button', { name: 'Conservar', exact: true });
+  await keep.click(); await library.getByRole('button', { name: 'Quitar Conservar' }).waitFor();
+  assert.equal(await library.getByRole('button', { name: 'Quitar Conservar' }).getAttribute('aria-pressed'), 'true');
+  failKeep = true; await library.getByRole('button', { name: 'Quitar Conservar' }).click();
+  await library.getByRole('alert').filter({ hasText: 'No se confirmó' }).waitFor();
+  assert.equal(await library.getByRole('button', { name: 'Quitar Conservar' }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'PEGAR URL O DIRECTO', exact: true }).click();
+  await page.getByRole('button', { name: 'Directo activo', exact: true }).click();
+  const rights = page.getByLabel('Tengo autorización para importar este material.');
+  assert.equal(await rights.isChecked(), false);
+  await rights.check(); await page.getByRole('textbox', { name: 'Enlace del canal o del directo' }).fill('https://kick.com/otra-fuente');
+  assert.equal(await rights.isChecked(), false, 'changing the source requires a fresh rights confirmation');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  assert.deepEqual(errors, []);
+  await mkdir('artifacts/mobile-storage', { recursive: true });
+  await page.screenshot({ path: 'artifacts/mobile-storage/screen.png', fullPage: true });
+  await writeFile('artifacts/mobile-storage/evidence.json', JSON.stringify({ passed: true, viewport: '393x851', checks: ['unconfigured is explicit', '30-day saved library', 'Conservar is confirmed only after success', 'failed change retains protection', 'source changes reset rights confirmation', 'no horizontal overflow', 'no JS errors'], scope: 'Chromium UI with explicit local API fixtures; not a physical Android or live R2 test' }, null, 2));
+  console.log('Mobile storage UI checks passed.');
+} finally { await browser.close(); }

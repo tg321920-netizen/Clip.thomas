@@ -95,6 +95,7 @@ export type ClipRecord = {
   autoEdit: AutoEditPlan | null;
   autoReframe: AutoReframePlan | null;
   render: {
+    archiveEligible?: boolean;
     relativePath: string;
     sourceUrl: string;
     width: number;

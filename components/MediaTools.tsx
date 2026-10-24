@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { uploadStoryAssets } from "@/lib/story-asset-client";
 import { UploadPanel } from "@/components/UploadPanel";
 import { UrlImportPanel } from "@/components/UrlImportPanel";
+import { CloudClipLibrary } from "@/components/CloudClipLibrary";
 import type { UploadedVideo } from "@/types/video";
 
 type Tool = "URL_IMPORT" | "MEDIA_STORY" | "MEDIA_EDIT" | "MEDIA_CLIPS";
@@ -16,7 +17,7 @@ const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-90
 const button = "min-h-12 rounded-xl bg-violet-500 px-5 py-3 text-base font-semibold text-white disabled:opacity-40";
 async function request(url: string, init?: RequestInit) { const response = await fetch(url,init); const body = await response.json(); if (!response.ok) throw new Error(body.error || body.message || "No se pudo completar la operación."); return body; }
 
-export function MediaTools() {
+export function MediaTools({ defaultLiveSource = '' }: { defaultLiveSource?: string } = {}) {
   const [tool,setTool] = useState<Tool>("MEDIA_CLIPS");
   const savedStoryAssets = useRef(new Map<File, string>());
   const [topic,setTopic] = useState("");
@@ -65,7 +66,7 @@ export function MediaTools() {
   return <>
     <nav aria-label="Herramientas de video" className="grid grid-cols-2 gap-3 py-6 lg:grid-cols-4">{TOOLS.map(([id,title,description])=><button key={id} type="button" aria-label={title} aria-pressed={tool===id} disabled={busy} onClick={()=>{setTool(id);setError("");setMessage("");}} className={`min-h-28 rounded-2xl border p-4 text-left ${tool===id?"border-violet-400 bg-violet-500/20":"border-white/15 bg-white/5"}`}><span className="block text-sm font-bold">{title}</span><span className="mt-2 block text-sm text-zinc-300">{description}</span></button>)}</nav>
     <section aria-label={TOOLS.find(t=>t[0]===tool)?.[1]} className="rounded-3xl border border-white/15 bg-white/5 p-5 sm:p-7"><h2 className="mb-5 text-xl font-semibold">{TOOLS.find(t=>t[0]===tool)?.[1]}</h2><div className="grid gap-5">
-      {tool==="URL_IMPORT"?<><UrlImportPanel onReady={onImportReady} onUpload={()=>setTool("MEDIA_EDIT")}/>{imported&&<div className="grid gap-3"><p className="text-emerald-300">Importado: {imported.originalName}</p><video controls playsInline preload="metadata" src={imported.sourceUrl} poster={imported.posterUrl} className="max-h-80 w-full rounded-xl"/><a className={button} href={`${imported.sourceUrl}?download=1`} download>Descargar original</a><button type="button" className={button} onClick={()=>{setOriginal(imported);setTool("MEDIA_CLIPS");}}>Crear clips de este video</button><button type="button" className={button} onClick={()=>{setOriginal(imported);setTool("MEDIA_EDIT");}}>Editar este video</button></div>}</>:tool==="MEDIA_STORY"?<>
+      {tool==="URL_IMPORT"?<><UrlImportPanel defaultLiveSource={defaultLiveSource} onReady={onImportReady} onUpload={()=>setTool("MEDIA_EDIT")}/>{imported&&<div className="grid gap-3"><p className="text-emerald-300">Importado: {imported.originalName}</p><video controls playsInline preload="metadata" src={imported.sourceUrl} poster={imported.posterUrl} className="max-h-80 w-full rounded-xl"/><a className={button} href={`${imported.sourceUrl}?download=1`} download>Descargar original</a><button type="button" className={button} onClick={()=>{setOriginal(imported);setTool("MEDIA_CLIPS");}}>Crear clips de este video</button><button type="button" className={button} onClick={()=>{setOriginal(imported);setTool("MEDIA_EDIT");}}>Editar este video</button></div>}</>:tool==="MEDIA_STORY"?<>
         <label>Tema o idea<textarea className={field} rows={3} maxLength={2000} value={topic} onChange={e=>setTopic(e.target.value)}/></label>
         <p className="text-sm leading-6 text-zinc-300">{storyStatus?.message||"Comprobando proveedores de guion e imágenes…"} Las imágenes propias permiten montar una historia; esa opción no genera imágenes mediante IA.</p>
         <label>Modo visual<select className={field} value={generationMode} onChange={e=>setGenerationMode(e.target.value)}><option value="OWN">Usar mis imágenes</option><option value="AI" disabled={!storyStatus?.automaticReady}>Generar imágenes con IA autorizada{!storyStatus?.automaticReady?" · pendiente de configuración":""}</option></select></label>
@@ -88,6 +89,7 @@ export function MediaTools() {
       {message&&<p role="status" className="text-sm text-emerald-300">{message}</p>}{error&&<p role="alert" className="text-sm text-red-300">{error}</p>}
     </div></section>
     <section aria-label="Mis videos" className="py-8"><h2 className="text-xl font-semibold">Mis videos</h2><p className="mt-2 text-sm text-zinc-400">Cada resultado incluye vista previa y descarga. La comprobación técnica del archivo y la revisión editorial son pasos separados.</p>{historyError&&<p role="alert" className="mt-3 text-sm text-red-300">{historyError}</p>}
+      <CloudClipLibrary />
       {uploads.filter(upload=>upload.status!=="COMPLETED").map(upload=><div key={upload.id} className="mt-4 rounded-xl border border-white/15 p-4"><p>{upload.name} · {upload.status==="CANCELLED"?"Importación cancelada":upload.status==="FAILED"?"Error · Importación detenida":upload.stage==="RETRY_WAIT"?"En espera de otro intento":upload.status==="COMPLETED"?"Completado":`${upload.status} · ${upload.stage}`}</p>{upload.error&&<p className="mt-2 text-sm text-red-300">{upload.error}</p>}{(upload.status==="CANCELLED"||(upload.status==="FAILED"&&upload.retryable!==false))&&<button type="button" className={`${button} mt-3`} onClick={()=>void request(upload.type==="INGEST_URL"?`/api/ingest/url/${upload.id}`:`/api/videos/jobs/${upload.id}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"RETRY"})}).then(()=>window.dispatchEvent(new Event("clipforge:project-created"))).catch(failure=>setHistoryError(failure.message))}>{upload.status==="CANCELLED"?"Reanudar":"Reintentar"} {upload.type==="INGEST_URL"?"importación":"análisis de la subida"}</button>}</div>)}
       <div className="mt-5 grid gap-4 md:grid-cols-2">{jobs.map(job=><article key={job.id} className="min-w-0 rounded-2xl border border-white/15 p-4"><h3 className="font-semibold">{job.result?.title||TOOLS.find(t=>t[0]===job.type)?.[1]}</h3><p className="mt-1 text-xs text-zinc-400">{new Date(job.createdAt).toLocaleString("es")}</p>
         <p role="status" className="mt-3 break-words text-sm">{STATUS[job.status]||job.status} · {job.stage||job.status}{["PROCESSING","VALIDATING"].includes(job.status)?` · ${job.progress}% de etapas completadas`:""}</p>

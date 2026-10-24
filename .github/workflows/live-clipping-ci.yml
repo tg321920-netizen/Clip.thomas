@@ -11,6 +11,7 @@ jobs:
       CLIPFORGE_CONTENT_REAL_PUBLISHING: "false"
       CLIPFORGE_SMART_PUBLISH_ON_BOOT: "false"
       CLIPFORGE_AGENT_ENABLED: "false"
+      CLIPFORGE_MEDIA_STORAGE_PROVIDER: "local"
       CLIPFORGE_REDIS_URL: ""
       REDIS_URL: ""
       CLIPFORGE_RUN_MEDIA_TESTS: "true"
@@ -57,6 +58,7 @@ jobs:
           test "$ready" = true
           export CHROMIUM_PATH="$(node --input-type=module -e 'import {chromium} from "playwright"; process.stdout.write(chromium.executablePath())')"
           node scripts/mobile-live-e2e.mjs
+          CLIPFORGE_TEST_BASE_URL=http://127.0.0.1:3000 node scripts/mobile-storage-e2e.mjs
           node scripts/mobile-upload-e2e.mjs
       - uses: actions/upload-artifact@v4
         if: always()

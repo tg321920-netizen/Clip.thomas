@@ -65,12 +65,13 @@ export async function GET(
   const filePath = persistedPath || path.join(uploadDir, sourceName);
 
   try {
-    const fileStat = await stat(filePath);
+    // These files are created after deployment inside the validated storage root.
+    const fileStat = await stat(/* turbopackIgnore: true */ filePath);
     const mimeType = mimeFor(sourceName);
     const range = request.headers.get("range");
 
     if (!range) {
-      const stream = createReadStream(filePath);
+      const stream = createReadStream(/* turbopackIgnore: true */ filePath);
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 200,
         headers: {
@@ -96,7 +97,7 @@ export async function GET(
     }
 
     const { start, end } = parsed;
-    const stream = createReadStream(filePath, { start, end });
+    const stream = createReadStream(/* turbopackIgnore: true */ filePath, { start, end });
 
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 206,

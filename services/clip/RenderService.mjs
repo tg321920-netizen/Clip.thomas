@@ -140,6 +140,7 @@ export class RenderService {
     const outputStat = await stat(outputPath);
 
     return {
+      archiveEligible: true,
       validation,
       relativePath: path.posix.join(
         "clips",

@@ -32,6 +32,7 @@ const runtime = spawn(process.execPath, ['scripts/render-runtime-free.mjs'], {
   detached: true,
   stdio: ['ignore', log.fd, log.fd],
   env: { ...process.env, PORT: String(port), CLIPFORGE_STORAGE_DIR: storage,
+    CLIPFORGE_MEDIA_STORAGE_PROVIDER: 'local',
     CLIPFORGE_REDIS_URL: '', REDIS_URL: '', CLIPFORGE_AGENT_ENABLED: 'false',
     CLIPFORGE_AGENT_REAL_PUBLISHING: 'false', CLIPFORGE_CONTENT_REAL_PUBLISHING: 'false',
     CLIPFORGE_SMART_PUBLISH_ON_BOOT: 'false', CLIPFORGE_BOOTSTRAP_OWNED_CHANNELS: 'false',
