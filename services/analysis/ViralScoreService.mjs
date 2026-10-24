@@ -6,6 +6,8 @@ const WEIGHTS = {
   standaloneComprehensibility: 16,
   shortFormPotential: 13,
   audioEnergy: 5,
+  visualActivity: 3,
+  profileRelevance: 5,
 };
 
 const HOOK_PATTERNS = [
@@ -31,6 +33,14 @@ const CONTRAST_PATTERNS = [
 const FRAGMENT_START =
   /^(y|pero|entonces|porque|pues|bueno|so|but|and|because|then|well|et|mais|donc|parce que)\b/i;
 
+const PROFILE_PATTERNS = {
+  GAMING: /\b(victory|win|won|goal|defeat|game|victoria|ganamos|partida|gol|derrota)\b/iu,
+  PODCAST: /\b(why|because|however|opinion|experience|porque|experiencia|opini[oó]n|debate)\b/iu,
+  ENTERTAINMENT: /\b(funny|laugh|surprise|unexpected|risa|gracioso|sorpresa|inesperado)\b/iu,
+  NEWS: /\b(according|report|announced|confirmed|informe|anunci[oó]|confirm[oó]|seg[uú]n)\b/iu,
+  MOTIVATION: /\b(learn|practice|effort|goal|aprend|practica|esfuerzo|meta|objetivo)\b/iu,
+};
+
 export function scoreCandidate(candidate, options = {}) {
   const text = String(candidate?.text || "").trim();
   const duration = Number(candidate?.duration || 0);
@@ -44,6 +54,9 @@ export function scoreCandidate(candidate, options = {}) {
     standaloneComprehensibility: scoreStandalone(text),
     shortFormPotential: scoreShortFormPotential(text, duration),
     audioEnergy,
+    visualActivity: normalizeOptionalScore(candidate?.visualActivity),
+    profileRelevance: candidate?.contentProfile && PROFILE_PATTERNS[candidate.contentProfile]
+      ? (PROFILE_PATTERNS[candidate.contentProfile].test(text) ? 80 : 30) : null,
   };
 
   let weighted = 0;
@@ -64,6 +77,12 @@ export function scoreCandidate(candidate, options = {}) {
   const reasons = buildReasons(components, text, duration, redundancyPenalty);
 
   return {
+    contentProfile: candidate?.contentProfile || null,
+    missingSignals: [
+      ...(audioEnergy === null ? ["audioEnergy"] : []),
+      ...(components.visualActivity === null ? ["visualActivity"] : []),
+      "speakerChanges", "chatActivity", "visualEventRecognition",
+    ],
     viralScore,
     baseScore: clamp(baseScore),
     redundancyPenalty,
@@ -186,7 +205,10 @@ function buildReasons(components, text, duration, redundancyPenalty) {
   if (components.audioEnergy === null) {
     reasons.push("La señal de energía de audio no estaba disponible y no se inventó.");
   }
-  return reasons.slice(0, 6);
+  if (components.audioEnergy !== null) reasons.push(`Energía RMS relativa medida: ${components.audioEnergy}/100.`);
+  if (components.visualActivity !== null) reasons.push(`Actividad de cortes visuales medida: ${components.visualActivity}/100; no identifica jugadas ni emociones.`);
+  if (components.profileRelevance !== null) reasons.push(`Coincidencia léxica con el perfil: ${components.profileRelevance}/100; requiere revisión contextual.`);
+  return reasons;
 }
 
 function tokenize(text) {

@@ -21,3 +21,20 @@ export function sentenceSegments(segments=[]) {
   }
   if(current)result.push(current);return result;
 }
+
+
+/** Low-resolution one-frame/second scene evidence; no object/emotion claims. */
+export async function measureSceneChanges(filename) {
+  const scan = await runMedia(process.env.FFMPEG_PATH || "ffmpeg", [
+    "-v", "error", "-i", filename, "-an",
+    "-vf", "fps=1,scale=160:-2,select=gt(scene\\,0.35),metadata=print:file=-",
+    "-f", "null", "-",
+  ]);
+  return [...scan.stdout.matchAll(/pts_time:([\d.]+)/g)].map(match => Number(match[1]));
+}
+
+export function sceneActivity(candidate, times) {
+  if (!Array.isArray(times)) return null;
+  const cuts = times.filter(time => time >= candidate.startTime && time < candidate.endTime).length;
+  return Math.min(100, Math.round(cuts * 10 / Math.max(1, candidate.duration) * 100));
+}

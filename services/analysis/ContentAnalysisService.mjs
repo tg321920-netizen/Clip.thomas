@@ -119,7 +119,9 @@ function analysisConfigsEqual(existing, expected) {
     Number(existing.minDuration) === Number(expected.minDuration) &&
     Number(existing.maxDuration) === Number(expected.maxDuration) &&
     Number(existing.targetDuration) === Number(expected.targetDuration) &&
-    Number(existing.maxCandidates) === Number(expected.maxCandidates)
+    Number(existing.maxCandidates) === Number(expected.maxCandidates) &&
+    (existing.contentProfile || "PODCAST") === (expected.contentProfile || "PODCAST") &&
+    Boolean(existing.requireCompleteSentences) === Boolean(expected.requireCompleteSentences)
   );
 }
 

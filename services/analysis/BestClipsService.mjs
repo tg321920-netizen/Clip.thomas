@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { mkdir, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
@@ -7,9 +7,9 @@ import { transcribeProject } from "../transcription/TranscriptionService.mjs";
 import { TranscriptCandidateProvider } from "./TranscriptCandidateProvider.mjs";
 import { buildSubtitleTrack } from "../subtitles/SubtitleService.mjs";
 import { RenderService } from "../clip/RenderService.mjs";
-import { runMedia } from "../media-processing/MediaValidationService.mjs";
+import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
-import { measureAudioEnergy, sentenceSegments } from "./AudioEnergyService.mjs";
+import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
 
 export class BestClipsService {
   constructor(options = {}) { this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920); }
@@ -25,8 +25,9 @@ export class BestClipsService {
     }
     await onStage("PROCESSING", "SELECTING", 35);
     const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
+    const sceneChanges = await measureSceneChanges(resolveStoragePath(original.source.relativePath));
     const selectionTranscript = { ...original.transcript, segments: sentenceSegments(original.transcript.segments) };
-    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true } });
+    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, sceneChanges, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
     const selected = [];
     for (const candidate of candidates) {
       if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
@@ -34,14 +35,26 @@ export class BestClipsService {
       selected.push(candidate); if (selected.length === count) break;
     }
     if (selected.length !== count) throw new WaitingResourceError(`Se encontraron ${selected.length} momentos completos y diferentes dentro de esos límites. Reduce la cantidad o ajusta la duración.`);
+    const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height, transcript: original.transcript.id, completedAt: original.transcript.completedAt })).digest("hex");
+    const previous = await loadProjectFile(outputProjectId);
+    const reusable = previous?.clipsOrigin?.checkpointKey === checkpointKey ? previous.clips || [] : [];
     const now = new Date().toISOString();
-    const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false } };
+    const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey } };
     const results = [];
     for (const candidate of selected) {
-      const clip = { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
-      if (input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
-      clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
+      const saved = reusable.find(clip => clip.status === "READY" && clip.startTime === candidate.startTime && clip.endTime === candidate.endTime);
+      let recovered = null;
+      if (saved?.render?.relativePath) {
+        try {
+          await validateMp4(resolveStoragePath(saved.render.relativePath), { width: this.width, height: this.height, duration: saved.duration, requireAudio: original.source.hasAudio !== false });
+          recovered = saved;
+        } catch { /* An invalid cached render must be rebuilt. */ }
+      }
+      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
+      if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
       project.clips.push(clip);
+      await replaceProjectFile(outputProjectId, project);
       results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / count * 55));
     }

@@ -1,5 +1,5 @@
 import { scoreCandidate } from "./ViralScoreService.mjs";
-import { windowEnergy } from "./AudioEnergyService.mjs";
+import { windowEnergy, sceneActivity } from "./AudioEnergyService.mjs";
 
 const DEFAULTS = {
   minDuration: 15,
@@ -14,7 +14,7 @@ export class TranscriptCandidateProvider {
     this.options = normalizeAnalysisOptions(options);
   }
 
-  async analyze({ transcript, options = {}, audioEnergyWindows = [] }) {
+  async analyze({ transcript, options = {}, audioEnergyWindows = [], sceneChanges = null }) {
     const config = normalizeAnalysisOptions({ ...this.options, ...options });
     const segments = normalizeSegments(transcript?.segments);
 
@@ -26,6 +26,8 @@ export class TranscriptCandidateProvider {
     const scored = windows
       .map((window) => {
         window.audioEnergy = windowEnergy(window,audioEnergyWindows);
+        window.visualActivity = sceneActivity(window, sceneChanges);
+        window.contentProfile = config.contentProfile;
         const scoring = scoreCandidate(window);
         return {
           ...window,
@@ -75,6 +77,7 @@ export function normalizeAnalysisOptions(options = {}) {
     maxCandidates: Math.round(
       boundedNumber(options.maxCandidates, 1, 50, DEFAULTS.maxCandidates),
     ),
+    contentProfile: ["GAMING", "PODCAST", "ENTERTAINMENT", "NEWS", "MOTIVATION"].includes(options.contentProfile) ? options.contentProfile : "PODCAST",
     requireCompleteSentences: options.requireCompleteSentences === true,
   };
 }
