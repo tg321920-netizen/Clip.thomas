@@ -41,7 +41,14 @@
     "worker:analytics": "node scripts/analytics-worker.mjs",
     "worker:analytics:once": "node scripts/analytics-worker.mjs --once",
     "worker:storage": "node scripts/storage-worker.mjs",
-    "worker:storage:once": "node scripts/storage-worker.mjs --once"
+    "worker:storage:once": "node scripts/storage-worker.mjs --once",
+    "worker:ingest": "node scripts/ingest-worker.mjs",
+    "worker:ingest:once": "node scripts/ingest-worker.mjs --once",
+    "worker:media": "node scripts/media-worker.mjs",
+    "worker:media:once": "node scripts/media-worker.mjs --once",
+    "worker:live-monitor": "node scripts/live-monitor-worker.mjs",
+    "worker:live-monitor:once": "node scripts/live-monitor-worker.mjs --once",
+    "kick:capture:e2e": "node scripts/kick-capture-e2e.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",

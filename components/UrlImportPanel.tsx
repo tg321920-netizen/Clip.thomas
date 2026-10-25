@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { UploadedVideo } from "@/types/video";
 
-type ImportJob = { id: string; status: string; stage: string; progress: number; retryable?: boolean; error?: string; result?: { video?: UploadedVideo; clipsJobId?: string; requestedClipCount?: number } };
+type ImportJob = { id: string; status: string; stage: string; progress: number; retryable?: boolean; error?: string; details?: { chatStatus: string; acceptedMessages: number }; result?: { video?: UploadedVideo; clipsJobId?: string; requestedClipCount?: number } };
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base";
 export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void; defaultLiveSource?: string }) {
   const [url, setUrl] = useState("");
@@ -16,6 +16,10 @@ export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { 
   const [liveStatus, setLiveStatus] = useState("");
   const [checking, setChecking] = useState(false);
   const [segmentSeconds, setSegmentSeconds] = useState(60);
+  const [startTimeSeconds, setStartTimeSeconds] = useState(0);
+  const [onlyChatReactions, setOnlyChatReactions] = useState(false);
+  const [subtitles, setSubtitles] = useState(false);
+  const [contentProfile, setContentProfile] = useState("ENTERTAINMENT");
   const [rights, setRights] = useState(false);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,7 +48,7 @@ export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { 
         body: JSON.stringify(retry ? { action: "RETRY" } : {
           url: url.trim(),
           mode,
-          ...(mode === "STREAM" ? { captureSeconds, segmentSeconds, autoClip, clipDuration: liveClipDuration, clipCount: liveClipCount, clipMode: liveClipMode } : {}),
+          ...(mode === "STREAM" ? { captureSeconds, segmentSeconds, autoClip, clipDuration: liveClipDuration, clipCount: liveClipCount, clipMode: liveClipMode, startTimeSeconds, onlyChatReactions, subtitles, contentProfile } : {}),
           rightsConfirmed: rights,
         }),
       });
@@ -78,11 +82,11 @@ export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { 
   async function checkLive() {
     setChecking(true); setLiveStatus("");
     try {
-      const response = await fetch("/api/streams/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
-      const body = await response.json() as { source?: { state: string; message: string }; error?: string };
+      const response = await fetch("/api/streams/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, inspectMedia: true }) });
+      const body = await response.json() as { source?: { state: string; message: string }; media?: { state: string; message: string } | null; error?: string };
       if (!response.ok || !body.source) throw new Error(body.error || "No se pudo consultar.");
       const labels: Record<string, string> = { LIVE: "En directo", OFFLINE: "Desconectado", ENDED: "Directo terminado", SCHEDULED: "Programado", VOD: "Grabación", UNCONFIGURED: "Consulta sin configurar", ACCESS_DENIED: "Acceso rechazado", NOT_FOUND: "No encontrado" };
-      setLiveStatus(`${labels[body.source.state] || body.source.state}. ${body.source.message}`);
+      setLiveStatus(`API oficial: ${labels[body.source.state] || body.source.state}. ${body.source.message}${body.media ? ` Fuente pública: ${labels[body.media.state] || body.media.state}. ${body.media.message}` : ""}`);
     } catch (failure) { setLiveStatus(failure instanceof Error ? failure.message : "No se pudo consultar."); }
     finally { setChecking(false); }
   }
@@ -104,16 +108,21 @@ export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { 
       <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "STREAM" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("STREAM")}>Directo activo</button>
     </div>
     <label>{mode === "STREAM" ? "Enlace del canal o del directo" : "Enlace del video"}<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder={mode === "STREAM" ? "https://kick.com/canal" : "https://…/videos/…"} value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setRights(false); setJob(null); setError(""); onReady(null); }}/></label>
-    {mode === "STREAM" && <><button type="button" disabled={checking || busy || !url.trim()} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 disabled:opacity-40" onClick={() => void checkLive()}>{checking ? "Consultando API oficial…" : "Consultar si está en directo"}</button><p role="status" className="text-sm text-zinc-300">{liveStatus || "Kick, Twitch y YouTube tienen consultas independientes. El acceso al medio depende de los permisos y de cada plataforma."}</p></>}
-    {mode === "STREAM" && <label>Tiempo a capturar (segundos)<input type="number" min={60} max={900} step={30} className={field} value={captureSeconds} disabled={busy} onChange={event => setCaptureSeconds(Math.max(60, Math.min(900, Math.round(Number(event.target.value) || 180))))}/><span className="mt-2 block text-sm text-zinc-400">El canal debe estar transmitiendo ahora. ClipForge captura este tramo y después permite buscar los mejores momentos.</span></label>}
+    {mode === "STREAM" && <><button type="button" disabled={checking || busy || !url.trim()} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 disabled:opacity-40" onClick={() => void checkLive()}>{checking ? "Consultando fuente…" : "Consultar si está en directo"}</button><p role="status" className="text-sm text-zinc-300">{liveStatus || "Kick, Twitch y YouTube tienen consultas independientes. El acceso al medio depende de los permisos y de cada plataforma."}</p></>}
+    {mode === "STREAM" && <label>Tiempo a capturar (segundos)<input type="number" min={60} max={900} step={30} className={field} value={captureSeconds} disabled={busy} onChange={event => setCaptureSeconds(Math.max(60, Math.min(900, Math.round(Number(event.target.value) || 180))))}/><span className="mt-2 block text-sm text-zinc-400">Usa el canal activo o el enlace específico de un VOD de Kick autorizado. Capturamos un tramo limitado antes de elegir momentos.</span></label>}
+    {mode === "STREAM" && <label>Comienzo del VOD (segundos)<input type="number" min={0} max={86400} step={1} className={field} value={startTimeSeconds} disabled={busy} onChange={event => setStartTimeSeconds(Math.max(0, Math.min(86400, Number(event.target.value) || 0)))}/><span className="mt-2 block text-sm text-zinc-400">Deja 0 para un directo. En VOD, el comienzo se aproxima al segmento disponible; revisa el corte final.</span></label>}
     {mode === "STREAM" && <label>Duración de segmento<select className={field} value={segmentSeconds} disabled={busy} onChange={event => setSegmentSeconds(Number(event.target.value))}>{[30, 60, 120, 300].map(seconds => <option key={seconds} value={seconds}>{seconds} segundos</option>)}</select></label>}
     {mode === "STREAM" && <><label className="flex min-h-12 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={autoClip} disabled={busy} onChange={event => setAutoClip(event.target.checked)}/>Generar clips automáticamente</label>{autoClip && <>
       <label>Selección de clips<select aria-label="Selección de clips del directo" className={field} value={liveClipMode} disabled={busy} onChange={event => setLiveClipMode(event.target.value as "CAPTURE" | "SEGMENTS")}><option value="CAPTURE">Elegir una cantidad total al terminar la captura</option><option value="SEGMENTS">Un clip por segmento mientras se captura</option></select></label>
       {liveClipMode === "CAPTURE" && <label>Cantidad total de clips<input aria-label="Cantidad total de clips del directo" type="number" min={1} max={10} step={1} className={field} value={liveClipCount} disabled={busy} onChange={event => setLiveClipCount(Math.max(1, Math.min(10, Math.round(Number(event.target.value) || 5))))}/><span className="mt-2 block text-sm text-zinc-400">Se buscarán {liveClipCount} momentos diferentes de toda la captura, independientemente de cuántos segmentos se graben.</span></label>}
       <label>Duración objetivo<select className={field} value={liveClipDuration} disabled={busy} onChange={event => setLiveClipDuration(Number(event.target.value))}>{[15, 30, 45, 60, 90].map(seconds => <option key={seconds} value={seconds}>{seconds} segundos</option>)}</select><span className="mt-2 block text-sm text-zinc-400">Los resultados aparecen en Mis videos. Si no hay suficientes momentos completos, el trabajo indicará que necesita ajuste. No se publica contenido.</span></label></>}</>}
+    {mode === "STREAM" && autoClip && <><label>Tipo de contenido<select className={field} value={contentProfile} disabled={busy} onChange={event => setContentProfile(event.target.value)}>{[["ENTERTAINMENT", "Entretenimiento"], ["GAMING", "Gaming"], ["PODCAST", "Podcast"], ["NEWS", "Noticias"], ["MOTIVATION", "Motivación"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="flex min-h-12 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={onlyChatReactions} disabled={busy} onChange={event => setOnlyChatReactions(event.target.checked)}/>Elegir solo reacciones observadas del chat</label><p className="text-sm text-zinc-400">Kick recoge contadores de su sala pública durante la captura. Un VOD necesita observaciones guardadas del mismo directo. Si no hay evidencia suficiente, no se inventan clips.</p>
+      <label className="flex min-h-12 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={subtitles} disabled={busy} onChange={event => setSubtitles(event.target.checked)}/>Añadir subtítulos automáticos para revisar</label></>}
     <label className="flex min-h-12 items-center gap-3"><input className="h-5 w-5" type="checkbox" checked={rights} onChange={event => setRights(event.target.checked)} disabled={busy}/>Tengo autorización para importar este material.</label>
     <button type="button" className="min-h-12 rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-40" disabled={busy || !rights || !url.trim()} onClick={() => void importVideo()}>{busy ? mode === "STREAM" ? "Capturando directo…" : "Importando…" : mode === "STREAM" ? `Capturar ${captureSeconds} segundos` : "Importar video"}</button>
     {job && <div role="status" className="rounded-xl border border-white/15 p-4"><p>{job.status === "CANCELLED" ? "Captura cancelada" : job.status === "FAILED" ? "Error · Importación detenida" : job.status === "COMPLETED" ? "Video importado" : job.stage === "RETRY_WAIT" ? "Esperando otro intento" : `${job.status} · ${job.stage}`}</p>{job.status !== "FAILED" && <progress aria-label="Progreso del trabajo en el servidor" className="mt-2 w-full" max={100} value={job.progress}/>}<p className="mt-2 text-sm text-zinc-400">{job.status === "FAILED" ? "El trabajo terminó sin importar el video. Cambia de fuente o sube un archivo autorizado." : job.status === "COMPLETED" ? (job.result?.clipsJobId ? `Captura guardada. Se inició el trabajo para ${job.result.requestedClipCount} clips; consulta Mis videos.` : "El video está listo para continuar.") : "El trabajo continúa en el servidor si cierras esta pantalla. Su conservación depende del almacenamiento configurado."}</p></div>}
+    {job?.details && <p role="status" className="text-sm text-zinc-300">Chat: {job.details.chatStatus} · {job.details.acceptedMessages} mensajes recibidos. La conexión del chat no confirma que el vídeo se haya capturado.</p>}
     {busy && job && <button type="button" className="min-h-12 rounded-xl border border-red-400/50 px-4 py-3" onClick={() => void cancelImport()}>Cancelar trabajo en el servidor</button>}
     {job?.status === "CANCELLED" && <button type="button" className="min-h-12 rounded-xl border border-white/20 px-4 py-3" onClick={() => void importVideo(true)}>Reanudar desde los segmentos guardados</button>}
     {error && <div role="alert" className="text-sm text-red-300"><p>{error}</p>{job?.status === "FAILED" && job.retryable !== false && <button type="button" className="mt-3 min-h-12 rounded-xl border border-white/20 px-4 py-3" disabled={busy} onClick={() => void importVideo(true)}>Reintentar importación</button>}</div>}

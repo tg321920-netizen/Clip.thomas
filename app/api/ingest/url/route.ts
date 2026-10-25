@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parsePublicSourceUrl } from "@/lib/public-source-url.mjs";
-import { IngestJobStore, normalizeLiveClipSettings } from "@/services/ingest/IngestJobStore.mjs";
+import { IngestJobStore, normalizeLiveClipSettings, normalizeStartTime } from "@/services/ingest/IngestJobStore.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   }
 
   let liveSettings = {};
-  try { if (mode === "STREAM") liveSettings = normalizeLiveClipSettings(body); }
+  try { if (mode === "STREAM") liveSettings = { ...normalizeLiveClipSettings(body), startTimeSeconds: normalizeStartTime(body.startTimeSeconds) }; }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Cantidad de clips inválida." }, { status: 400 }); }
 
   let url: URL;
@@ -48,6 +48,8 @@ export async function POST(request: Request) {
       clipDuration: body.clipDuration,
       contentProfile: body.contentProfile,
       subtitles: body.subtitles,
+      onlyChatReactions: body.onlyChatReactions === true,
+      captureChat: body.captureChat !== false,
     });
 
     return NextResponse.json(
