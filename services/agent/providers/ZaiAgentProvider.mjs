@@ -35,6 +35,10 @@ export function resolveZaiConfig(options = {}, env = process.env) {
     model,
     baseUrl,
     apiStyle,
+    // GLM vision models do not document native response_format enforcement.
+    // Include the schema in the prompt and validate the returned JSON locally.
+    jsonMode: options.jsonMode ?? env.CLIPFORGE_ZAI_JSON_MODE ?? (/v(?:-|$)/i.test(model) ? "prompt" : "object"),
+    thinking: options.thinking ?? env.CLIPFORGE_ZAI_THINKING ?? "disabled",
     temperature: options.temperature ?? env.CLIPFORGE_ZAI_TEMPERATURE ?? 0.2,
     maxOutputTokens:
       options.maxOutputTokens ?? env.CLIPFORGE_ZAI_MAX_OUTPUT_TOKENS ?? 1400,

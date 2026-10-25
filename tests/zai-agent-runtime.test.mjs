@@ -20,6 +20,19 @@ test("Z.ai config accepts generic aliases", () => {
   assert.equal(config.baseUrl, "https://api.z.ai/api/paas/v4");
 });
 
+test("GLM vision sends schema instructions without unsupported response_format and disables thinking", async () => {
+  const provider=new ZaiAgentProvider({apiKey:'fixture-key',model:'glm-4.6v-flash',fetchImpl:async(_url,init)=>{
+    const body=JSON.parse(init.body);
+    assert.equal(body.response_format,undefined);
+    assert.deepEqual(body.thinking,{type:'disabled'});
+    assert.match(body.messages[0].content,/ONLY one valid JSON/);
+    assert.match(body.messages[0].content,/WAITING_INFORMATION/);
+    return {ok:true,json:async()=>({choices:[{message:{content:'{"type":"COMPLETE","tool":null,"input":{},"output":{"ready":true},"reason":null,"rationale":null}'}}]})};
+  }});
+  assert.equal((await provider.decide({objective:'Test'},{tools:[]})).type,'COMPLETE');
+  assert.equal(resolveZaiConfig({model:'glm-5.3'},{}).jsonMode,'object');
+});
+
 test("Z.ai rate limits become retryable agent provider errors", async () => {
   const provider = new ZaiAgentProvider({
     apiKey: "placeholder-key",

@@ -20,6 +20,9 @@ export function resolveOpenAICompatibleConfig(options = {}) {
     options.apiStyle ?? process.env.CLIPFORGE_AI_API_STYLE ?? "auto",
   ).trim().toLowerCase();
   const apiStyle = resolveApiStyle(requestedStyle, baseUrl);
+  const jsonMode = options.jsonMode || "schema";
+  if (!["schema", "object", "prompt"].includes(jsonMode)) throw new Error("AI JSON mode must be schema, object or prompt.");
+  const thinking = ["enabled", "disabled"].includes(options.thinking) ? options.thinking : null;
   const temperature = clampNumber(
     options.temperature ?? process.env.CLIPFORGE_AI_TEMPERATURE,
     0,
@@ -51,6 +54,8 @@ export function resolveOpenAICompatibleConfig(options = {}) {
     temperature,
     maxOutputTokens,
     timeoutMs,
+    jsonMode,
+    thinking,
   };
 }
 
@@ -113,8 +118,10 @@ export async function requestStructuredJson({
     return parseStructuredResult(body, "responses");
   }
 
+  const jsonMode = config.jsonMode || "schema";
+  const structuredInstructions = `${instructions}\nReturn ONLY one valid JSON object matching this schema, without commentary or markdown: ${JSON.stringify(schema)}`;
   const messages = [
-    { role: "system", content: instructions },
+    { role: "system", content: structuredInstructions },
     {
       role: "user",
       content: images.length ? [
@@ -135,17 +142,18 @@ export async function requestStructuredJson({
         messages,
         temperature: config.temperature,
         max_tokens: config.maxOutputTokens,
-        response_format: {
+        ...(config.thinking ? { thinking: { type: config.thinking } } : {}),
+        ...(jsonMode === "prompt" ? {} : { response_format: jsonMode === "object" ? { type: "json_object" } : {
           type: "json_schema",
           json_schema: { name, strict: true, schema },
-        },
+        } }),
       }),
     },
     config.timeoutMs,
   );
   let body = await readJsonResponse(response);
 
-  if (!response.ok && [400, 404, 422].includes(response.status)) {
+  if (jsonMode === "schema" && !response.ok && [400, 404, 422].includes(response.status)) {
     response = await requestProvider(
       fetchImpl,
       endpoint,
@@ -165,6 +173,7 @@ export async function requestStructuredJson({
           temperature: config.temperature,
           max_tokens: config.maxOutputTokens,
           response_format: { type: "json_object" },
+          ...(config.thinking ? { thinking: { type: config.thinking } } : {}),
         }),
       },
       config.timeoutMs,

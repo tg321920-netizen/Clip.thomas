@@ -40,7 +40,7 @@ const server=createServer(async(request,response)=>{
     const body=JSON.parse(Buffer.concat(chunks));assert.equal(body.model,'local-editor-fixture');
     const content=body.messages[1].content;const input=JSON.parse(typeof content==='string'?content:content[0].text);
     let output;
-    if(body.response_format.json_schema.name==='clipforge_agent_decision'){
+    if(input.task && input.context){
       decisions++;output=decisions===1?{type:'TOOL',tool:'clips.prepare',input:{},output:{},reason:null,rationale:'Use approved existing project'}:{type:'COMPLETE',tool:null,input:{},output:{status:'READY'},reason:null,rationale:'Job queued'};
     }else{
       rankings++;const selected=[];
