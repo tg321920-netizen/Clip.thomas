@@ -44,7 +44,14 @@ export class JobStore {
 
   async enqueueMedia(type, id, payload = {}) {
     if (!["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"].includes(type)) throw new Error("Unsupported media job.");
+    return this.#withMediaMutation(jobId(type, id), async () => {
+    const previous = await this.get(jobId(type, id));
+    if (previous?.status === "CANCELLED") {
+      if (await this.#mediaLockActive(previous.id)) throw Object.assign(new Error("El procesador todavía se está deteniendo. Espera unos segundos para reanudar."), { code: "MEDIA_STOPPING" });
+      await this.release(previous.id);
+    }
     return this.enqueue(type, id, { payload });
+    });
   }
 
   async listMedia(limit = 30) {
@@ -65,6 +72,7 @@ export class JobStore {
   async transition(id, status, stage, progress = null, patch = {}) {
     const job = await this.get(id);
     if (!job || job.status === "CANCELLED") return job;
+    if (status === "CANCELLED" && job.type.startsWith("MEDIA_")) return this.cancelMedia(id);
     if (!["PROCESSING", "VALIDATING", "WAITING_RESOURCE", "FAILED", "CANCELLED"].includes(status)) throw new Error("Invalid media state.");
     const history = [...(job.history || []), { status, stage, at: new Date().toISOString() }].slice(-100);
     const updated = { ...job, ...patch, status, stage, history, updatedAt: new Date().toISOString(),
@@ -152,6 +160,7 @@ export class JobStore {
       type,
       projectId,
       entityId,
+      ...(type.startsWith("MEDIA_") ? { generation: randomUUID() } : {}),
       payload: sanitizePayload(options.payload),
       status: "QUEUED",
       progress: 0,
@@ -174,6 +183,11 @@ export class JobStore {
     try {
       const job = JSON.parse(await readFile(this.#jobPath(id), "utf8"));
       if (!job || job.id !== id || !Object.hasOwn(JOB_PREFIX, job.type) || typeof job.status !== "string" || !isProjectId(job.projectId)) throw invalidMetadata();
+      if (job.type.startsWith("MEDIA_")) {
+        const marker = await readFile(`${this.#jobPath(id)}.cancel`, "utf8").then(JSON.parse).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+        if (marker && marker.generation === (job.generation || job.createdAt)) return { ...job, status: "CANCELLED", stage: "CANCELLED", error: null, completedAt: marker.at, nextAttemptAt: null, cancellationPending: await this.#mediaLockActive(id),
+          history: [...(job.history || []), { status: "CANCELLED", stage: "CANCELLED", at: marker.at }].slice(-100) };
+      }
       return job;
     } catch (error) { if (getErrorCode(error) === "ENOENT") return null; if (error instanceof SyntaxError) throw invalidMetadata(); throw error; }
   }
@@ -182,6 +196,53 @@ export class JobStore {
     try { safeJobId(id); } catch { issues.push({ id, message: "Identificador de trabajo inválido; se conserva el archivo para revisión." }); return null; }
     try { return await this.get(id); }
     catch (error) { if (error.code !== "JOB_METADATA_INVALID") throw error; issues.push({ id, message: error.message }); return null; }
+  }
+
+  async cancelMedia(id) {
+    return this.#withMediaMutation(id, async () => {
+    const job = await this.get(id);
+    if (!job || !job.type.startsWith("MEDIA_")) throw new Error("Trabajo multimedia no encontrado.");
+    if (!["QUEUED", "PROCESSING", "VALIDATING", "WAITING_RESOURCE"].includes(job.status)) return job;
+    const target = `${this.#jobPath(id)}.cancel`, temporary = `${target}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify({ generation: job.generation || job.createdAt, at: new Date().toISOString() }), { flag: "wx" });
+    await rename(temporary, target);
+    return this.get(id);
+    });
+  }
+
+  async #withMediaMutation(id, operation) {
+    await this.#ensureDirectory();
+    const target = `${this.#jobPath(id)}.mutation`, deadline = Date.now() + 5000;
+    let handle;
+    while (!handle && Date.now() < deadline) {
+      try { handle = await open(target, "wx"); }
+      catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        try { const owner = JSON.parse(await readFile(target, "utf8")); if (!ownerIsAlive(owner)) await rm(target, { force: true }); }
+        catch { const info = await stat(target).catch(() => null); if (info && Date.now() - info.mtimeMs > 5 * 60 * 1000) await rm(target, { force: true }); }
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    if (!handle) throw Object.assign(new Error("El trabajo está actualizándose. Vuelve a intentarlo en unos segundos."), { code: "MEDIA_BUSY" });
+    try { await handle.writeFile(JSON.stringify(leaseOwner())); return await operation(); }
+    finally { await handle.close(); await rm(target, { force: true }); }
+  }
+
+  async #mediaLockActive(id) {
+    const info = await stat(this.#lockPath(id)).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+    if (!info) return false;
+    try { const owner = JSON.parse(await readFile(this.#lockPath(id), "utf8")); if (Number.isSafeInteger(owner?.pid)) return ownerIsAlive(owner); }
+    catch (error) { if (error.code === "ENOENT") return false; }
+    // Do not steal a lease between its exclusive creation and owner write.
+    return Date.now() - info.mtimeMs < 5 * 60 * 1000;
+  }
+
+  async interruptMedia(job) {
+    const fresh = await this.get(job.id);
+    if (fresh?.generation !== job.generation) return fresh;
+    if (!fresh || fresh.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    await this.#write({ ...fresh, status: "QUEUED", stage: "RECOVERED", startedAt: null, nextAttemptAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: "El procesador se reinició; el trabajo se reanudará desde sus avances verificados." });
+    await this.release(job.id); return this.get(job.id);
   }
 
   async getTranscriptionJob(projectId) { return this.get(jobId("TRANSCRIBE_VIDEO", projectId)); }
@@ -204,12 +265,13 @@ export class JobStore {
       const id = name.slice(0, -5);
       const job = await this.#readRecoverable(id);
       if (!job || job.status !== "QUEUED" || (allowed && !allowed.has(job.type)) || Date.parse(job.nextAttemptAt || job.createdAt) > now) continue;
+      const claim = async () => {
       const locked = await this.#tryLock(id);
-      if (!locked) continue;
+      if (!locked) return null;
       const fresh = await this.#readRecoverable(id);
       if (!fresh || fresh.status !== "QUEUED" || (allowed && !allowed.has(fresh.type))) {
         await this.release(id);
-        continue;
+        return null;
       }
       const updated = {
         ...fresh,
@@ -222,6 +284,9 @@ export class JobStore {
       };
       await this.#write(updated);
       return updated;
+      };
+      const claimed = job.type.startsWith("MEDIA_") ? await this.#withMediaMutation(id, claim) : await claim();
+      if (claimed) return claimed;
     }
     return null;
   }
@@ -252,6 +317,7 @@ export class JobStore {
 
   async complete(job) {
     const current = await this.get(job.id);
+    if (job.generation && current?.generation !== job.generation) return current;
     if (current?.status === "CANCELLED") { await this.release(job.id); return current; }
     const media = job.type.startsWith("MEDIA_");
     if (media && job.result?.validation?.valid !== true) throw new Error("Media jobs need real validation evidence before READY.");
@@ -264,6 +330,7 @@ export class JobStore {
       }
     }
     const fresh = await this.get(job.id);
+    if (job.generation && fresh?.generation !== job.generation) return fresh;
     if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
     const completed = {
       ...job,
@@ -282,6 +349,7 @@ export class JobStore {
 
   async fail(job, error, options = {}) {
     const fresh = await this.get(job.id);
+    if (job.generation && fresh?.generation !== job.generation) return fresh;
     if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);

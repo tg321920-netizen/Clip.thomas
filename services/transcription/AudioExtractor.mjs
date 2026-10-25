@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
 
 export async function extractWhisperAudio(inputPath, outputPath, options = {}) {
   await mkdir(path.dirname(outputPath), { recursive: true });

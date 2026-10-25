@@ -1,6 +1,6 @@
 import { mkdir, stat, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { buildSpeechZoomFilter } from "../reframe/AutoReframeService.mjs";
 import { validateMp4, probeMediaFile } from "../media-processing/MediaValidationService.mjs";

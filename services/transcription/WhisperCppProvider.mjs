@@ -1,6 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
 import { normalizeWhisperResult } from "../../lib/transcript-normalizer.mjs";
 
 export class WhisperCppProvider {

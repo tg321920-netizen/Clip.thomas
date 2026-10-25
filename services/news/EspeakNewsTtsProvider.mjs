@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";

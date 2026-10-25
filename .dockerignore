@@ -1,6 +1,10 @@
 node_modules
 .next
 storage
+artifacts
+coverage
+*.bundle
+__pycache__
 .git
 .github
 clipforge/node_modules

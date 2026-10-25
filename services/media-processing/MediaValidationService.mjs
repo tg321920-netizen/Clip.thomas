@@ -1,16 +1,18 @@
-import { spawn } from "node:child_process";
+import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
+import { mediaExecutionSignal } from "../../lib/media-execution.mjs";
 import { stat } from "node:fs/promises";
 
 export async function runMedia(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const signal = mediaExecutionSignal(options.signal);
+    const child = spawn(command, args, { signal, shell: false, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "", timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, options.timeoutMs || 15 * 60 * 1000);
     child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
     child.stdout.on("data", c => { stdout = (stdout + c).slice(-2_000_000); options.onStdout?.(c); });
     child.stderr.on("data", c => { stderr = (stderr + c).slice(-2_000_000); });
     child.on("error", e => { clearTimeout(timer); reject(e); });
-    child.on("close", code => { clearTimeout(timer); if (code === 0 && !timedOut) resolve({ stdout, stderr }); else reject(new Error(timedOut ? "El procesamiento excedió su tiempo máximo." : stderr.trim() || `Proceso multimedia falló (${code}).`)); });
+    child.on("close", code => { clearTimeout(timer); if (signal?.aborted) { reject(signal.reason); return; } if (code === 0 && !timedOut) resolve({ stdout, stderr }); else reject(new Error(timedOut ? "El procesamiento excedió su tiempo máximo." : stderr.trim() || `Proceso multimedia falló (${code}).`)); });
   });
 }
 

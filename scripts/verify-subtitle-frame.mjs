@@ -30,6 +30,6 @@ export async function verifySubtitleFrame({file,cue,width,height,output,captionR
   assert.ok(matched.length>=Math.min(2,expected.size),`Subtitle is not readable at its measured time. Expected: ${cue.text}; OCR: ${ocr.stdout}`);
   await runMedia("ffmpeg",["-v","error","-y","-ss",String(time),"-i",file,"-frames:v","1","-q:v","8",`${output}.jpg`]);
   // Small original acceptance frames are also available for direct engineering review.
-  console.log(`CLIPFORGE_REVIEW_FRAME:${output.split("/").at(-1)}:${(await readFile(`${output}.jpg`)).toString("base64")}`);
+  if(process.env.CLIPFORGE_PRINT_REVIEW_FRAMES==="true")console.log(`CLIPFORGE_REVIEW_FRAME:${output.split("/").at(-1)}:${(await readFile(`${output}.jpg`)).toString("base64")}`);
   return {passed:true,method:"OCR_OF_BURNED_SUBTITLE_AT_CUE_MIDPOINT",pageSegmentationMode,time,region:{top,bottom},expected:cue.text,recognized:ocr.stdout.trim(),matched};
 }

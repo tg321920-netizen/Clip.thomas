@@ -9,7 +9,10 @@ export async function GET(_request: Request, context: Context) {
     const { jobId } = await context.params;
     const job = await new JobStore().get(jobId);
     return NextResponse.json({ job }, { status: job ? 200 : 404, headers: { "Cache-Control": "no-store" } });
-  } catch { return NextResponse.json({ error: "Identificador de trabajo inválido." }, { status: 400 }); }
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "JOB_METADATA_INVALID") return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    return NextResponse.json({ error: "Identificador de trabajo inválido." }, { status: 400 });
+  }
 }
 export async function POST(request: Request, context: Context) {
   try {
@@ -17,7 +20,10 @@ export async function POST(request: Request, context: Context) {
     const job = await store.get(jobId); if (!job || !job.type.startsWith("MEDIA_")) return NextResponse.json({ error: "Trabajo no encontrado." }, { status: 404 });
     const { action } = await readBoundedJson(request, 1000);
     if (action === "retry" && ["FAILED", "WAITING_RESOURCE", "CANCELLED"].includes(job.status)) return NextResponse.json({ job: await store.enqueueMedia(job.type, job.projectId, job.payload) }, { status: 202 });
-    if (action === "cancel" && ["QUEUED", "WAITING_RESOURCE"].includes(job.status)) return NextResponse.json({ job: await store.transition(job.id, "CANCELLED", "CANCELLED") });
+    if (action === "cancel" && ["QUEUED", "PROCESSING", "VALIDATING", "WAITING_RESOURCE", "CANCELLED"].includes(job.status)) return NextResponse.json({ job: await store.cancelMedia(job.id) });
     return NextResponse.json({ error: "No se puede realizar esa acción en el estado actual." }, { status: 409 });
-  } catch { return NextResponse.json({ error: "No se pudo actualizar el trabajo." }, { status: 400 }); }
+  } catch (error) {
+    if (error instanceof Error && "code" in error && ["MEDIA_STOPPING", "MEDIA_BUSY"].includes(String(error.code))) return NextResponse.json({ error: error.message }, { status: 409 });
+    return NextResponse.json({ error: "No se pudo actualizar el trabajo." }, { status: 400 });
+  }
 }

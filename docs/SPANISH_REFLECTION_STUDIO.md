@@ -81,3 +81,5 @@ Se conserva la atribución de los datos CC BY declarados en la ficha original de
 Se descartó la voz Piper davefx probada inicialmente: aunque su ficha menciona un dataset CC0, su ascendencia Lessac declara restricciones de investigación. No forma parte de la entrega comercial ni del instalador final.
 
 La comprobación más reciente, incluida la creación completa desde móvil y las mediciones de memoria, está en [SPANISH_REFLECTION_REFINEMENT_20261025.md](SPANISH_REFLECTION_REFINEMENT_20261025.md).
+
+La revisión posterior de historial, cancelación de procesos y reinicio recuperable está en [CLIPFORGE_FUNCTIONAL_REVIEW_20261025.md](CLIPFORGE_FUNCTIONAL_REVIEW_20261025.md). En **Mis videos** se puede cancelar durante el render; **Reanudar** se habilita cuando el proceso anterior terminó. Los registros dañados muestran un aviso y no bloquean los demás trabajos.

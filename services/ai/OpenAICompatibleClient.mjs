@@ -1,3 +1,4 @@
+import { mediaExecutionSignal } from "../../lib/media-execution.mjs";
 import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
 
 export function resolveOpenAICompatibleConfig(options = {}) {
@@ -307,7 +308,7 @@ async function requestProvider(fetchImpl, url, init, timeoutMs) {
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
+    return await fetchImpl(url, { ...init, signal: mediaExecutionSignal(controller.signal) });
   } catch (error) {
     if (error?.name === "AbortError") {
       const timeoutError = new Error(

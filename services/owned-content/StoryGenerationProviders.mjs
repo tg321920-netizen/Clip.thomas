@@ -1,3 +1,4 @@
+import { mediaExecutionSignal } from "../../lib/media-execution.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -75,7 +76,7 @@ export class CompatibleStoryScriptProvider {
     await this.budget.reserve(input.projectId, "script");
     const count = input.sceneCount ?? 6;
     const config = resolveOpenAICompatibleConfig({ apiKey: this.config.scriptKey, baseUrl: this.config.scriptBaseUrl, model: this.config.scriptModel, maxOutputTokens: 4096 });
-    const result = await requestStructuredJson({ config, name: "clipforge_story", fetchImpl: (url, init) => this.fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(90_000) }),
+    const result = await requestStructuredJson({ config, name: "clipforge_story", fetchImpl: (url, init) => this.fetch(url, { ...init, redirect: "error", signal: mediaExecutionSignal(AbortSignal.timeout(90_000)) }),
       schema: { type: "object", additionalProperties: false, required: ["title", "character", "palette", "scenes"], properties: {
         title: { type: "string" }, character: { type: "string" }, palette: { type: "string" },
         scenes: { type: "array", minItems: count, maxItems: count, items: { type: "object", additionalProperties: false, required: ["narration", "visualDescription"], properties: { narration: { type: "string" }, visualDescription: { type: "string" } } } },
@@ -115,7 +116,7 @@ export class CompatibleStoryImageProvider {
     await this.budget.reserve(input.projectId, "image");
     const body = { model: this.config.imageModel, prompt, n: 1, size: this.config.imageSize, quality: this.config.imageQuality };
     if (!/^gpt-image/.test(this.config.imageModel)) body.response_format = "b64_json";
-    const response = await this.fetch(endpoint.href, { method: "POST", redirect: "error", signal: AbortSignal.timeout(120_000), headers: { Authorization: `Bearer ${this.config.imageKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const response = await this.fetch(endpoint.href, { method: "POST", redirect: "error", signal: mediaExecutionSignal(AbortSignal.timeout(120_000)), headers: { Authorization: `Bearer ${this.config.imageKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const result = await boundedJson(response);
     if (!response.ok) throw new Error(`El proveedor de imágenes devolvió HTTP ${response.status}. No se reintentará automáticamente.`);
     const encoded = result.data?.[0]?.b64_json;
