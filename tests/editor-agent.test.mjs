@@ -73,6 +73,21 @@ test("invented IDs, empty rankings and misleading cuts cannot masquerade as succ
   }
 });
 
+test("real chat aggregates reach the editor without claiming access when evidence is absent", async () => {
+  const inputs = [];
+  const provider = new OpenAIContentProvider({ ...base, fetchImpl: async (_url, init) => {
+    const input = readInput(init); inputs.push(input); return response(input.candidates.slice(0, 2).map(selection));
+  } });
+  const result = await provider.analyze({ transcript, options, chatActivityWindows: [{ start: 0, end: 200,
+    score: 90, messages: 80, utc: '2026-10-25T17:00:00Z', baselineMessages: 20, ratio: 4,
+    clockUncertaintySeconds: 10, method: 'OBSERVED_CHAT_ROLLING_MEDIAN', limitations: ['REACTION_DELAY_UNKNOWN'] }] });
+  assert.equal(inputs[0].evidence.chat, 'OBSERVED_AGGREGATE_WITH_TIMING_UNCERTAINTY');
+  assert.equal(inputs[0].candidates[0].chatEvidence.peakMessages, 80);
+  assert.ok(result.every(c => !c.aiAssessment.missingEvidence.includes('CHAT')));
+  await provider.analyze({ transcript, options });
+  assert.equal(inputs[1].evidence.chat, 'NOT_PROVIDED');
+});
+
 test("text-only mode reports missing visual evidence and never silently invokes a second model", async () => {
   let calls=0;
   const provider=new OpenAIContentProvider({ ...base, frameSampler: () => assert.fail("not enabled"), fetchImpl: async (_url,init) => { calls++;return response(readInput(init).candidates.slice(0,2).map(selection)); } });

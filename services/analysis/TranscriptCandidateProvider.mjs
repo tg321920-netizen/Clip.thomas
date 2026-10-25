@@ -1,5 +1,6 @@
 import { scoreCandidate } from "./ViralScoreService.mjs";
 import { windowEnergy, sceneActivity } from "./AudioEnergyService.mjs";
+import { chatEvidenceForWindow } from "./ChatActivityService.mjs";
 
 const DEFAULTS = {
   minDuration: 15,
@@ -14,7 +15,7 @@ export class TranscriptCandidateProvider {
     this.options = normalizeAnalysisOptions(options);
   }
 
-  async analyze({ transcript, options = {}, audioEnergyWindows = [], sceneChanges = null }) {
+  async analyze({ transcript, options = {}, audioEnergyWindows = [], sceneChanges = null, chatActivityWindows = [] }) {
     const config = normalizeAnalysisOptions({ ...this.options, ...options });
     const segments = normalizeSegments(transcript?.segments);
 
@@ -28,6 +29,7 @@ export class TranscriptCandidateProvider {
         window.audioEnergy = windowEnergy(window,audioEnergyWindows);
         window.visualActivity = sceneActivity(window, sceneChanges);
         window.contentProfile = config.contentProfile;
+        window.chatEvidence = chatEvidenceForWindow(window, chatActivityWindows);
         const scoring = scoreCandidate(window);
         return {
           ...window,

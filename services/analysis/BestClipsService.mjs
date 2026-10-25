@@ -32,7 +32,7 @@ export class BestClipsService {
     await onStage("PROCESSING", "SELECTING", 35);
     const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
     const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
-      transcript: original.transcript, provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
+      transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
     const previous = await loadProjectFile(outputProjectId);
     const matching = previous?.clipsOrigin?.checkpointKey === checkpointKey;
     let candidates = matching ? previous.analysis?.candidates : null;
@@ -42,6 +42,7 @@ export class BestClipsService {
       const selectionTranscript = { ...original.transcript, segments: sentenceSegments(boundTranscriptSegments(original.transcript.segments, original.source.durationSeconds)) };
       try {
         candidates = await provider.analyze({ project: original, transcript: selectionTranscript, audioEnergyWindows, sceneChanges,
+          chatActivityWindows: original.liveObservation?.chatActivityWindows || [],
           options: { minDuration, maxDuration, targetDuration, maxCandidates: provider.strictSelection ? Math.min(12, count + 3) : 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
       } catch (error) {
         if (provider.name !== "transcript-heuristic-v2" && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);

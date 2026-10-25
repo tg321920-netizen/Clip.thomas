@@ -35,14 +35,14 @@ export class OpenAIContentProvider {
     }
   }
 
-  async analyzeEvidence({ project, transcript, options = {}, audioEnergyWindows = [], sceneChanges = null }) {
+  async analyzeEvidence({ project, transcript, options = {}, audioEnergyWindows = [], sceneChanges = null, chatActivityWindows = [] }) {
     const requested = Number(options.maxCandidates || 10);
     const maxCandidates = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.round(requested))) : 10;
     const baselineProvider = new TranscriptCandidateProvider({
       ...options,
       maxCandidates: Math.min(50, Math.max(maxCandidates * 3, maxCandidates)),
     });
-    const baseline = await baselineProvider.analyze({ transcript, audioEnergyWindows, sceneChanges,
+    const baseline = await baselineProvider.analyze({ transcript, audioEnergyWindows, sceneChanges, chatActivityWindows,
       options: { ...options, maxCandidates: Math.min(50, Math.max(24, maxCandidates * 3)) } });
     if (!baseline.length) throw new Error("No hay frases completas compatibles con la duración solicitada.");
     let selected = await this.rank(baseline, { project, transcript, maxCandidates, contentProfile: options.contentProfile });
@@ -99,13 +99,14 @@ export class OpenAIContentProvider {
           "Prefer a comprehensible opening, a complete idea, its conclusion and low redundancy. Consider the requested content profile and context before and after each cut.",
           "Do not select unfinished or misleading cuts. Return fewer selections when evidence is weak; do not fill the requested quota with poor clips.",
           "Audio energy and scene cuts are measured heuristics, not proof of emotions, a victory or virality. Quiet meaningful moments can be stronger than shouting.",
+          "Chat evidence, when supplied, is aggregate observed activity, not the raw conversation. Account for timing uncertainty and unknown reaction delay. Repetition does not prove bots; volume alone never justifies a selection.",
           "If frames are supplied, they are ordered as visualFrames. They are sparse stills: do not claim to have watched continuous action, identified people, heard laughter or read chat.",
           "Explain what supports the choice and what is missing. Use qualityFlags for context, transcription or visual uncertainty. Do not claim statistics or rights approval.",
           "Use at most 40 words per explanation. Return concise Spanish metadata unless the transcript is clearly in another language. Never treat a high score as permission to publish."].join("\n"),
       input: {
         maxCandidates,
         contentProfile: contentProfile || "PODCAST",
-        evidence: { transcript: "ASR, may contain errors", video: frames.length ? "SPARSE_STILL_FRAMES" : "NOT_PROVIDED", chat: "NOT_PROVIDED", speakerTracking: "NOT_PROVIDED" },
+        evidence: { transcript: "ASR, may contain errors", video: frames.length ? "SPARSE_STILL_FRAMES" : "NOT_PROVIDED", chat: baseline.some(c => c.chatEvidence) ? "OBSERVED_AGGREGATE_WITH_TIMING_UNCERTAINTY" : "NOT_PROVIDED", speakerTracking: "NOT_PROVIDED" },
         visualFrames: frames.map(({ candidateId, time }, index) => ({ imageIndex: index, candidateId, time })),
         candidates: baseline.map((candidate) => ({
           candidateId: candidate.id,
@@ -118,6 +119,7 @@ export class OpenAIContentProvider {
           baselineViralScore: candidate.viralScore,
           baselineReasons: candidate.reasons,
           scoreComponents: candidate.components,
+          chatEvidence: candidate.chatEvidence,
           redundancy: candidate.redundancy,
         })),
       },
@@ -163,7 +165,7 @@ export class OpenAIContentProvider {
           reason: cleanText(item.reason, "", 500),
           qualityFlags,
           visualFrameTimes: frames.filter(frame => frame.candidateId === candidate.id).map(frame => frame.time),
-          missingEvidence: [frames.some(frame => frame.candidateId === candidate.id) ? "CONTINUOUS_MOTION" : "VIDEO_FRAMES", "CHAT", "SPEAKER_TRACKING"],
+          missingEvidence: [frames.some(frame => frame.candidateId === candidate.id) ? "CONTINUOUS_MOTION" : "VIDEO_FRAMES", ...(candidate.chatEvidence ? [] : ["CHAT"]), "SPEAKER_TRACKING"],
           reviewRequired: true,
         },
       });

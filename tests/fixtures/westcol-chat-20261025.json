@@ -1,0 +1,285 @@
+{
+  "source": "PUBLIC_KICK_CHAT_REAL_SESSION",
+  "channel": "westcol",
+  "date": "2026-10-25",
+  "sourceStartUtc": "2026-10-25T17:45:52.024Z",
+  "videoDurationSeconds": 239.868,
+  "monitorStartUtc": "2026-10-25T17:46:21.529Z",
+  "monitorEndUtc": "2026-10-25T17:52:43.591Z",
+  "observedMessages": 2267,
+  "bins": [
+    {
+      "utc": "2026-10-25T17:46:20.000Z",
+      "messages": 13,
+      "uniqueSenders": 12,
+      "distinctTexts": 13,
+      "complete": false
+    },
+    {
+      "utc": "2026-10-25T17:46:30.000Z",
+      "messages": 48,
+      "uniqueSenders": 41,
+      "distinctTexts": 36,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:46:40.000Z",
+      "messages": 62,
+      "uniqueSenders": 48,
+      "distinctTexts": 41,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:46:50.000Z",
+      "messages": 58,
+      "uniqueSenders": 51,
+      "distinctTexts": 20,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:00.000Z",
+      "messages": 69,
+      "uniqueSenders": 60,
+      "distinctTexts": 26,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:10.000Z",
+      "messages": 71,
+      "uniqueSenders": 60,
+      "distinctTexts": 28,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:20.000Z",
+      "messages": 69,
+      "uniqueSenders": 60,
+      "distinctTexts": 27,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:30.000Z",
+      "messages": 57,
+      "uniqueSenders": 51,
+      "distinctTexts": 20,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:40.000Z",
+      "messages": 55,
+      "uniqueSenders": 47,
+      "distinctTexts": 24,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:47:50.000Z",
+      "messages": 58,
+      "uniqueSenders": 38,
+      "distinctTexts": 21,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:00.000Z",
+      "messages": 72,
+      "uniqueSenders": 52,
+      "distinctTexts": 38,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:10.000Z",
+      "messages": 48,
+      "uniqueSenders": 39,
+      "distinctTexts": 38,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:20.000Z",
+      "messages": 64,
+      "uniqueSenders": 45,
+      "distinctTexts": 28,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:30.000Z",
+      "messages": 48,
+      "uniqueSenders": 31,
+      "distinctTexts": 24,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:40.000Z",
+      "messages": 59,
+      "uniqueSenders": 46,
+      "distinctTexts": 25,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:48:50.000Z",
+      "messages": 65,
+      "uniqueSenders": 43,
+      "distinctTexts": 26,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:00.000Z",
+      "messages": 48,
+      "uniqueSenders": 35,
+      "distinctTexts": 23,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:10.000Z",
+      "messages": 80,
+      "uniqueSenders": 55,
+      "distinctTexts": 18,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:20.000Z",
+      "messages": 68,
+      "uniqueSenders": 55,
+      "distinctTexts": 25,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:30.000Z",
+      "messages": 54,
+      "uniqueSenders": 42,
+      "distinctTexts": 23,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:40.000Z",
+      "messages": 62,
+      "uniqueSenders": 52,
+      "distinctTexts": 24,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:49:50.000Z",
+      "messages": 55,
+      "uniqueSenders": 50,
+      "distinctTexts": 31,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:00.000Z",
+      "messages": 58,
+      "uniqueSenders": 51,
+      "distinctTexts": 37,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:10.000Z",
+      "messages": 64,
+      "uniqueSenders": 42,
+      "distinctTexts": 29,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:20.000Z",
+      "messages": 66,
+      "uniqueSenders": 45,
+      "distinctTexts": 27,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:30.000Z",
+      "messages": 70,
+      "uniqueSenders": 50,
+      "distinctTexts": 22,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:40.000Z",
+      "messages": 62,
+      "uniqueSenders": 54,
+      "distinctTexts": 29,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:50:50.000Z",
+      "messages": 65,
+      "uniqueSenders": 54,
+      "distinctTexts": 31,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:00.000Z",
+      "messages": 66,
+      "uniqueSenders": 57,
+      "distinctTexts": 28,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:10.000Z",
+      "messages": 53,
+      "uniqueSenders": 47,
+      "distinctTexts": 27,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:20.000Z",
+      "messages": 48,
+      "uniqueSenders": 36,
+      "distinctTexts": 20,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:30.000Z",
+      "messages": 48,
+      "uniqueSenders": 32,
+      "distinctTexts": 23,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:40.000Z",
+      "messages": 51,
+      "uniqueSenders": 36,
+      "distinctTexts": 23,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:51:50.000Z",
+      "messages": 54,
+      "uniqueSenders": 46,
+      "distinctTexts": 17,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:52:00.000Z",
+      "messages": 64,
+      "uniqueSenders": 49,
+      "distinctTexts": 23,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:52:10.000Z",
+      "messages": 74,
+      "uniqueSenders": 50,
+      "distinctTexts": 31,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:52:20.000Z",
+      "messages": 63,
+      "uniqueSenders": 48,
+      "distinctTexts": 32,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:52:30.000Z",
+      "messages": 52,
+      "uniqueSenders": 39,
+      "distinctTexts": 26,
+      "complete": true
+    },
+    {
+      "utc": "2026-10-25T17:52:40.000Z",
+      "messages": 26,
+      "uniqueSenders": 20,
+      "distinctTexts": 17,
+      "complete": false
+    }
+  ]
+}

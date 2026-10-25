@@ -8,6 +8,7 @@ const WEIGHTS = {
   audioEnergy: 5,
   visualActivity: 3,
   profileRelevance: 5,
+  chatActivity: 5,
 };
 
 const HOOK_PATTERNS = [
@@ -55,6 +56,7 @@ export function scoreCandidate(candidate, options = {}) {
     shortFormPotential: scoreShortFormPotential(text, duration),
     audioEnergy,
     visualActivity: normalizeOptionalScore(candidate?.visualActivity),
+    chatActivity: normalizeOptionalScore(candidate?.chatEvidence?.score),
     profileRelevance: candidate?.contentProfile && PROFILE_PATTERNS[candidate.contentProfile]
       ? (PROFILE_PATTERNS[candidate.contentProfile].test(text) ? 80 : 30) : null,
   };
@@ -81,7 +83,8 @@ export function scoreCandidate(candidate, options = {}) {
     missingSignals: [
       ...(audioEnergy === null ? ["audioEnergy"] : []),
       ...(components.visualActivity === null ? ["visualActivity"] : []),
-      "speakerChanges", "chatActivity", "visualEventRecognition",
+      ...(components.chatActivity === null ? ["chatActivity"] : []),
+      "speakerChanges", "visualEventRecognition",
     ],
     viralScore,
     baseScore: clamp(baseScore),
@@ -92,7 +95,9 @@ export function scoreCandidate(candidate, options = {}) {
     confidence: components.audioEnergy === null ? "MEDIUM" : "HIGH",
     reasons,
     disclaimer:
-      "ViralScore es una estimación interna basada en señales del contenido; no usa ni inventa estadísticas reales de engagement y no garantiza viralidad.",
+      components.chatActivity === null
+        ? "ViralScore es una estimación interna basada en señales del contenido; no usa ni inventa estadísticas reales de engagement y no garantiza viralidad."
+        : "ViralScore combina señales internas con actividad de chat observada; el chat puede ser repetitivo y no garantiza calidad, derechos ni viralidad.",
   };
 }
 
@@ -208,6 +213,7 @@ function buildReasons(components, text, duration, redundancyPenalty) {
   if (components.audioEnergy !== null) reasons.push(`Energía RMS relativa medida: ${components.audioEnergy}/100.`);
   if (components.visualActivity !== null) reasons.push(`Actividad de cortes visuales medida: ${components.visualActivity}/100; no identifica jugadas ni emociones.`);
   if (components.profileRelevance !== null) reasons.push(`Coincidencia léxica con el perfil: ${components.profileRelevance}/100; requiere revisión contextual.`);
+  if (components.chatActivity !== null) reasons.push(`Actividad relativa del chat observado: ${components.chatActivity}/100; revisar contexto y retraso de las reacciones.`);
   return reasons;
 }
 
