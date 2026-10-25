@@ -21,6 +21,9 @@ export async function GET(request: Request) {
         providerConfigured: agent.provider?.isConfigured?.() === true,
         provider: process.env.CLIPFORGE_AGENT_PROVIDER || "zai",
         model: agent.provider?.config?.model || null,
+        editorConfigured: Boolean(process.env.CLIPFORGE_ZAI_API_KEY || process.env.ZAI_API_KEY),
+        editorModel: process.env.CLIPFORGE_EDITOR_MODEL || process.env.CLIPFORGE_ZAI_MODEL || process.env.ZAI_MODEL || "glm-4.6v-flash",
+        editorVision: process.env.CLIPFORGE_EDITOR_VISION === "true",
         realPublishingEnabled: process.env.CLIPFORGE_AGENT_REAL_PUBLISHING === "true",
         executions: executions.slice(0, 50),
       },
@@ -45,6 +48,9 @@ export async function POST(request: Request) {
       autonomyMode: body.autonomyMode,
       projectId: body.projectId,
       channelId: body.channelId,
+      limits: body.context && typeof body.context === "object" && "clipping" in body.context
+        ? { maxSteps: 4, maxRetries: 1, timeoutMs: 120000 }
+        : undefined,
       context:
         body.context && typeof body.context === "object" && !Array.isArray(body.context)
           ? body.context

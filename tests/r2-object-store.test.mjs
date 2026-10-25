@@ -64,3 +64,28 @@ test('R2 configuration rejects injected endpoints and malformed bucket/account i
   assert.throws(() => readR2Config({ ...env, CLIPFORGE_R2_ACCOUNT_ID: 'localhost:8000' }));
   assert.throws(() => readR2Config({ ...env, CLIPFORGE_R2_BUCKET: '../outside' }));
 });
+
+test('R2 requests identity encoding so JSON versions remain usable for conditional updates', async () => {
+  let calls=0;
+  const store=new R2ObjectStore({config,customFetch:async request=>{
+    calls++;
+    assert.equal(request.headers.get('accept-encoding'),'identity');
+    if(request.method==='GET')return new Response(JSON.stringify({keep:false}),{status:200,headers:{ETag:'"canonical-v1"','Content-Type':'application/json'}});
+    assert.equal(request.headers.get('if-match'),'"canonical-v1"');
+    assert.deepEqual(await request.json(),{keep:true});
+    return new Response(null,{status:200,headers:{ETag:'"canonical-v2"'}});
+  }});
+  const record=await store.getJson('record.json');
+  assert.equal((await store.putJson('record.json',{keep:true},{ifMatch:record.etag})).etag,'"canonical-v2"');
+  assert.equal(calls,2);
+});
+
+test('weak JSON validators fail closed instead of being stripped and used to overwrite a record', async () => {
+  let calls=0;
+  const store=new R2ObjectStore({config,customFetch:async()=>{
+    calls++;return new Response('{"keep":true}',{status:200,headers:{ETag:'W/"compressed"'}});
+  }});
+  await assert.rejects(()=>store.getJson('record.json'),error=>error.code==='STORAGE_UNAVAILABLE');
+  await assert.rejects(()=>store.putJson('record.json',{keep:false},{ifMatch:'W/"compressed"'}),error=>error.code==='STORAGE_INVALID');
+  assert.equal(calls,1);
+});

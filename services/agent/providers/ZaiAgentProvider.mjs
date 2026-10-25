@@ -3,7 +3,7 @@ import { CompatibleAgentProvider } from "./CompatibleAgentProvider.mjs";
 
 export class ZaiAgentProvider extends CompatibleAgentProvider {
   constructor(options = {}) {
-    super({ ...options, config: resolveZaiConfig(options) });
+    super({ ...options, config: resolveZaiConfig(options, options.env || process.env) });
   }
 }
 

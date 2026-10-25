@@ -1,5 +1,7 @@
 # Z.ai autonomous agent handoff
 
+For the contextual clip editor, mobile preparation form, free-model configuration and exact validation limits, read [CLIP_EDITOR_AGENT.md](CLIP_EDITOR_AGENT.md). Existing content/news tools and publication gates remain in place.
+
 ## Runtime
 
 The server-side path is:

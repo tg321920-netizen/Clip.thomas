@@ -41,6 +41,7 @@ jobs:
           echo 'WHISPER_CPP_MODEL_PATH=/tmp/ggml-tiny.bin' >> "$GITHUB_ENV"
       - run: npm run build
       - run: node scripts/live-clipping-e2e.mjs
+      - run: npm run agent:e2e
       - run: node scripts/live-five-clips-e2e.mjs
       - run: npx playwright install --with-deps chromium
       - name: Mobile browser acceptance
@@ -59,6 +60,7 @@ jobs:
           export CHROMIUM_PATH="$(node --input-type=module -e 'import {chromium} from "playwright"; process.stdout.write(chromium.executablePath())')"
           node scripts/mobile-live-e2e.mjs
           CLIPFORGE_TEST_BASE_URL=http://127.0.0.1:3000 node scripts/mobile-storage-e2e.mjs
+          CLIPFORGE_TEST_BASE_URL=http://127.0.0.1:3000 node scripts/mobile-agent-e2e.mjs
           node scripts/mobile-upload-e2e.mjs
       - uses: actions/upload-artifact@v4
         if: always()

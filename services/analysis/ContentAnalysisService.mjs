@@ -25,10 +25,6 @@ export async function analyzeProject(projectId, options = {}) {
   const sourceKey = getAnalysisSourceKey(project);
   const config = normalizeAnalysisOptions(options);
 
-  if (isAnalysisCurrent(project, sourceKey, config)) {
-    return { analysis: project.analysis, reused: true };
-  }
-
   const provider =
     options.provider ||
     createContentAnalysisProvider({
@@ -36,6 +32,10 @@ export async function analyzeProject(projectId, options = {}) {
       providerName: options.providerName,
       model: options.model,
     });
+  if (isAnalysisCurrent(project, sourceKey, config) && project.analysis.provider === provider.name &&
+      (project.analysis.model || null) === (provider.model || null) && Boolean(project.analysis.visionEnabled) === Boolean(provider.visionEnabled)) {
+    return { analysis: project.analysis, reused: true };
+  }
   const startedAt = new Date().toISOString();
 
   project.analysis = {
@@ -43,6 +43,8 @@ export async function analyzeProject(projectId, options = {}) {
     projectId,
     status: "PROCESSING",
     provider: provider.name || "unknown",
+    model: provider.model || null,
+    visionEnabled: provider.visionEnabled === true,
     sourceKey,
     config,
     candidates: [],

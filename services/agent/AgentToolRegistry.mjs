@@ -13,6 +13,10 @@ import { SocialPublishingRouter } from "../publishing/connectors/SocialPublishin
 import { SmartLicensedClipService } from "../publishing/SmartLicensedClipService.mjs";
 import { sanitizeAgentValue } from "./AgentContracts.mjs";
 import { assertAgentToolWithinRules } from "./AgentRules.mjs";
+import { createHash } from "node:crypto";
+import { isProjectId } from "../../lib/project-id.mjs";
+import { loadProjectFile } from "../../lib/project-files.mjs";
+import { JobStore } from "../JobStore.mjs";
 
 export class AgentToolRegistry {
   constructor(options = {}) {
@@ -41,6 +45,8 @@ export class AgentToolRegistry {
     });
 
     this.tools = new Map();
+    this.mediaJobs = options.mediaJobs || new JobStore();
+    this.loadClipProject = options.loadClipProject || loadProjectFile;
     this.#registerDefaults();
     for (const tool of options.extraTools || []) this.register(tool);
   }
@@ -93,6 +99,7 @@ export class AgentToolRegistry {
         {
           code: String(error?.code || "AGENT_TOOL_FAILED"),
           retryable: error?.retryable === true,
+          waitingInformation: error?.waitingInformation === true,
           cause: error,
         },
       );
@@ -100,6 +107,35 @@ export class AgentToolRegistry {
   }
 
   #registerDefaults() {
+    this.register({
+      name: "clips.prepare",
+      description: "Encolar clips reales de un proyecto existente con los ajustes y derechos confirmados por el propietario en task.context.clipping. Devuelve un trabajo, no un MP4 terminado. No captura URLs ni publica.",
+      inputHint: {},
+      execute: async (_input, context) => {
+        const { projectId, outputId, settings } = await this.#clipContext(context);
+        const job = await this.mediaJobs.enqueueMedia("MEDIA_CLIPS", outputId, {
+          projectId, count: settings.count, targetDuration: settings.duration,
+          minDuration: Math.max(15, settings.duration - 5), maxDuration: settings.duration + 5,
+          contentProfile: settings.contentProfile, subtitles: settings.subtitles,
+          analysisProvider: "zai", intensity: "GENTLE", agentExecutionId: context.executionId,
+        });
+        return { jobId: job.id, outputProjectId: outputId, status: job.status, stage: job.stage,
+          progress: job.progress, reviewRequired: true, note: "El trabajo debe terminar y sus MP4 deben validarse antes de revisarlos. La publicación está desactivada." };
+      },
+    });
+    this.register({
+      name: "clips.status",
+      description: "Consultar únicamente el trabajo de clips vinculado a esta ejecución. No vuelve a renderizar ni publica.",
+      inputHint: {},
+      execute: async (_input, context) => {
+        const { outputId } = await this.#clipContext(context);
+        const job = await this.mediaJobs.get(`bestclips-${outputId}`);
+        if (!job) throw informationNeeded("Primero hay que encolar los clips con clips.prepare.");
+        return { jobId: job.id, outputProjectId: outputId, status: job.status, stage: job.stage, progress: job.progress,
+          reviewRequired: true, clips: (job.result?.clips || []).map(clip => ({ clipId: clip.clipId, title: clip.title,
+            duration: clip.duration, sourceUrl: clip.sourceUrl, downloadUrl: clip.downloadUrl })) };
+      },
+    });
     this.register({
       name: "trends.query",
       description: "Consultar tendencias ya registradas por ClipForge.",
@@ -249,6 +285,22 @@ export class AgentToolRegistry {
         this.channels.updateStrategy(input.channelId, allowedStrategy(input.strategy)),
     });
   }
+
+  async #clipContext(context) {
+    const projectId = context.task?.projectId;
+    const raw = context.task?.context?.clipping;
+    if (!isProjectId(context.executionId) || !isProjectId(projectId)) throw informationNeeded("El propietario debe seleccionar un proyecto existente para preparar clips.");
+    if (raw?.rightsConfirmed !== true) throw informationNeeded("Falta la confirmación de derechos del propietario para este video.");
+    const count = Number(raw.count ?? 5), duration = Number(raw.duration ?? 30);
+    if (!Number.isInteger(count) || count < 1 || count > 10 || ![15, 30, 45, 60, 90].includes(duration)) throw informationNeeded("Elige de uno a diez clips y una duración de 15, 30, 45, 60 o 90 segundos.");
+    const settings = { count, duration, contentProfile: raw.contentProfile || "ENTERTAINMENT", subtitles: raw.subtitles !== false };
+    if (!["GAMING", "PODCAST", "ENTERTAINMENT", "NEWS", "MOTIVATION"].includes(settings.contentProfile)) throw informationNeeded("El perfil de contenido no es válido.");
+    const project = await this.loadClipProject(projectId);
+    if (!project?.source?.relativePath) throw informationNeeded("No se encontró el archivo original del proyecto.");
+    const hex = createHash("sha256").update(JSON.stringify([context.executionId, projectId, settings])).digest("hex");
+    const outputId = `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;
+    return { projectId, outputId, settings };
+  }
 }
 
 export class AgentToolError extends Error {
@@ -257,8 +309,13 @@ export class AgentToolError extends Error {
     this.name = "AgentToolError";
     this.code = options.code || "AGENT_TOOL_ERROR";
     this.retryable = options.retryable === true;
+    this.waitingInformation = options.waitingInformation === true;
     this.cause = options.cause;
   }
+}
+
+function informationNeeded(message) {
+  return Object.assign(new Error(message), { code: "CLIP_AGENT_INFORMATION_REQUIRED", waitingInformation: true });
 }
 
 function allowedStrategy(input = {}) {

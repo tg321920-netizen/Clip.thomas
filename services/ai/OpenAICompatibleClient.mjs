@@ -1,3 +1,5 @@
+import { EnvHttpProxyAgent, fetch as proxyFetch } from "undici";
+
 export function resolveOpenAICompatibleConfig(options = {}) {
   const apiKey = String(
     options.apiKey ??
@@ -58,7 +60,8 @@ export async function requestStructuredJson({
   schema,
   instructions,
   input,
-  fetchImpl = globalThis.fetch,
+  images = [],
+  fetchImpl = providerFetch,
 }) {
   if (!config?.apiKey) {
     throw new Error("CLIPFORGE_AI_API_KEY (or OPENAI_API_KEY) is required for the configured AI provider.");
@@ -69,6 +72,12 @@ export async function requestStructuredJson({
   if (typeof fetchImpl !== "function") {
     throw new Error("No fetch implementation is available for the AI provider.");
   }
+  // Images originate from bounded local frame extraction, never arbitrary URLs.
+  if (!Array.isArray(images) || images.length > 24 || images.reduce((n, image) => n + (image?.dataUrl?.length || 0), 0) > 2_000_000 ||
+      images.some(image => typeof image?.dataUrl !== "string" || image.dataUrl.length > 260_000 || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl))) {
+    throw new Error("AI visual evidence exceeds the permitted image limits.");
+  }
+  const text = typeof input === "string" ? input : JSON.stringify(input);
 
   if (config.apiStyle === "responses") {
     const response = await requestProvider(
@@ -81,7 +90,10 @@ export async function requestStructuredJson({
           model: config.model,
           store: false,
           instructions,
-          input: typeof input === "string" ? input : JSON.stringify(input),
+          input: images.length ? [{ role: "user", content: [
+            { type: "input_text", text },
+            ...images.map(image => ({ type: "input_image", image_url: image.dataUrl })),
+          ] }] : text,
           text: {
             format: {
               type: "json_schema",
@@ -105,7 +117,10 @@ export async function requestStructuredJson({
     { role: "system", content: instructions },
     {
       role: "user",
-      content: typeof input === "string" ? input : JSON.stringify(input),
+      content: images.length ? [
+        { type: "text", text },
+        ...images.map(image => ({ type: "image_url", image_url: { url: image.dataUrl } })),
+      ] : text,
     },
   ];
   const endpoint = `${config.baseUrl}/chat/completions`;
@@ -319,4 +334,9 @@ function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.max(min, Math.min(max, number));
+}
+let dispatcher;
+export function providerFetch(url, init) {
+  dispatcher ||= new EnvHttpProxyAgent();
+  return proxyFetch(url, { ...init, dispatcher, redirect: "error" });
 }

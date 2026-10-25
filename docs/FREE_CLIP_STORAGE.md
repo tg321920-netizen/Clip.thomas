@@ -45,3 +45,9 @@ En Mis videos, «Clips guardados» muestra el estado real, el espacio, la fecha 
 Pruebas de seguridad y recuperación: `node --test tests/clip-library.test.mjs tests/r2-object-store.test.mjs`. Prueba móvil con respuestas de API locales explícitas: `node scripts/mobile-storage-e2e.mjs` contra el servidor de prueba. Esas pruebas no acreditan acceso a una cuenta R2 real. Las aceptaciones multimedia deben usar `CLIPFORGE_MEDIA_STORAGE_PROVIDER=local` para aislar los datos del propietario.
 
 La preferencia `CLIPFORGE_DEFAULT_LIVE_URL=https://kick.com/westcol` identifica el canal principal solicitado por el propietario. Se utiliza para rellenar el enlace al seleccionar Directo activo; no inicia una captura, no acredita derechos del creador y no activa OAuth ni publicación.
+
+## Validación contra R2 real
+
+En la prueba privada del 24 de octubre de 2026 (Costa Rica) se guardó un MP4 sintético propio de 1.350.053 bytes, se comprobó descarga completa por SHA-256, rangos, índice sin archivos locales, idempotencia y activación/desactivación de «Conservar» con retención de 30 días. No se publicó en redes. La pieza está identificada como «Prueba técnica del agente (IA simulada)»; las decisiones del modelo en esa prueba eran fixtures locales.
+
+La prueba detectó un defecto que los dobles S3 no mostraban: la compresión HTTP de los registros JSON producía ETags débiles y las escrituras condicionales fallaban con conflicto. El transporte ahora solicita `Accept-Encoding: identity`, conserva proxy/TLS y comprueba versiones fuertes para modificar registros. No elimina el prefijo débil para forzar una coincidencia: si no puede verificar la versión, conserva los archivos y detiene la escritura. Hay regresiones de transporte y protección frente a versiones débiles.

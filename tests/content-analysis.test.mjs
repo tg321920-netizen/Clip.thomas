@@ -108,7 +108,7 @@ test("content analysis reuses identical config and reruns when clip quantity con
     const second = await analyzeProject(PROJECT_ID, {
       maxCandidates: 5,
       provider: {
-        name: "must-not-run",
+        name: first.analysis.provider,
         async analyze() {
           throw new Error("Current analysis should have been reused.");
         },
@@ -121,7 +121,7 @@ test("content analysis reuses identical config and reruns when clip quantity con
     const third = await analyzeProject(PROJECT_ID, {
       maxCandidates: 6,
       provider: {
-        name: "changed-config",
+        name: first.analysis.provider,
         async analyze({ transcript }) {
           changedConfigRuns += 1;
           const provider = new TranscriptCandidateProvider({ maxCandidates: 6 });

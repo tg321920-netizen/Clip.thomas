@@ -28,6 +28,10 @@ export type ClipCandidate = {
     model: string;
     relevanceScore: number;
     reason: string;
+    qualityFlags?: string[];
+    visualFrameTimes?: number[];
+    missingEvidence?: string[];
+    reviewRequired?: boolean;
   };
 };
 

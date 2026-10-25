@@ -25,12 +25,18 @@ export class R2ObjectStore {
     if (!config) throw storageError('STORAGE_UNCONFIGURED', 'El guardado en nube todavía no está activado.');
     this.#bucket = config.bucket;
     const dispatcher = customFetch ? null : new EnvHttpProxyAgent();
+    const transport = customFetch || (request => fetch(request.url, { method: request.method, headers: request.headers,
+      body: request.body || undefined, duplex: 'half', signal: request.signal, dispatcher, redirect: 'error' }));
     this.#client = client || new S3Client({
       region: 'auto', endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`, forcePathStyle: true,
       credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, maxAttempts: 1,
       requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
-      requestHandler: new FetchHttpHandler({ customFetch: customFetch || (request => fetch(request.url, { method: request.method, headers: request.headers,
-        body: request.body || undefined, duplex: 'half', signal: request.signal, dispatcher, redirect: 'error' })) }),
+      requestHandler: new FetchHttpHandler({ customFetch: request => {
+        // Compression turns R2 JSON ETags into weak validators. Those cannot be
+        // used with If-Match to protect manifests and the writer lease.
+        request.headers.set('accept-encoding', 'identity');
+        return transport(request);
+      } }),
     });
   }
   async #send(Command, input, signal) {
@@ -45,6 +51,7 @@ export class R2ObjectStore {
     }
   }
   async put(key, body, { length, type = 'application/octet-stream', md5, metadata, ifMatch, ifAbsent, signal } = {}) {
+    if (ifMatch?.startsWith('W/')) throw storageError('STORAGE_INVALID', 'No se confirmó una versión verificable del registro. Se conservan los archivos.');
     const result = await this.#send(PutObjectCommand, { Key: key, Body: body, ContentLength: length, ContentType: type,
       ContentMD5: md5, Metadata: metadata, IfMatch: ifMatch, IfNoneMatch: ifAbsent ? '*' : undefined }, signal);
     if (!result?.ETag) throw storageError('STORAGE_UNAVAILABLE', 'El almacenamiento no confirmó la escritura.');
@@ -63,6 +70,10 @@ export class R2ObjectStore {
   async getJson(key, { signal } = {}) {
     const result = await this.get(key, { signal });
     if (!result) return null;
+    if (!result.etag || result.etag.startsWith('W/')) {
+      result.body?.destroy?.();
+      throw storageError('STORAGE_UNAVAILABLE', 'El almacenamiento no devolvió una versión verificable del registro. Se conservan los archivos.');
+    }
     const chunks = []; let size = 0;
     for await (const chunk of result.body) {
       size += chunk.length;

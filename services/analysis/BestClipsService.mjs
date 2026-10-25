@@ -5,7 +5,7 @@ import path from "node:path";
 import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { transcribeProject } from "../transcription/TranscriptionService.mjs";
-import { TranscriptCandidateProvider } from "./TranscriptCandidateProvider.mjs";
+import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
 import { buildSubtitleTrack } from "../subtitles/SubtitleService.mjs";
 import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
@@ -13,7 +13,12 @@ import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
 import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
 
 export class BestClipsService {
-  constructor(options = {}) { this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920); }
+  constructor(options = {}) {
+    this.env = options.env || process.env;
+    this.width = options.width || Number(this.env.CLIPFORGE_MEDIA_WIDTH || 1080);
+    this.height = options.height || Number(this.env.CLIPFORGE_MEDIA_HEIGHT || 1920);
+    this.provider = options.provider;
+  }
   async render(outputProjectId, input, onStage = async () => {}) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
@@ -25,10 +30,24 @@ export class BestClipsService {
       catch (error) { if (/not installed|ENOENT|MODEL_PATH|required|not found/i.test(error.message)) throw new WaitingResourceError("Whisper no está configurado. Se necesita una transcripción real para elegir momentos y crear subtítulos."); throw error; }
     }
     await onStage("PROCESSING", "SELECTING", 35);
-    const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
-    const sceneChanges = await measureSceneChanges(resolveStoragePath(original.source.relativePath));
-    const selectionTranscript = { ...original.transcript, segments: sentenceSegments(boundTranscriptSegments(original.transcript.segments, original.source.durationSeconds)) };
-    const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, sceneChanges, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
+    const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
+    const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
+      transcript: original.transcript, provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
+    const previous = await loadProjectFile(outputProjectId);
+    const matching = previous?.clipsOrigin?.checkpointKey === checkpointKey;
+    let candidates = matching ? previous.analysis?.candidates : null;
+    if (!candidates?.length) {
+      const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
+      const sceneChanges = await measureSceneChanges(resolveStoragePath(original.source.relativePath));
+      const selectionTranscript = { ...original.transcript, segments: sentenceSegments(boundTranscriptSegments(original.transcript.segments, original.source.durationSeconds)) };
+      try {
+        candidates = await provider.analyze({ project: original, transcript: selectionTranscript, audioEnergyWindows, sceneChanges,
+          options: { minDuration, maxDuration, targetDuration, maxCandidates: provider.strictSelection ? Math.min(12, count + 3) : 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
+      } catch (error) {
+        if (provider.name !== "transcript-heuristic-v2" && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);
+        throw error;
+      }
+    }
     const selected = [];
     for (const candidate of candidates) {
       if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
@@ -36,11 +55,11 @@ export class BestClipsService {
       selected.push(candidate); if (selected.length === count) break;
     }
     if (selected.length !== count) throw new WaitingResourceError(`Se encontraron ${selected.length} momentos completos y diferentes dentro de esos límites. Reduce la cantidad o ajusta la duración.`);
-    const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height, transcript: original.transcript.id, completedAt: original.transcript.completedAt })).digest("hex");
-    const previous = await loadProjectFile(outputProjectId);
-    const reusable = previous?.clipsOrigin?.checkpointKey === checkpointKey ? previous.clips || [] : [];
+    const reusable = matching ? previous.clips || [] : [];
     const now = new Date().toISOString();
-    const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey } };
+    const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey } };
+    // Persist the editorial decision before encoding so a restart does not call the model again.
+    await replaceProjectFile(outputProjectId, project);
     const results = [];
     for (const candidate of selected) {
       const saved = reusable.find(clip => clip.status === "READY" && clip.startTime === candidate.startTime && clip.endTime === candidate.endTime);
@@ -51,12 +70,13 @@ export class BestClipsService {
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
       if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
       if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
+      project.clips = project.clips.filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
       project.clips.push(clip);
       await replaceProjectFile(outputProjectId, project);
-      results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
+      results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / count * 55));
     }
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);

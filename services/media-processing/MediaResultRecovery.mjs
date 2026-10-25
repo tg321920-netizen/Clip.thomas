@@ -29,6 +29,7 @@ export async function recoverMediaResult(project, job, { validate = validateMp4 
       startTime: clip.startTime,
       endTime: clip.endTime,
       reason: clip.reason,
+      aiAssessment: clip.aiAssessment || null,
       editorialReview: clip.editorialReview || { status: "PENDING" },
       sourceUrl: clip.render.sourceUrl,
       downloadUrl: `${clip.render.sourceUrl}?download=1`,

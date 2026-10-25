@@ -1,6 +1,6 @@
 import { resolveOpenAICompatibleConfig } from "../../ai/OpenAICompatibleClient.mjs";
 import { CompatibleAgentProvider } from "./CompatibleAgentProvider.mjs";
-import { resolveZaiConfig } from "./ZaiAgentProvider.mjs";
+import { ZaiAgentProvider, resolveZaiConfig } from "./ZaiAgentProvider.mjs";
 
 export function resolveAgentProviderConfig(options = {}, env = process.env) {
   const provider = String(env.CLIPFORGE_AGENT_PROVIDER || "zai").trim().toLowerCase();
@@ -18,6 +18,7 @@ export function resolveAgentProviderConfig(options = {}, env = process.env) {
 }
 
 export function createAgentProvider(options = {}) {
+  if (String((options.env || process.env).CLIPFORGE_AGENT_PROVIDER || "zai").trim().toLowerCase() === "zai") return new ZaiAgentProvider(options);
   return new CompatibleAgentProvider({
     ...options,
     config: resolveAgentProviderConfig(options, options.env || process.env),

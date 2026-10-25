@@ -5,7 +5,6 @@ import {
   sanitizeAgentValue,
 } from "./AgentContracts.mjs";
 import { AgentExecutionRepository } from "./AgentExecutionRepository.mjs";
-import { AgentProviderError } from "./AgentProvider.mjs";
 import { evaluateAgentToolPolicy } from "./AutonomyPolicy.mjs";
 
 const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -91,7 +90,16 @@ export class AgentOrchestrator {
         }
       }
 
+      const current = await this.#require(id);
+      if (TERMINAL.has(current.status) || PAUSED.has(current.status)) return current;
+
       if (decision.type === "COMPLETE") {
+        if (execution.task.context?.clipping) {
+          const prepared = execution.results.findLast(result => result.tool === "clips.prepare" && result.result?.jobId);
+          if (!prepared) return this.#pause(execution, "WAITING_INFORMATION", "El agente terminó sin encolar un trabajo de clips verificable.", decision);
+          // Report the verified tool outcome rather than an invented claim that video is ready.
+          decision = { ...decision, output: { ...prepared.result, reviewRequired: true } };
+        }
         return this.#save({
           ...execution,
           status: "COMPLETED",
@@ -160,6 +168,8 @@ export class AgentOrchestrator {
           task: execution.task,
           autonomyMode: execution.task.autonomyMode,
         });
+        const afterTool = await this.#require(id);
+        if (TERMINAL.has(afterTool.status) || PAUSED.has(afterTool.status)) return afterTool;
         const now = this.#nowIso();
         execution = await this.#save({
           ...execution,
@@ -294,7 +304,7 @@ export class AgentOrchestrator {
   async #handleFailure(execution, error, source) {
     const retryable = error?.retryable === true;
     const waitingInformation =
-      error instanceof AgentProviderError && error.waitingInformation === true;
+      error?.waitingInformation === true;
     const message = error instanceof Error ? error.message : String(error);
     const code = String(error?.code || "AGENT_EXECUTION_ERROR");
 
