@@ -59,6 +59,7 @@ try {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Reanudar importación', exact: true }).waitFor();
   console.log('Persistent cancelled capture is resumable from history');
+  await page.getByRole('button', { name: 'CREAR MEJORES CLIPS', exact: true }).click();
   const form = page.getByRole('region', { name: 'CREAR MEJORES CLIPS', exact: true });
   console.log('Uploading authorized source through mobile UI');
   await form.locator('input[type=file]').setInputFiles(video);

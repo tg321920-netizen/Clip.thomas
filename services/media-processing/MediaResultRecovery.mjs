@@ -51,5 +51,8 @@ export async function recoverMediaResult(project, job, { validate = validateMp4 
     warnings: project.clipsOrigin?.selectionWarning ? [project.clipsOrigin.selectionWarning] : [],
     validation: { valid: true, checkedAt: new Date().toISOString(), clipCount: clips.length },
   };
+  if (job.type === "MEDIA_STORY" && project.story) return { ...clips[0], projectId: job.projectId, title: project.story.title || project.source.originalName,
+    recovery: project.story.recovery, story: { voice: project.story.voice, alignment: project.story.narrationAlignment, scenes: (project.story.scenes || []).map(scene => ({ order: scene.order, narration: scene.narration, startTime: scene.startTime, duration: scene.duration, imageUrl: scene.imageUrl, credit: scene.visualCredit, selection: scene.visualSelection })) },
+    warnings: ["Revisión editorial pendiente: escucha la voz y comprueba texto, escenas y final antes de publicar."] };
   return { ...clips[0], projectId: job.projectId, title: project.source.originalName, cuts: project.autoEditEvidence };
 }

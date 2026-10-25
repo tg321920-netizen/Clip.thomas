@@ -67,3 +67,20 @@ test("a deliberately smaller completed delivery is recoverable and explains the 
   project.analysis.candidates.pop();
   assert.equal(await recoverMediaResult(project, job), null);
 });
+
+test("a recovered story keeps narration review and licensed scene provenance", async () => {
+  const project = fixture(1);
+  project.story = { title: "Una pausa", voice: { provider: "user-recording", reviewRequired: true },
+    narrationAlignment: { coverage: 0.98, reviewRequired: true },
+    scenes: [{ order: 1, narration: "Respirá con calma.", startTime: 0, duration: 30,
+      imageUrl: "/story-library/sunrise.jpg", visualCredit: { license: "CC0-1.0" },
+      visualSelection: { method: "CURATED_TAGS", reviewRequired: true } }] };
+  const result = await recoverMediaResult(project, { type: "MEDIA_STORY", projectId: project.id }, {
+    validate: async (filename, options) => { assert.equal(options.requireAudibleNarration, true); return { valid: true }; },
+  });
+  assert.equal(result.story.voice.provider, "user-recording");
+  assert.equal(result.story.alignment.coverage, 0.98);
+  assert.equal(result.story.scenes[0].credit.license, "CC0-1.0");
+  assert.equal(result.story.scenes[0].imageUrl, "/story-library/sunrise.jpg");
+  assert.match(result.warnings[0], /Revisión editorial pendiente/);
+});

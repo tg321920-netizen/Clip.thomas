@@ -6,6 +6,7 @@ import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { isProjectId } from "../../lib/project-id.mjs";
 import { leaseOwner, ownerIsAlive } from "../../lib/process-lease.mjs";
 import { WaitingResourceError } from "./StoryProviderError.mjs";
+import { getNarrationVoiceStatus } from "./LocalNeuralNarrationProvider.mjs";
 
 const fingerprint = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const positive = value => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null;
@@ -36,7 +37,7 @@ export function getStoryProviderStatus(env = process.env) {
   const scriptReady = Boolean(budgetReady && config.scriptEnabled && config.scriptModel && config.scriptKey && config.scriptMaxCostUsd);
   const imageReady = Boolean(budgetReady && config.imageEnabled && config.imageModel && config.imageKey && config.imageUnitCostUsd);
   const automaticReady = Boolean(scriptReady && imageReady && config.scriptMaxCostUsd + 6 * config.imageUnitCostUsd <= config.maxCostUsd);
-  return { scriptReady, imageReady, automaticReady, maxCostUsd: config.maxCostUsd,
+  return { scriptReady, imageReady, automaticReady, maxCostUsd: config.maxCostUsd, voice: getNarrationVoiceStatus(env),
     message: automaticReady ? "Proveedores de guion e imágenes configurados y autorizados. Cada escena se genera por separado." : "Generación automática pendiente: faltan proveedores, autorización o presupuesto del servidor. Puedes crear una historia con tu relato y tus imágenes." };
 }
 

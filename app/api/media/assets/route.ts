@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 class InvalidAssetError extends Error {}
 export async function POST(request: Request) {
-  const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a" };
+  const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/x-m4a": "m4a" };
   const mime = request.headers.get("content-type") || "", extension = extensions[mime];
   if (!extension || !request.body || request.headers.get("x-rights-confirmed") !== "true") return NextResponse.json({ error: "Elige una imagen o audio compatible y confirma que tienes derechos de uso." }, { status: 400 });
   const relativePath = path.posix.join("story-assets", `${randomUUID()}.${extension}`);
@@ -17,7 +17,8 @@ export async function POST(request: Request) {
   let handle;
   try {
     await mkdir(path.dirname(filename), { recursive: true }); handle = await open(temporary, "wx"); let bytes = 0;
-    for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > 4 * 1024 * 1024) throw new InvalidAssetError("El recurso supera 4 MB. Utiliza una versión más pequeña."); await writeAll(handle, chunk); }
+    const maxBytes = (mime.startsWith("audio/") ? 20 : 4) * 1024 * 1024;
+    for await (const chunk of request.body as unknown as AsyncIterable<Uint8Array>) { bytes += chunk.byteLength; if (bytes > maxBytes) throw new InvalidAssetError(`El recurso supera ${maxBytes / 1024 / 1024} MB. Utiliza una versión más pequeña.`); await writeAll(handle, chunk); }
     await handle.sync(); await handle.close(); handle = null;
     const prefixHandle = await open(temporary, "r"); const prefix = Buffer.alloc(16); await prefixHandle.read(prefix,0,16,0); await prefixHandle.close();
     const signatures: Record<string, boolean> = {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     };
     if (!signatures[extension]) throw new InvalidAssetError("El contenido del recurso no corresponde al tipo de archivo declarado.");
     const probe = await probeMediaFile(temporary);
-    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000 : !probe.audio) throw new InvalidAssetError("El recurso no contiene una imagen válida de hasta doce megapíxeles o una pista de audio compatible.");
+    if (mime.startsWith("image/") ? !probe.video?.width || probe.video.width > 6000 || probe.video.height > 6000 || probe.video.width*probe.video.height>12_000_000 : !probe.audio || probe.duration > 300) throw new InvalidAssetError("El recurso no contiene una imagen válida de hasta doce megapíxeles o un audio compatible de hasta cinco minutos.");
     await rename(temporary, filename);
     return NextResponse.json({ relativePath, sizeBytes: bytes, rights: "USER_CONFIRMED" });
   } catch (error) {

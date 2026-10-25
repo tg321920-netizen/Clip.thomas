@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "selectionMethod": "SPANISH_TAG_MATCH_REQUIRES_EDITORIAL_REVIEW",
+  "assets": [
+    {
+      "id": "oak-acorn",
+      "file": "oak-acorn.jpg",
+      "sha256": "3f6bfd0017fe923ecdb40d2d3b1256d47c8c68ba1821be38c7bfde4e9081ed39",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Oak_Acorn.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/66/Oak_Acorn.jpg/1920px-Oak_Acorn.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "WXchaser",
+      "description": "An acorn photographed on the ground.",
+      "tags": [
+        "semilla",
+        "bellota",
+        "pequeño",
+        "potencial",
+        "comenzar",
+        "inicio",
+        "parece",
+        "bosque"
+      ]
+    },
+    {
+      "id": "roots",
+      "file": "roots.jpg",
+      "sha256": "b39721265877dc594de76858f85ff0b82768c7bd60b266a8d1890727edcecd1c",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Altk%C3%B6nig,_tree_trunk_and_roots_near_trail.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e4/Altk%C3%B6nig%2C_tree_trunk_and_roots_near_trail.jpg/1920px-Altk%C3%B6nig%2C_tree_trunk_and_roots_near_trail.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "Gerda Arendt",
+      "description": "Altkönig, tree trunk and roots near trail",
+      "tags": [
+        "raíces",
+        "raíz",
+        "tierra",
+        "sostener",
+        "silencio",
+        "silencioso",
+        "base",
+        "construir",
+        "trabajo",
+        "paciencia"
+      ]
+    },
+    {
+      "id": "seedlings",
+      "file": "seedlings.jpg",
+      "sha256": "f0e18654492771957e291d817507dd61ad9be348f6e2d7c4b353ccf0aa5bdb82",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Rose_of_Sharon_Seedling.JPG",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a9/Rose_of_Sharon_Seedling.JPG/1920px-Rose_of_Sharon_Seedling.JPG",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "PhytoplanktonSandwich",
+      "description": "Seedling of Hibiscus syriacus (Rose of Sharon).",
+      "tags": [
+        "brote",
+        "hoja",
+        "crecer",
+        "crecimiento",
+        "aprender",
+        "intentar",
+        "cuidar",
+        "planta"
+      ]
+    },
+    {
+      "id": "young-beech",
+      "file": "young-beech.jpg",
+      "sha256": "a65ee1896c99cd7c99366d9270b246fb1b6650f6949a951f17329fd3dc985012",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Young_beech_in_spruce_forest.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/Young_beech_in_spruce_forest.jpg/1920px-Young_beech_in_spruce_forest.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "W.carter",
+      "description": "A young beech (Fagus sylvatica) in a misty clearing in the spruce (Picea abies) forest above Holma Boat Club, Lyseklil Municipality, Sweden.",
+      "tags": [
+        "árbol",
+        "crecer",
+        "crecimiento",
+        "ritmo",
+        "cuidar",
+        "fuerza",
+        "vida",
+        "comparar",
+        "demás"
+      ]
+    },
+    {
+      "id": "forest-path",
+      "file": "forest-path.jpg",
+      "sha256": "ef398658544eb6318eb089538ff350b2c98971bdd73f5858ba01b9763c461b14",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Forest_path,_Ehrenbach,_foliage.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1c/Forest_path%2C_Ehrenbach%2C_foliage.jpg/1920px-Forest_path%2C_Ehrenbach%2C_foliage.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "Gerda Arendt",
+      "description": "Forest path, Ehrenbach, foliage",
+      "tags": [
+        "camino",
+        "paso",
+        "avanzar",
+        "avanzás",
+        "andar",
+        "continuar",
+        "dirección",
+        "progreso"
+      ]
+    },
+    {
+      "id": "sunrise",
+      "file": "sunrise.jpg",
+      "sha256": "2ae11d2b922518d07076310bbd9f7eccaf649aa96f88c43de1a54395cb367a4e",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Sunrise_by_the_mountains_and_the_clouds.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Sunrise_by_the_mountains_and_the_clouds.jpg/1920px-Sunrise_by_the_mountains_and_the_clouds.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "Jiafei Slay Queen",
+      "description": "Beautiful morning.",
+      "tags": [
+        "amanecer",
+        "mañana",
+        "luz",
+        "esperanza",
+        "sol",
+        "nuevo",
+        "volver",
+        "oportunidad"
+      ]
+    },
+    {
+      "id": "ocean-sunset",
+      "file": "ocean-sunset.png",
+      "sha256": "5522e82232e9d46af66450c64c64194ff03c9f29ce851de22e073b16618f1ee8",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Sunset_in_the_Atlantic_Ocean_off_South_Carolina,_1972.png",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Sunset_in_the_Atlantic_Ocean_off_South_Carolina%2C_1972.png/1920px-Sunset_in_the_Atlantic_Ocean_off_South_Carolina%2C_1972.png",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "Roger Vreeland",
+      "description": "Sunset in the Atlantic Ocean off South Carolina, 1972",
+      "tags": [
+        "respirar",
+        "pausa",
+        "descansar",
+        "calma",
+        "descanso",
+        "paz",
+        "mar",
+        "detener",
+        "horizonte"
+      ]
+    },
+    {
+      "id": "snow-path",
+      "file": "snow-path.jpg",
+      "sha256": "ce590f81bd9fa245a5758a92722367f5ed0336e982fd8099f790d739a91e08e1",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Snow-covered_forest_path_at_dawn,_near_Villard-Reculas,_2026.jpg",
+      "downloadUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/61/Snow-covered_forest_path_at_dawn%2C_near_Villard-Reculas%2C_2026.jpg/1920px-Snow-covered_forest_path_at_dawn%2C_near_Villard-Reculas%2C_2026.jpg",
+      "license": "CC0-1.0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "artist": "DimiTalen",
+      "description": "Snow-covered forest path at dawn, near Villard-Reculas, 2026",
+      "tags": [
+        "invierno",
+        "difícil",
+        "tormenta",
+        "frío",
+        "reto",
+        "obstáculo",
+        "temporada",
+        "esperar"
+      ]
+    }
+  ]
+}

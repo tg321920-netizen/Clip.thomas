@@ -9,6 +9,9 @@ import { hashFile } from "../ingest/ResumableUploadStore.mjs";
 import { isProjectId } from "../../lib/project-id.mjs";
 import { WaitingResourceError } from "./StoryProviderError.mjs";
 import { createStoryGenerationProviders, storyPlanSignature } from "./StoryGenerationProviders.mjs";
+import { LocalNeuralNarrationProvider } from "./LocalNeuralNarrationProvider.mjs";
+import { LicensedStoryImageProvider } from "./LicensedStoryImageProvider.mjs";
+import { recognizeStoryNarration, alignStoryNarration } from "./StoryNarrationTiming.mjs";
 export { WaitingResourceError } from "./StoryProviderError.mjs";
 
 /** Providers must return actual, authorized files; missing scenes never become color fields. */
@@ -41,9 +44,10 @@ export async function planStory(input, options = {}) {
   const duration = Number(input.duration ?? 60);
   if (!Number.isFinite(duration) || duration < 15 || duration > 300) throw new Error("Elige una duración entre 15 y 300 segundos.");
   const sceneCount = Number(input.sceneCount ?? 6);
-  if (!Number.isSafeInteger(sceneCount) || sceneCount < 6 || sceneCount > 12) throw new Error("Elige entre seis y doce escenas.");
+  if (!Number.isSafeInteger(sceneCount) || sceneCount < 3 || sceneCount > 12) throw new Error("Elige entre tres y doce escenas.");
   let texts, provider, generated;
-  if (String(input.narration || "").trim().split(/\s+/).length >= 60) {
+  if (String(input.narration || "").trim().split(/\s+/).length >= 30) {
+    if (!/[.!?]["'»”)]?$/.test(String(input.narration).trim()) || /[.…]{2,}$/.test(String(input.narration).trim())) throw new WaitingResourceError("El relato debe terminar con una frase completa y puntuación final.");
     const sentences = String(input.narration).trim().split(/(?<=[.!?])\s+/);
     if (sentences.length < sceneCount) throw new WaitingResourceError(`Divide el relato en al menos ${sceneCount} frases para crear ${sceneCount} escenas.`);
     texts = Array.from({ length: sceneCount }, (_, i) => sentences.slice(Math.floor(i * sentences.length / sceneCount), Math.floor((i + 1) * sentences.length / sceneCount)).join(" ")); provider = "user-script";
@@ -52,7 +56,7 @@ export async function planStory(input, options = {}) {
     generated = await options.scriptProvider.generate({ ...input, sceneCount }); texts = generated.scenes?.map(s => s.narration); provider = options.scriptProvider.name;
   } else if (input.example === "MAYA_LEGACY" && sceneCount === 6) {
     texts = duration < 45 ? ["Al amanecer, una exploradora descubre una pirámide entre la niebla.","Bajo las raíces, un símbolo del jaguar señala una puerta.","La luz de su antorcha revela un mapa tallado.","Tras el umbral, encuentra un estanque y columnas antiguas.","Un rayo de sol ilumina conocimientos sobre ríos y estrellas.","La exploradora registra el hallazgo y promete proteger la ciudad."] : MAYA_NARRATION; provider = "local-original-maya-story";
-  } else throw new WaitingResourceError("No hay un modelo de guion autorizado configurado para este tema. Pega un relato completo de al menos 60 palabras o configura un proveedor autorizado.");
+  } else throw new WaitingResourceError("No hay un modelo de guion autorizado configurado para este tema. Pega un relato completo de al menos 30 palabras o utiliza una narración grabada.");
   if (!Array.isArray(texts) || texts.length !== sceneCount || texts.some(t => typeof t !== "string" || !t.trim())) throw new Error("El proveedor debe devolver la cantidad solicitada de escenas completas.");
   const totalWords = texts.reduce((n, t) => n + t.split(/\s+/).length, 0);
   const maya=provider==="local-original-maya-story";
@@ -70,20 +74,37 @@ export class SceneStoryService {
     this.localImages = new LocalImageProvider();
     this.images = options.imageProvider || configured.imageProvider || this.localImages;
     this.scriptProvider = options.scriptProvider || configured.scriptProvider;
+    this.libraryImages = new LicensedStoryImageProvider();
     this.tts = options.ttsProvider || new EspeakNewsTtsProvider({ voice: "es-419", speed: 165 });
     this.width = options.width || Number(process.env.CLIPFORGE_MEDIA_WIDTH || 1080); this.height = options.height || Number(process.env.CLIPFORGE_MEDIA_HEIGHT || 1920);
   }
   async render(projectId, input, onStage = async () => {}) {
     if (!isProjectId(projectId)) throw new Error("Proyecto de historia inválido.");
     if (input.format && !["9:16", "16:9"].includes(input.format)) throw new Error("Formato inválido.");
+    if (input.voiceMode && !["LOCAL", "BASIC", "UPLOAD"].includes(input.voiceMode)) throw new Error("Modo de voz inválido.");
     const scriptProvider = input.generationMode === "AI" ? this.scriptProvider : undefined;
     if (input.generationMode === "AI" && this.images === this.localImages && !input.images?.length) throw new WaitingResourceError("La generación IA de imágenes todavía no está configurada. No se consumirá el proveedor de guion.");
     if (input.generationMode === "AI" && this.images.requiresPayment) {
       const config = this.images.config;
-      const scriptCost = String(input.narration || "").trim().split(/\s+/).length >= 60 ? 0 : config.scriptMaxCostUsd;
+      const scriptCost = String(input.narration || "").trim().split(/\s+/).length >= 30 ? 0 : config.scriptMaxCostUsd;
       if (!config.authorized || !config.imageUnitCostUsd || !config.maxCostUsd || scriptCost === null || (Number(input.sceneCount ?? 6) * config.imageUnitCostUsd + scriptCost) > config.maxCostUsd) throw new WaitingResourceError("Los proveedores y el presupuesto deben estar autorizados antes de iniciar esta historia.");
     }
     const directory = path.join(getStorageRoot(), "stories", projectId); await mkdir(directory, { recursive: true });
+    const shortReflection = input.storyProfile === "SHORT_REFLECTION";
+    if (shortReflection && (Number(input.duration) < 30 || Number(input.duration) > 45 || input.format === "16:9")) throw new Error("Las reflexiones cortas requieren 30–45 segundos y formato vertical.");
+    const uploadedVoice = input.voiceMode === "UPLOAD";
+    let providedVoice;
+    if (uploadedVoice) {
+      if (!/^story-assets\/[a-f0-9-]+\.(wav|mp3|m4a)$/.test(input.narrationAudio || "")) throw new WaitingResourceError("Sube una narración WAV, MP3 o M4A para continuar.");
+      providedVoice = resolveStoragePath(input.narrationAudio);
+      const info = await stat(providedVoice), probe = await probeMediaFile(providedVoice);
+      if (info.size > 20 * 1024 * 1024 || !probe.audio || !(probe.duration > 0) || probe.duration > 300) throw new Error("La narración debe contener audio válido de hasta 20 MB y cinco minutos.");
+      if (!String(input.narration || "").trim()) {
+        const transcript = await recognizeStoryNarration(providedVoice, directory);
+        input = { ...input, narration: transcript.text, narrationFromRecognition: true };
+      }
+    }
+    const tts = input.voiceMode === "LOCAL" ? new LocalNeuralNarrationProvider() : this.tts;
     const signature = storyPlanSignature(input, `${scriptProvider?.name || "user-script"}:${scriptProvider?.config?.scriptModel || ""}`);
     const planFile = path.join(directory, "plan.json");
     const cached = await readFile(planFile, "utf8").then(JSON.parse).catch(error => { if (error.code === "ENOENT") return null; throw error; });
@@ -95,22 +116,30 @@ export class SceneStoryService {
     let width = this.width, height = this.height;
     if (input.format === "16:9") [width, height] = [height, width];
     const resolved = [];
+    const library = input.generationMode === "LIBRARY" ? await this.libraryImages.prepare(plan) : null;
     await onStage("PROCESSING", "IMAGES", 0);
     for (const scene of plan.scenes) {
-      const image = input.images?.[scene.order - 1] ? await this.localImages.resolve(scene, input) : await this.images.resolve(scene, { ...input, projectId }, plan.manifest);
+      const image = library?.[scene.order - 1] || (input.images?.[scene.order - 1] ? await this.localImages.resolve(scene, input) : await this.images.resolve(scene, { ...input, projectId }, plan.manifest));
       // Generated files receive the same probe/dimension checks as own images.
       if (image.provider !== this.localImages.name) await this.localImages.resolve(scene, { images: Array.from({ length: plan.scenes.length }, (_, i) => i === scene.order - 1 ? image.relativePath : undefined) });
+      scene.visualCredit = image.credit || { source: "USER_CONFIRMED" };
+      scene.visualSelection = image.selection || { method: "USER_ORDER", reviewRequired: true };
+      scene.imageUrl = image.credit ? `/story-library/${image.credit.id}${path.extname(image.relativePath)}` : null;
       resolved.push(image); await onStage("PROCESSING", "IMAGES", 0);
     }
     const imageHashes = await Promise.all(resolved.map(async r => createHash("sha256").update(await readFile(r.filename)).digest("hex")));
     if (new Set(imageHashes).size !== plan.scenes.length) throw new WaitingResourceError("Cada escena necesita una imagen diferente. Corrige los recursos repetidos; no se sustituirán por fondos vacíos.");
-    const voiceSegments = [], cues = []; let rawDuration = 0,reusedVoiceSegments=0,reusedScenes=0;
+    const voiceSegments = []; let cues = [], rawDuration = 0,reusedVoiceSegments=0,reusedScenes=0,reusedTransitions=0;
     await onStage("PROCESSING", "NARRATION", 0);
-    for (const scene of plan.scenes) {
+    if (uploadedVoice) {
+      const filename = path.join(directory, "voice-user.wav");
+      if (await reuseVerifiedStage(filename, { source: await hashFile(providedVoice) }, () => runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-i", providedVoice, "-vn", "-ar", "48000", "-c:a", "pcm_s16le", filename]))) reusedVoiceSegments++;
+      voiceSegments.push(filename); rawDuration = (await probeMediaFile(filename)).duration;
+    } else for (const scene of plan.scenes) {
       scene.audioStart = rawDuration;
-      for (const text of captionPhrases(scene.narration)) {
+      for (const text of shortReflection ? [scene.narration] : captionPhrases(scene.narration)) {
         const filename = path.join(directory, `voice-${voiceSegments.length}.wav`);
-        try { if(await reuseVerifiedStage(filename,{text,provider:this.tts.name,voice:this.tts.voice,speed:this.tts.speed},()=>this.tts.synthesize({ text, outputPath: filename })))reusedVoiceSegments++; }
+        try { if(await reuseVerifiedStage(filename,{text,provider:tts.name,voice:tts.voice,speed:tts.speed,identity:await tts.identity?.()},()=>tts.synthesize({ text, outputPath: filename })))reusedVoiceSegments++; }
         catch (error) { if (/not installed|ENOENT|configured/i.test(error.message)) throw new WaitingResourceError("La voz local en español no está disponible. Instala/configura eSpeak en el worker o proporciona un proveedor autorizado."); throw error; }
         const duration = (await probeMediaFile(filename)).duration;
         if (!(duration > 0)) throw new Error("El proveedor de voz no produjo audio válido.");
@@ -119,14 +148,35 @@ export class SceneStoryService {
       scene.audioEnd = rawDuration;
       await onStage("PROCESSING", "NARRATION", Math.round(scene.order / plan.scenes.length * 30));
     }
-    const tempo = rawDuration / plan.duration;
+    if (shortReflection) {
+      const naturalDuration = Math.ceil(rawDuration + 0.7);
+      if (naturalDuration < 30 || naturalDuration > 45) throw new WaitingResourceError(`La narración dura ${rawDuration.toFixed(1)} s. Ajusta el texto o la grabación para obtener 30–45 s sin acelerar ni cortar la voz.`);
+      plan.requestedDuration = Number(input.duration); plan.duration = naturalDuration;
+    }
+    const tempo = shortReflection ? 1 : rawDuration / plan.duration;
     if (tempo < 0.65 || tempo > 1.6) throw new WaitingResourceError("La narración no cabe de forma natural en esa duración. Ajusta el relato o la duración solicitada.");
     for (const cue of cues) { cue.startTime /= tempo; cue.endTime /= tempo; }
-    for (const scene of plan.scenes) { scene.startTime = scene.audioStart / tempo; scene.duration = (scene.audioEnd - scene.audioStart) / tempo; }
+    if (!uploadedVoice) for (const scene of plan.scenes) { scene.startTime = scene.audioStart / tempo; scene.duration = (scene.audioEnd - scene.audioStart) / tempo; }
     const audioList = path.join(directory, "audio.txt");
     await writeFile(audioList, voiceSegments.map(filename => `file '${path.basename(filename)}'`).join("\n"));
     const narration = path.join(directory, "narration.wav");
     await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "1", "-i", audioList, "-af", `atempo=${tempo.toFixed(6)},loudnorm=I=-16:TP=-1.5:LRA=11,apad`, "-t", String(plan.duration), "-ar", "48000", "-c:a", "pcm_s16le", narration]);
+    if (shortReflection || uploadedVoice) {
+      await onStage("PROCESSING", "ALIGNING_NARRATION", 30);
+      const transcript = await recognizeStoryNarration(narration, directory);
+      const aligned = alignStoryNarration(plan.scenes.map(scene => scene.narration).join(" "), transcript, plan.duration);
+      cues = aligned.cues;
+      let wordIndex = 0;
+      for (let i = 0; i < plan.scenes.length; i++) {
+        const scene = plan.scenes[i];
+        scene.startTime = i === 0 ? 0 : aligned.words[wordIndex].startTime;
+        wordIndex += scene.narration.trim().split(/\s+/).length;
+        if (i > 0) plan.scenes[i - 1].duration = scene.startTime - plan.scenes[i - 1].startTime;
+        scene.duration = plan.duration - scene.startTime;
+      }
+      plan.narrationAlignment = { method: aligned.method, coverage: aligned.coverage, wordErrorRate: aligned.wordErrorRate, approximatedWords: aligned.approximatedWords, reviewRequired: true, provider: transcript.provider, model: transcript.model };
+    }
+    plan.voice = { provider: uploadedVoice ? "user-recording" : tts.name, naturalSpeed: shortReflection, rawDuration, endHoldSeconds: plan.duration - rawDuration / tempo, narrationFromRecognition: input.narrationFromRecognition === true, reviewRequired: true };
     const transition = 0.35, parts = [];
     for (let i = 0; i < plan.scenes.length; i++) {
       const scene = plan.scenes[i], filename = path.join(directory, `scene-${i}.mp4`);
@@ -140,10 +190,13 @@ export class SceneStoryService {
     for (let i = 1; i < parts.length; i++) {
       offset += plan.scenes[i - 1].duration;
       const next = path.join(directory, `joined-${i}.mp4`);
-      await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-y","-filter_complex_threads","1","-threads","1","-i",joined,"-threads","1","-i",parts[i],"-filter_complex",`[0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[a];[1:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[b];[a][b]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[out]`,"-map","[out]","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","20","-pix_fmt","yuv420p",next]);
+      const priorJoined = joined;
+      if (await reuseVerifiedStage(next, { before: await hashFile(priorJoined), after: await hashFile(parts[i]), offset, transition, pipeline: "CFR30-v1" }, () => runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-y","-filter_complex_threads","1","-threads","1","-i",priorJoined,"-threads","1","-i",parts[i],"-filter_complex",`[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[a];[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[b];[a][b]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[out]`,"-map","[out]","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","20","-pix_fmt","yuv420p","-r","30",next]))) reusedTransitions++;
       joined = next;
     }
-    const graph = ["[0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[visual]"];
+    // Camera JPEGs carry full-range color tags. Convert the sample range as
+    // well as the pixel format before encoding Android-compatible H.264.
+    const graph = ["[0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,scale=in_range=auto:out_range=tv,format=yuv420p,setparams=range=limited[visual]"];
     const current = "visual";
     const ass = path.join(directory, "subtitles.ass"); await writeFile(ass, storyAss(cues, width, height));
     const finalLabel = input.subtitles === false ? current : "captioned";
@@ -156,7 +209,7 @@ export class SceneStoryService {
       graph.push(`[1:a]asplit=2[voice][side];[2:a]volume=0.12,afade=t=in:d=1,afade=t=out:st=${plan.duration - 1}:d=1[music];[music][side]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400[ducked];[voice][ducked]amix=inputs=2:duration=first,loudnorm=I=-16:TP=-1.5:LRA=11[mixed]`); audioMap = "[mixed]";
     }
     const temporary = path.join(directory, "render.partial.mp4"), finalPath = path.join(directory, "render.mp4");
-    args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);
+    args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-color_range", "tv", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);
     await onStage("PROCESSING", "ASSEMBLY", 65); await runMedia(process.env.FFMPEG_PATH || "ffmpeg", args);
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
     const validation = await validateMp4(temporary, { requireAudio: true, requireAudibleNarration:true, duration: plan.duration, width, height, subtitleValidation: input.subtitles === false ? "NOT_REQUESTED" : "ASS_BURNED_WITH_MEASURED_VOICE_SEGMENTS" });
@@ -165,12 +218,12 @@ export class SceneStoryService {
     await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", finalPath, "-frames:v", "1", path.join(posterDir, "poster.jpg")]);
     const clipId = randomUUID(), relativePath = path.posix.join("stories", projectId, "render.mp4"), sourceUrl = `/api/projects/${projectId}/clips/${clipId}/source`;
     const now = new Date().toISOString();
-    plan.recovery={reusedVoiceSegments,reusedScenes};
-    const render = { relativePath, sourceUrl, width, height, codec: "h264", container: "mp4", sizeBytes: validation.sizeBytes, validation, subtitlesBurned: input.subtitles !== false, autoReframeApplied: false };
+    plan.recovery={reusedVoiceSegments,reusedScenes,reusedTransitions};
+    const render = { relativePath, sourceUrl, width, height, codec: "h264", container: "mp4", sizeBytes: validation.sizeBytes, validation, subtitlesBurned: input.subtitles !== false, autoReframeApplied: false, archiveEligible: true };
     const project = { id: projectId, createdAt: now, source: { projectId, originalName: `${plan.title}.mp4`, storedName: "render.mp4", relativePath, sourceUrl, posterUrl: `/api/projects/${projectId}/poster`, sizeBytes: validation.sizeBytes, durationSeconds: validation.duration, width, height, fps: 30, codec: "h264", container: "mp4", aspectRatio: input.format || "9:16", hasAudio: true },
-      story: { ...plan, imageProvider: this.images.name, subtitleCues: cues }, clips: [{ id: clipId, projectId, candidateId: "story", startTime: 0, endTime: validation.duration, duration: validation.duration, status: "READY", render, edit: { framingMode: "FIT", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, createdAt: now, updatedAt: now, error: null }] };
+      story: { ...plan, imageProvider: library ? this.libraryImages.name : this.images.name, subtitleCues: cues }, clips: [{ id: clipId, projectId, candidateId: "story", title: plan.title, startTime: 0, endTime: validation.duration, duration: validation.duration, status: "READY", render, edit: { framingMode: "FIT", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, createdAt: now, updatedAt: now, error: null }] };
     await replaceProjectFile(projectId, project); await writeFile(path.join(directory, "manifest.json"), JSON.stringify({ plan, validation, cues }, null, 2));
-    return { projectId, clipId, relativePath, sourceUrl, downloadUrl: `${sourceUrl}?download=1`, validation, recovery:plan.recovery,title: plan.title };
+    return { projectId, clipId, relativePath, sourceUrl, downloadUrl: `${sourceUrl}?download=1`, validation, recovery:plan.recovery,title: plan.title, story: { voice: plan.voice, alignment: plan.narrationAlignment, scenes: plan.scenes.map(scene => ({ order: scene.order, narration: scene.narration, startTime: scene.startTime, duration: scene.duration, imageUrl: scene.imageUrl, credit: scene.visualCredit, selection: scene.visualSelection })) }, warnings: ["Revisión editorial pendiente: escucha la voz y comprueba texto, escenas y final antes de publicar."] };
   }
 }
 
@@ -190,8 +243,8 @@ function captionPhrases(text) {
   if (current.length) chunks.push(current.join(" ")); return chunks;
 }
 function storyAss(cues, width, height) {
-  const size = Math.max(18, Math.round(width * 0.045));
-  const lines = ["[Script Info]", "ScriptType: v4.00+", `PlayResX: ${width}`, `PlayResY: ${height}`, "WrapStyle: 0", "[V4+ Styles]", "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding", `Style: Default,DejaVu Sans,${size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,30,30,${Math.round(height * 0.1)},1`, "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text"];
+  const size = Math.max(18, Math.round(width * 0.052)), margin = Math.round(width * 0.08);
+  const lines = ["[Script Info]", "ScriptType: v4.00+", `PlayResX: ${width}`, `PlayResY: ${height}`, "WrapStyle: 0", "[V4+ Styles]", "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding", `Style: Default,DejaVu Sans,${size},&H00FFFFFF,&H00FFFFFF,&H65000000,&H65000000,1,0,0,0,100,100,0,0,3,8,0,2,${margin},${margin},${Math.round(height * 0.16)},1`, "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text"];
   for (const cue of cues) lines.push(`Dialogue: 0,${assTime(cue.startTime)},${assTime(cue.endTime)},Default,,0,0,0,,${String(cue.text).replace(/[{}\\]/g, " ")}`);
   return lines.join("\n") + "\n";
 }

@@ -41,6 +41,19 @@ test('archive is idempotent and a fresh instance can list, range-stream and down
   await assert.rejects(restored.source(saved.id, 'bytes=999999-'), error => error.code === 'STORAGE_RANGE');
 });
 
+test('new story renders are archived only at the exact managed story path', async t => {
+  const f = await fixture(t);
+  f.project.story = { title: 'Reflexión propia' };
+  f.project.source.relativePath = `stories/${f.project.id}/render.mp4`;
+  f.clip.candidateId = 'story'; f.clip.render.relativePath = f.project.source.relativePath;
+  const filename = path.join(f.root, f.project.source.relativePath);
+  await mkdir(path.dirname(filename), { recursive: true }); await writeFile(filename, f.bytes);
+  const saved = await f.service.archive(f.project, f.clip);
+  assert.equal(saved.status, 'READY');
+  delete f.project.story;
+  await assert.rejects(f.service.archive(f.project, f.clip), error => error.code === 'STORAGE_INVALID');
+});
+
 test('only opted-in validated new renders are archived; legacy and foreign bucket objects are untouched', async t => {
   const f = await fixture(t);
   const legacy = structuredClone(f.clip); delete legacy.render.archiveEligible;

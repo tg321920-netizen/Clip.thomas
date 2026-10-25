@@ -221,7 +221,7 @@ export function createDefaultProvider(options = {}) {
     .toLowerCase();
 
   if (providerKind === "cpp" || providerKind === "whisper.cpp") {
-    return new WhisperCppProvider({ language: options.language });
+    return new WhisperCppProvider({ language: options.language, wordTimestamps: options.wordTimestamps });
   }
 
   return new WhisperCliProvider({

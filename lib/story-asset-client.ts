@@ -1,7 +1,6 @@
 /** Upload up to two story assets concurrently, preserving visual order and confirmed progress. */
 export type StoryAssetProgress = { onProgress?: (saved: number, total: number) => void; signal?: AbortSignal };
-const VALID_MIME = new Set(["image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"]);
-const MAX_BYTES = 4 * 1024 * 1024;
+const VALID_MIME = new Set(["image/jpeg", "image/png", "image/webp", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/x-m4a"]);
 const transient = (status: number) => status === 408 || status === 429 || status >= 500;
 
 function invalidAccess(error: unknown): boolean {
@@ -24,8 +23,9 @@ async function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 export async function uploadStoryAsset(file: File, signal?: AbortSignal): Promise<string> {
-  if (!VALID_MIME.has(file.type) || file.size <= 0 || file.size > MAX_BYTES) {
-    throw new Error(`${file.name}: formato no admitido o tamaño superior a 4 MB.`);
+  const maxBytes = (file.type.startsWith("audio/") ? 20 : 4) * 1024 * 1024;
+  if (!VALID_MIME.has(file.type) || file.size <= 0 || file.size > maxBytes) {
+    throw new Error(`${file.name}: formato no admitido o tamaño superior a ${maxBytes / 1024 / 1024} MB.`);
   }
   try { await file.slice(0, Math.min(32, file.size)).arrayBuffer(); }
   catch (error) { return throwReadable(error); }

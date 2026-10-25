@@ -11,6 +11,7 @@ export class WhisperCppProvider {
       options.modelPath || process.env.WHISPER_CPP_MODEL_PATH?.trim() || "";
     this.language =
       options.language ?? process.env.WHISPER_LANGUAGE?.trim() ?? "auto";
+    this.wordTimestamps = options.wordTimestamps ?? process.env.WHISPER_WORD_TIMESTAMPS === "true";
     this.threads = clampInteger(
       options.threads ?? process.env.WHISPER_CPP_THREADS ?? 1,
       1,
@@ -31,7 +32,7 @@ export class WhisperCppProvider {
       outputDir,
       `${path.parse(audioPath).name}.whispercpp`,
     );
-    const wordTimestamps = process.env.WHISPER_WORD_TIMESTAMPS === "true";
+    const wordTimestamps = this.wordTimestamps;
     const args = [
       "-m",
       this.modelPath,

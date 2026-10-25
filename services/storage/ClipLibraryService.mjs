@@ -101,7 +101,9 @@ export class ClipLibraryService {
   async archive(project, clip) {
     // Opt in only new RenderService results. Never adopt/delete legacy files.
     if (clip?.render?.archiveEligible !== true || clip.status !== 'READY' || clip.render.validation?.valid !== true) return null;
-    if (!isProjectId(project?.id) || !isProjectId(clip.id) || clip.render.relativePath !== `clips/${project.id}/${clip.id}/render.mp4`) throw storageError('STORAGE_INVALID', 'La ruta del clip no corresponde a su proyecto.');
+    const clipPath = clip.render.relativePath === `clips/${project?.id}/${clip.id}/render.mp4`;
+    const storyPath = project?.story && clip.candidateId === 'story' && clip.render.relativePath === `stories/${project.id}/render.mp4` && project.source?.relativePath === clip.render.relativePath;
+    if (!isProjectId(project?.id) || !isProjectId(clip.id) || !(clipPath || storyPath)) throw storageError('STORAGE_INVALID', 'La ruta del clip no corresponde a su proyecto.');
     const file = await open(resolveStoragePath(clip.render.relativePath), 'r');
     try {
       const info = await file.stat();
