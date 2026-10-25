@@ -77,6 +77,12 @@ export function scoreCandidate(candidate, options = {}) {
   const redundancyPenalty = clampPenalty(options.redundancyPenalty || 0);
   const viralScore = clamp(baseScore - redundancyPenalty);
   const reasons = buildReasons(components, text, duration, redundancyPenalty);
+  if (candidate?.chatEvidence?.isCollectiveReaction === true) {
+    const repeated = candidate.chatEvidence.repetitionEvidence;
+    reasons.push(repeated?.scope === "SAME_TEXT_MEASURED"
+      ? `La misma reacción fue repetida por ${repeated.dominantTextSenders} participantes en el intervalo observado; es una señal para revisar el momento.`
+      : "El aumento de actividad coincide con mensajes repetidos de varios participantes; no se midió cuántos repitieron una misma frase.");
+  }
 
   return {
     contentProfile: candidate?.contentProfile || null,

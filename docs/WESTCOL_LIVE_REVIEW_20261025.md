@@ -26,6 +26,8 @@ Se exportó **un borrador de revisión**, no un clip aprobado por el modelo, alr
 
 El intento de archivado privado en R2 falló con **HTTP 503**. El MP4 y el proyecto locales se conservan. La comprobación de Render y la descarga del modelo también devolvieron 503; el cuerpo del error de conexión indica `upstream connect error ... remote address: envoy://cloudflare_https_tunnel/`. Es una observación de conectividad de este entorno, no una demostración de caída de Cloudflare/Render ni de claves incorrectas. Los diagnósticos administrados no tenían registros retenidos. No se cambió el proxy, TLS, planes, permisos ni producción para sortear el fallo. No se generó un enlace privado de descarga ni se afirma que este borrador esté guardado en R2.
 
+**Actualización posterior:** el reintento sí guardó el borrador en R2 y verificó su descarga completa. El propietario también pidió tratar las repeticiones de varios participantes como una señal positiva. Los cambios de criterio, el ID real del archivo y la segunda observación están en [WESTCOL_COLLECTIVE_REACTIONS_20261025.md](WESTCOL_COLLECTIVE_REACTIONS_20261025.md). Los resultados anteriores se conservan como registro del primer intento.
+
 ## Cambios reutilizados en ClipForge
 
 Los servicios existentes ya analizaban transcripción, RMS y cambios de escena; declaraban explícitamente ausente el chat. Se añade únicamente `ChatActivityService` para comparar agregados observados con una mediana móvil, penalizar repetición y conservar incertidumbre. No se instala otro agente ni aplicación.

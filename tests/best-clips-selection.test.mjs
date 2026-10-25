@@ -36,3 +36,12 @@ test("selection rejects invalid and out-of-range moments and can return zero", (
   ];
   assert.deepEqual(selectIndependentClips(candidates, { count: 5, minDuration: 25, maxDuration: 35 }), []);
 });
+
+test("five is not a fixed limit: eight distinct moments can be selected without copying a reaction", () => {
+  const candidates = Array.from({ length: 8 }, (_, i) => clip(`moment-${i}`, i * 40, i * 40 + 30));
+  candidates.splice(1, 0, clip('duplicate-first-reaction', 0, 30));
+  const selected = selectIndependentClips(candidates, { count: 8, minDuration: 25, maxDuration: 35 });
+  assert.equal(selected.length, 8);
+  assert.equal(new Set(selected.map(c => c.startTime)).size, 8);
+  assert.ok(!selected.some(c => c.id === 'duplicate-first-reaction'));
+});

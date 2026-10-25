@@ -18,17 +18,21 @@ try {
   await page.goto(`${process.env.CLIPFORGE_TEST_BASE_URL||'http://127.0.0.1:3135'}/autopilot`,{waitUntil:'networkidle'});
   const form=page.getByRole('group',{name:'Preparar clips con el agente'});
   await form.getByText('Falta configurar la clave de API del servidor. El análisis manual sigue disponible.').waitFor();
-  const button=form.getByRole('button',{name:'Preparar 5 clips con IA',exact:true});assert.equal(await button.isDisabled(),true);
+  const button=form.getByRole('button',{name:/^Preparar \d+ clips con IA$/});assert.equal(await button.isDisabled(),true);
+  assert.equal(await form.getByLabel('Cantidad de clips del agente').inputValue(),'5');
   configured=true;await page.getByRole('button',{name:'Actualizar',exact:true}).click();
   await form.getByLabel('Video original para el agente').selectOption('11111111-1111-4111-8111-111111111111');
   const rights=form.getByRole('checkbox');assert.equal(await rights.isChecked(),false);await rights.check();
+  await form.getByLabel('Cantidad de clips del agente').selectOption('8');
+  assert.equal(await button.innerText(),'Preparar 8 clips con IA');
   assert.equal(await button.isEnabled(),true);await button.click();
   await form.getByText('Trabajo encolado. El progreso y los MP4 aparecerán en Mis videos cuando termine el procesamiento.').waitFor();
-  assert.equal(created.context.clipping.count,5);assert.equal(created.context.clipping.duration,30);assert.equal(created.context.clipping.rightsConfirmed,true);assert.equal(created.autonomyMode,'SEMI_AUTO');
+  assert.equal(created.context.clipping.count,8);assert.equal(created.context.clipping.duration,30);assert.equal(created.context.clipping.rightsConfirmed,true);assert.equal(created.autonomyMode,'SEMI_AUTO');
+  assert.match(created.objective,/hasta 8 clips/);assert.match(created.objective,/aunque repitan el mismo texto/);
   await form.getByLabel('Video original para el agente').selectOption('22222222-2222-4222-8222-222222222222');
   assert.equal(await rights.isChecked(),false);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);assert.deepEqual(errors,[]);
   await mkdir('artifacts/mobile-agent',{recursive:true});await page.screenshot({path:'artifacts/mobile-agent/screen.png',fullPage:true});
-  await writeFile('artifacts/mobile-agent/evidence.json',JSON.stringify({passed:true,viewport:'393x851',checks:['missing API is explicit','5 clips / 30 seconds defaults','owner rights required and reset on source change','queued job is distinct from MP4 ready','no overflow or JS errors'],scope:'Chromium with explicit local API fixtures; no live model quality claim'},null,2));
+  await writeFile('artifacts/mobile-agent/evidence.json',JSON.stringify({passed:true,viewport:'393x851',checks:['missing API is explicit','5 clips / 30 seconds defaults','8 clips selectable and submitted as maximum','collective repetition included in editorial objective','owner rights required and reset on source change','queued job is distinct from MP4 ready','no overflow or JS errors'],scope:'Chromium with explicit local API fixtures; no live model quality claim'},null,2));
   console.log('Mobile agent UI passed.');
 } finally {await browser.close();}

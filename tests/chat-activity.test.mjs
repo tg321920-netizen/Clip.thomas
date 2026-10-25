@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildChatActivityWindows, chatEvidenceForWindow } from '../services/analysis/ChatActivityService.mjs';
+import { ChatActivityCollector, buildChatActivityWindows, chatEvidenceForWindow } from '../services/analysis/ChatActivityService.mjs';
 import { TranscriptCandidateProvider } from '../services/analysis/TranscriptCandidateProvider.mjs';
 import { scoreCandidate } from '../services/analysis/ViralScoreService.mjs';
 import { readFile } from 'node:fs/promises';
@@ -42,6 +42,55 @@ test('repeated text and few senders reduce influence without claiming to identif
   assert.doesNotMatch(JSON.stringify(peak), /bots/i);
 });
 
+test('the same reaction from many different participants is positive evidence, even at constant message volume', () => {
+  const rows = bins([20, 20, 20, 20, 20, 20, 20]);
+  for (const row of rows) { row.dominantTextCount = 2; row.dominantTextSenders = 2; }
+  rows[6].distinctTexts = 7; rows[6].dominantTextCount = 14; rows[6].dominantTextSenders = 14;
+  const reaction = buildChatActivityWindows(rows, { sourceStartUtc: origin }).at(-1);
+  assert.equal(reaction.isPeak, false, 'raw message volume did not increase');
+  assert.equal(reaction.isCollectiveReaction, true);
+  assert.ok(reaction.score > 50);
+  assert.equal(reaction.repetitionEvidence.scope, 'SAME_TEXT_MEASURED');
+  assert.equal(reaction.repetitionEvidence.dominantTextSenders, 14);
+  assert.equal(reaction.repetitionEvidence.share, 0.7);
+  const evidence = chatEvidenceForWindow({ startTime: 50, endTime: 80 }, [reaction]);
+  assert.ok(evidence.isCollectiveReaction && evidence.reviewRequired);
+});
+
+test('a persistent chorus does not create a fresh reaction every ten seconds', () => {
+  const rows = bins(Array(9).fill(50));
+  for (const row of rows) { row.distinctTexts = 8; row.dominantTextCount = 43; row.dominantTextSenders = 43; }
+  const windows = buildChatActivityWindows(rows, { sourceStartUtc: origin });
+  assert.ok(windows.slice(6).every(w => !w.isCollectiveReaction && w.score === 0));
+});
+
+test('collector measures actual same-text participants, filters other rooms and deduplicates deliveries', () => {
+  let now = Date.parse(origin);
+  const collector = new ChatActivityCollector({ roomId: 'westcol-room', now: () => now });
+  assert.equal(collector.add({ id: 'other', roomId: 'other-room', senderId: 'viewer', content: 'JAJAJA' }), false);
+  assert.equal(collector.add({ id: 'missing-sender', roomId: 'westcol-room', content: 'JAJAJA' }), false);
+  for (let i = 0; i < 12; i++) assert.ok(collector.add({ id: `message-${i}`, roomId: 'westcol-room', senderId: `viewer-${i}`, content: i % 2 ? '  jajaja  ' : 'JAJAJA' }));
+  assert.equal(collector.add({ id: 'message-0', roomId: 'westcol-room', senderId: 'viewer-0', content: 'JAJAJA' }), false);
+  const partial = collector.snapshot()[0]; assert.equal(partial.complete, false);
+  now += 10000;
+  const row = collector.snapshot()[0];
+  assert.equal(row.complete, true); assert.equal(row.messages, 12);
+  assert.equal(row.distinctTexts, 1); assert.equal(row.uniqueSenders, 12);
+  assert.equal(row.dominantTextCount, 12); assert.equal(row.dominantTextSenders, 12);
+  assert.doesNotMatch(JSON.stringify(row), /viewer-|message-|jajaja/i);
+});
+
+test('collector bounds retained buckets and does not treat repeated messages from one sender as many participants', () => {
+  let now = Date.parse(origin) + 1000;
+  const collector = new ChatActivityCollector({ roomId: 'westcol-room', maxBins: 2, maxMessages: 4, now: () => now });
+  for (let i = 0; i < 3; i++) collector.add({ id: i, roomId: 'westcol-room', senderId: 'one-viewer', content: 'JAJAJA' });
+  const initial = collector.snapshot()[0];
+  assert.equal(initial.messages, 3); assert.equal(initial.dominantTextSenders, 1); assert.equal(initial.complete, false);
+  for (let i = 1; i <= 3; i++) { now += 10000; collector.add({ id: `new-${i}`, roomId: 'westcol-room', senderId: i, content: 'Otra reacción' }); }
+  assert.equal(collector.snapshot().length, 2);
+  assert.throws(() => new ChatActivityCollector({ roomId: 'x', maxBins: Infinity }), /límites/);
+});
+
 test('replayed buckets, impossible counters and bad clocks do not invent activity', () => {
   const rows = bins([20, 20, 20, 20, 20, 20, 80]);
   const result = buildChatActivityWindows([...rows, rows[6], { ...rows[0], messages: -2 }, { ...rows[0], uniqueSenders: 200 }], { sourceStartUtc: origin });
@@ -80,7 +129,23 @@ test('the anonymized real Westcol session reproduces measured activity without i
   assert.equal(largest.baselineMessages, 53.5);
   assert.equal(largest.utc, '2026-10-25T17:49:10.000Z');
   assert.equal(largest.isPeak, false);
+  assert.equal(largest.isCollectiveReaction, true);
+  assert.ok(largest.score > 0, 'many participants repeating reactions must not be discarded for repetition');
+  assert.equal(largest.repetitionEvidence.scope, 'AGGREGATE_REPETITION_ONLY', 'old counters did not measure who repeated the same phrase');
+  assert.equal(largest.repetitionEvidence.dominantTextSenders, null);
   assert.ok(largest.limitations.includes('REPETITIVE_TEXT'));
   assert.ok(largest.ratio > 1.49 && largest.ratio < 1.5);
   assert.ok(!JSON.stringify(fixture).includes('sender_id'));
+});
+
+test('a new real session measures shared reactions from 20 and 31 participants without inventing clips', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/westcol-collective-chat-20261025.json', import.meta.url), 'utf8'));
+  assert.equal(fixture.bins.reduce((sum, bin) => sum + bin.messages, 0), fixture.observedMessages);
+  assert.equal(fixture.observedMessages, 2815);
+  const windows = buildChatActivityWindows(fixture.bins, { sourceStartUtc: fixture.analysisClockOriginUtc });
+  const reactions = windows.filter(w => w.isCollectiveReaction);
+  assert.deepEqual(reactions.map(w => w.utc), ['2026-10-25T19:04:50.000Z', '2026-10-25T19:09:00.000Z']);
+  assert.deepEqual(reactions.map(w => w.repetitionEvidence.dominantTextSenders), [20, 31]);
+  assert.ok(reactions.every(w => w.repetitionEvidence.scope === 'SAME_TEXT_MEASURED' && w.score > 0));
+  assert.equal(fixture.videoCaptured, false, 'observed chat does not certify an MP4');
 });

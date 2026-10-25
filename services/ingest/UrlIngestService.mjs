@@ -704,8 +704,8 @@ function runProcess(command, args, options = {}) {
       else if (code === 0) resolve({ stdout, stderr });
       else reject(
         new Error(
-          stderr.trim().slice(-4000) ||
-            stdout.trim().slice(-4000) ||
+          sanitizeIngestDiagnostic(stderr) ||
+            sanitizeIngestDiagnostic(stdout) ||
             `Proceso de ingesta terminó con código ${code ?? "?"}.`,
         ),
       );
@@ -732,9 +732,16 @@ function redactUrlForMetadata(url) {
 }
 
 function compactError(error) {
-  return error instanceof Error
-    ? error.message.replace(/\s+/g, " ").trim().slice(-1200)
-    : String(error).slice(-1200);
+  return sanitizeIngestDiagnostic(error instanceof Error ? error.message : String(error), 1200).replace(/\s+/g, " ");
+}
+
+/** Redact before taking the tail: a long signed URL must not become a bare token. */
+export function sanitizeIngestDiagnostic(value, maxLength = 4000) {
+  return String(value || "")
+    .replace(/https?:\/\/[^\s"'<>]+/giu, "[MEDIA_URL]")
+    .replace(/\b(?:authorization\s*:\s*)?(?:bearer|basic)\s+[^\s"'<>]+/giu, "[AUTH_REDACTED]")
+    .replace(/[\w+/=-]{120,}/gu, "[LONG_VALUE_REDACTED]")
+    .trim().slice(-maxLength);
 }
 
 function normalizeTimeout(value, fallback) {
