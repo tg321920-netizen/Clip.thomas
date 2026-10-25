@@ -81,4 +81,3 @@ Fuente: https://commons.wikimedia.org/wiki/File:Snow-covered_forest_path_at_dawn
 Licencia: CC0-1.0 — http://creativecommons.org/publicdomain/zero/1.0/deed.en
 
 SHA-256 del archivo incorporado: `ce590f81bd9fa245a5758a92722367f5ed0336e982fd8099f790d739a91e08e1`.
-

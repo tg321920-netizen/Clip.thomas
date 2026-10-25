@@ -8,10 +8,12 @@ export function selectSubtitleReviewCue(cues) {
   assert.ok(candidates[0],"At least two distinct readable words at real subtitle times are required");
   return candidates[0];
 }
-export async function verifySubtitleFrame({file,cue,width,height,output}) {
+export async function verifySubtitleFrame({file,cue,width,height,output,captionRegion}) {
   assert.ok(cue?.text&&cue.endTime>cue.startTime,"A real timed subtitle cue is required");
-  const time=(cue.startTime+cue.endTime)/2, cropped=Math.floor(height*.4/2)*2;
-  await runMedia("ffmpeg",["-v","error","-y","-ss",String(time),"-i",file,"-frames:v","1","-vf",`crop=${width}:${cropped}:0:${height-cropped},scale=iw*3:ih*3`,`${output}.png`]);
+  const top=captionRegion?.top??0.6,bottom=captionRegion?.bottom??1;
+  assert.ok(top>=0&&bottom<=1&&bottom>top,"The known subtitle region must be inside the frame");
+  const time=(cue.startTime+cue.endTime)/2, y=Math.floor(height*top/2)*2, cropped=Math.floor(height*(bottom-top)/2)*2;
+  await runMedia("ffmpeg",["-v","error","-y","-ss",String(time),"-i",file,"-frames:v","1","-vf",`crop=${width}:${cropped}:0:${y},scale=iw*3:ih*3`,`${output}.png`]);
   let pageSegmentationMode="6";
   let ocr=await runMedia("tesseract",[`${output}.png`,"stdout","-l","spa","--psm",pageSegmentationMode]);
   const normalize=s=>String(s).normalize("NFD").replace(/\p{M}/gu,"").toLowerCase().match(/[a-z]{4,}/g)||[];
@@ -29,5 +31,5 @@ export async function verifySubtitleFrame({file,cue,width,height,output}) {
   await runMedia("ffmpeg",["-v","error","-y","-ss",String(time),"-i",file,"-frames:v","1","-q:v","8",`${output}.jpg`]);
   // Small original acceptance frames are also available for direct engineering review.
   console.log(`CLIPFORGE_REVIEW_FRAME:${output.split("/").at(-1)}:${(await readFile(`${output}.jpg`)).toString("base64")}`);
-  return {passed:true,method:"OCR_OF_BURNED_SUBTITLE_AT_CUE_MIDPOINT",pageSegmentationMode,time,expected:cue.text,recognized:ocr.stdout.trim(),matched};
+  return {passed:true,method:"OCR_OF_BURNED_SUBTITLE_AT_CUE_MIDPOINT",pageSegmentationMode,time,region:{top,bottom},expected:cue.text,recognized:ocr.stdout.trim(),matched};
 }

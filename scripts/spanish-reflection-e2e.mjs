@@ -49,7 +49,7 @@ for (const scene of plan.scenes) {
   frameHashes.push(await hashFile(sample));
 }
 assert.equal(new Set(frameHashes).size, 6);
-const subtitles = await verifySubtitleFrame({ file: source, cue: selectSubtitleReviewCue(plan.subtitleCues), width: 1080, height: 1920, output: path.join(directory, "subtitle-review") });
+const subtitles = await verifySubtitleFrame({ file: source, cue: selectSubtitleReviewCue(plan.subtitleCues), width: 1080, height: 1920, captionRegion: { top: 0.74, bottom: 0.86 }, output: path.join(directory, "subtitle-review") });
 const filename = path.join(directory, "lo-que-crece-en-silencio.mp4"); await copyFile(source, filename);
 const evidence = { passed: true, testedAt: new Date().toISOString(), directory, storage: process.env.CLIPFORGE_STORAGE_DIR, jobId: job.id, projectId: job.projectId, filename, result, voice: plan.voice, alignment: plan.narrationAlignment, sceneCredits: plan.scenes.map(scene => ({ order: scene.order, narration: scene.narration, credit: scene.visualCredit, selection: scene.visualSelection })), subtitles, frameHashes, actualLocalNeuralTts: true, actualWhisper: true, actualExternalAI: false, publishing: "OFF", editorialApproval: "OWNER_REVIEW_REQUIRED" };
 if (archive) {
