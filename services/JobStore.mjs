@@ -48,10 +48,18 @@ export class JobStore {
   }
 
   async listMedia(limit = 30) {
+    return (await this.listMediaWithIssues(limit)).jobs;
+  }
+
+  async listMediaWithIssues(limit = 30) {
     await this.#ensureDirectory();
     const names = await readdir(this.#jobsDir());
-    const jobs = await Promise.all(names.filter(n => /^(story|videoedit|bestclips)-.*\.json$/.test(n)).map(n => this.get(n.slice(0, -5))));
-    return jobs.filter(Boolean).sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, Math.min(100, Math.max(1,limit)));
+    const files = names.filter(n => /^(story|videoedit|bestclips)-.*\.json$/.test(n));
+    const jobs = [], issues = []; let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, files.length) }, async () => {
+      while (next < files.length) { const id = files[next++].slice(0, -5); const job = await this.#readRecoverable(id, issues); if (job) jobs.push(job); }
+    }));
+    return { jobs: jobs.sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, Math.min(100, Math.max(1,Number(limit)||30))), issues };
   }
 
   async transition(id, status, stage, progress = null, patch = {}) {
@@ -163,8 +171,17 @@ export class JobStore {
   }
 
   async get(id) {
-    try { return JSON.parse(await readFile(this.#jobPath(id), "utf8")); }
-    catch (error) { if (getErrorCode(error) === "ENOENT") return null; throw error; }
+    try {
+      const job = JSON.parse(await readFile(this.#jobPath(id), "utf8"));
+      if (!job || job.id !== id || !Object.hasOwn(JOB_PREFIX, job.type) || typeof job.status !== "string" || !isProjectId(job.projectId)) throw invalidMetadata();
+      return job;
+    } catch (error) { if (getErrorCode(error) === "ENOENT") return null; if (error instanceof SyntaxError) throw invalidMetadata(); throw error; }
+  }
+
+  async #readRecoverable(id, issues = []) {
+    try { safeJobId(id); } catch { issues.push({ id, message: "Identificador de trabajo inválido; se conserva el archivo para revisión." }); return null; }
+    try { return await this.get(id); }
+    catch (error) { if (error.code !== "JOB_METADATA_INVALID") throw error; issues.push({ id, message: error.message }); return null; }
   }
 
   async getTranscriptionJob(projectId) { return this.get(jobId("TRANSCRIBE_VIDEO", projectId)); }
@@ -185,11 +202,11 @@ export class JobStore {
 
     for (const name of names.filter((value) => value.endsWith(".json")).sort()) {
       const id = name.slice(0, -5);
-      const job = await this.get(id);
+      const job = await this.#readRecoverable(id);
       if (!job || job.status !== "QUEUED" || (allowed && !allowed.has(job.type)) || Date.parse(job.nextAttemptAt || job.createdAt) > now) continue;
       const locked = await this.#tryLock(id);
       if (!locked) continue;
-      const fresh = await this.get(id);
+      const fresh = await this.#readRecoverable(id);
       if (!fresh || fresh.status !== "QUEUED" || (allowed && !allowed.has(fresh.type))) {
         await this.release(id);
         continue;
@@ -234,6 +251,8 @@ export class JobStore {
   }
 
   async complete(job) {
+    const current = await this.get(job.id);
+    if (current?.status === "CANCELLED") { await this.release(job.id); return current; }
     const media = job.type.startsWith("MEDIA_");
     if (media && job.result?.validation?.valid !== true) throw new Error("Media jobs need real validation evidence before READY.");
     if (media) {
@@ -262,6 +281,8 @@ export class JobStore {
   }
 
   async fail(job, error, options = {}) {
+    const fresh = await this.get(job.id);
+    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
     const terminal = options.retryable === false || attempts >= maxAttempts;
@@ -315,7 +336,8 @@ export class JobStore {
       try {
         const info = await stat(lockPath);
         const id = name.slice(0, -5);
-        const job = await this.get(id);
+        const job = await this.#readRecoverable(id);
+        if (!job) continue;
         let confirmedDead = false;
         if (job?.type.startsWith("MEDIA_")) {
           try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (ownerIsAlive(owner)) continue;confirmedDead=Boolean(owner.pid); }
@@ -344,7 +366,7 @@ export class JobStore {
 
     for (const name of names.filter((value) => value.endsWith(".json"))) {
       const id = name.slice(0, -5);
-      const job = await this.get(id);
+      const job = await this.#readRecoverable(id);
       if (!job || !(job.type === "RENDER_CLIP" || job.type.startsWith("MEDIA_")) || !["PROCESSING", "VALIDATING"].includes(job.status)) continue;
       const lastActivity = Date.parse(job.updatedAt || job.startedAt || job.createdAt);
       if (Number.isFinite(lastActivity) && Date.now() - lastActivity < this.renderStaleAfterMs) continue;
@@ -375,6 +397,8 @@ export class JobStore {
   #jobPath(id) { return path.join(this.#jobsDir(), `${safeJobId(id)}.json`); }
   #lockPath(id) { return path.join(this.#jobsDir(), `${safeJobId(id)}.lock`); }
 }
+
+function invalidMetadata() { return Object.assign(new Error("No se pudieron leer los metadatos de este trabajo. Se conserva el archivo para revisión o recuperación desde una copia."), { code: "JOB_METADATA_INVALID" }); }
 
 export function transcriptionJobId(projectId) { return jobId("TRANSCRIBE_VIDEO", projectId); }
 export function analysisJobId(projectId) { return jobId("ANALYZE_VIDEO", projectId); }

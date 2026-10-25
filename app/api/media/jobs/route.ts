@@ -19,8 +19,8 @@ export async function POST(request: Request) {
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo iniciar el trabajo." }, { status: 400 }); }
 }
 export async function GET() {
-  const [jobs, ingests] = await Promise.all([new JobStore().listMedia(),new IngestJobStore().list(30)]);
+  const [{ jobs, issues }, ingests] = await Promise.all([new JobStore().listMediaWithIssues(),new IngestJobStore().list(30)]);
   const uploads = ingests.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,retryable:job.retryable,error:job.error,createdAt:job.createdAt }));
-  return NextResponse.json({ jobs,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ jobs,issues,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
 }
 

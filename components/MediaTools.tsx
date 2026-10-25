@@ -10,6 +10,7 @@ import Image from "next/image";
 type Tool = "URL_IMPORT" | "MEDIA_STORY" | "MEDIA_EDIT" | "MEDIA_CLIPS";
 type Output = { clipId: string; title?: string; sourceUrl: string; downloadUrl: string; duration?: number; startTime?: number; endTime?: number; reason?: string; aiAssessment?: { model: string; visualFrameTimes?: number[] } | null; validation?: { duration: number }; story?: { voice?: { provider: string }; scenes: { order: number; narration: string; imageUrl?: string; credit?: { sourcePage?: string; license?: string }; selection?: { method: string } }[] } };
 type Job = { id: string; projectId: string; type: Tool; createdAt: string; status: string; stage: string; progress: number; error?: string; result?: Output & { clips?: Output[]; warnings?: string[] } };
+type HistoryIssue = { id: string; message: string };
 type UploadJob = { id:string;type:string;name:string;status:string;stage:string;retryable?:boolean;error?:string };
 type StoryStatus = { automaticReady: boolean; scriptReady: boolean; imageReady: boolean; message: string; maxCostUsd: number | null; voice?: { neuralReady: boolean } };
 const TOOLS: [Tool,string,string][] = [["MEDIA_STORY","CREAR HISTORIA CON IA","Reflexiones originales en español, fotos y narración"],["URL_IMPORT","PEGAR URL O DIRECTO","Importar un video o capturar un directo autorizado"],["MEDIA_EDIT","SUBIR Y EDITAR VIDEO","Cortes, subtítulos y formato vertical"],["MEDIA_CLIPS","CREAR MEJORES CLIPS","Momentos distintos por contenido y energía de audio"]];
@@ -37,6 +38,7 @@ export function MediaTools({ defaultLiveSource = '' }: { defaultLiveSource?: str
   const onReady = useCallback((video: UploadedVideo | null) => setOriginal(video),[]);
   const onImportReady = useCallback((video: UploadedVideo | null) => { setImported(video); setOriginal(video); },[]);
   const [uploads,setUploads] = useState<UploadJob[]>([]);
+  const [historyIssues,setHistoryIssues] = useState<HistoryIssue[]>([]);
   useEffect(() => () => { if(narrationPreview)URL.revokeObjectURL(narrationPreview); }, [narrationPreview]);
   useEffect(() => {
     const open = (event: Event) => {
@@ -49,7 +51,7 @@ export function MediaTools({ defaultLiveSource = '' }: { defaultLiveSource?: str
   }, []);
   useEffect(() => {
     let active=true, fetching=false; let timer: ReturnType<typeof setTimeout>;
-    const refresh=async()=>{ if(fetching)return; fetching=true; try {const body=await request("/api/media/jobs",{cache:"no-store"}); if(active){setJobs(body.jobs||[]);setUploads(body.uploads||[]);setStoryStatus(body.story||null);setHistoryError("");}} catch(failure){if(active)setHistoryError(failure instanceof Error?failure.message:"No se pudo cargar el historial.");} finally{fetching=false;if(active)timer=setTimeout(()=>void refresh(),document.hidden?15000:4000);} };
+    const refresh=async()=>{ if(fetching)return; fetching=true; try {const body=await request("/api/media/jobs",{cache:"no-store"}); if(active){setJobs(body.jobs||[]);setHistoryIssues(body.issues||[]);setUploads(body.uploads||[]);setStoryStatus(body.story||null);setHistoryError("");}} catch(failure){if(active)setHistoryError(failure instanceof Error?failure.message:"No se pudo cargar el historial.");} finally{fetching=false;if(active)timer=setTimeout(()=>void refresh(),document.hidden?15000:4000);} };
     const notify=()=>{clearTimeout(timer);void refresh();}; void refresh(); window.addEventListener("clipforge:project-created",notify);
     return()=>{active=false;clearTimeout(timer);window.removeEventListener("clipforge:project-created",notify);};
   },[]);
@@ -106,6 +108,7 @@ export function MediaTools({ defaultLiveSource = '' }: { defaultLiveSource?: str
       {message&&<p role="status" className="text-sm text-emerald-300">{message}</p>}{error&&<p role="alert" className="text-sm text-red-300">{error}</p>}
     </div></section>
     <section aria-label="Mis videos" className="py-8"><h2 className="text-xl font-semibold">Mis videos</h2><p className="mt-2 text-sm text-zinc-400">Cada resultado incluye vista previa y descarga. La comprobación técnica del archivo y la revisión editorial son pasos separados.</p>{historyError&&<p role="alert" className="mt-3 text-sm text-red-300">{historyError}</p>}
+      {historyIssues.length>0&&<div role="status" className="mt-4 rounded-xl border border-amber-400/40 p-4 text-sm text-amber-200"><p>Hay {historyIssues.length} trabajos con metadatos dañados. Los demás siguen disponibles. Se conservaron los archivos para recuperación.</p><details className="mt-2"><summary className="min-h-12 cursor-pointer py-3">Ver trabajos que necesitan recuperación</summary>{historyIssues.map(issue=><p key={issue.id} className="mt-2 break-all">{issue.id}: {issue.message}</p>)}</details></div>}
       <CloudClipLibrary />
       {uploads.filter(upload=>upload.status!=="COMPLETED").map(upload=><div key={upload.id} className="mt-4 rounded-xl border border-white/15 p-4"><p>{upload.name} · {upload.status==="CANCELLED"?"Importación cancelada":upload.status==="FAILED"?"Error · Importación detenida":upload.stage==="RETRY_WAIT"?"En espera de otro intento":upload.status==="COMPLETED"?"Completado":`${upload.status} · ${upload.stage}`}</p>{upload.error&&<p className="mt-2 text-sm text-red-300">{upload.error}</p>}{(upload.status==="CANCELLED"||(upload.status==="FAILED"&&upload.retryable!==false))&&<button type="button" className={`${button} mt-3`} onClick={()=>void request(upload.type==="INGEST_URL"?`/api/ingest/url/${upload.id}`:`/api/videos/jobs/${upload.id}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"RETRY"})}).then(()=>window.dispatchEvent(new Event("clipforge:project-created"))).catch(failure=>setHistoryError(failure.message))}>{upload.status==="CANCELLED"?"Reanudar":"Reintentar"} {upload.type==="INGEST_URL"?"importación":"análisis de la subida"}</button>}</div>)}
       <div className="mt-5 grid gap-4 md:grid-cols-2">{jobs.map(job=><article key={job.id} className="min-w-0 rounded-2xl border border-white/15 p-4"><h3 className="font-semibold">{job.result?.title||TOOLS.find(t=>t[0]===job.type)?.[1]}</h3><p className="mt-1 text-xs text-zinc-400">{new Date(job.createdAt).toLocaleString("es")}</p>
