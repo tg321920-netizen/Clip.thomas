@@ -14,6 +14,9 @@ import { LicensedStoryImageProvider } from "./LicensedStoryImageProvider.mjs";
 import { recognizeStoryNarration, alignStoryNarration } from "./StoryNarrationTiming.mjs";
 export { WaitingResourceError } from "./StoryProviderError.mjs";
 
+// Keep x264's lookahead bounded at 1080p without disabling B-frame compression.
+export const STORY_X264_PARAMS = "rc-lookahead=8:sync-lookahead=0:ref=2";
+
 /** Providers must return actual, authorized files; missing scenes never become color fields. */
 export class LocalImageProvider {
   name = "user-authorized-images";
@@ -182,7 +185,7 @@ export class SceneStoryService {
       const scene = plan.scenes[i], filename = path.join(directory, `scene-${i}.mp4`);
       const seconds = scene.duration + (i < plan.scenes.length - 1 ? transition : 0);
       const frames = Math.ceil(seconds * 30);
-      if(await reuseVerifiedStage(filename,{image:imageHashes[i],movement:scene.movement,frames,width,height,seconds},()=>runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-filter_threads", "1", "-i", resolved[i].filename, "-vf", buildSceneMotion(scene.movement, frames, width, height), "-t", String(seconds), "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-pix_fmt", "yuv420p", "-r", "30", filename])))reusedScenes++;
+      if(await reuseVerifiedStage(filename,{image:imageHashes[i],movement:scene.movement,frames,width,height,seconds,encoder:STORY_X264_PARAMS},()=>runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-filter_threads", "1", "-i", resolved[i].filename, "-vf", buildSceneMotion(scene.movement, frames, width, height), "-t", String(seconds), "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-x264-params", STORY_X264_PARAMS, "-pix_fmt", "yuv420p", "-r", "30", filename])))reusedScenes++;
       parts.push(filename); await onStage("PROCESSING", "SCENES", 30 + Math.round((i + 1) / plan.scenes.length * 35));
     }
     // Join two decoders at a time to keep 1080p rendering within a small worker's memory.
@@ -191,7 +194,7 @@ export class SceneStoryService {
       offset += plan.scenes[i - 1].duration;
       const next = path.join(directory, `joined-${i}.mp4`);
       const priorJoined = joined;
-      if (await reuseVerifiedStage(next, { before: await hashFile(priorJoined), after: await hashFile(parts[i]), offset, transition, pipeline: "CFR30-v1" }, () => runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-y","-filter_complex_threads","1","-threads","1","-i",priorJoined,"-threads","1","-i",parts[i],"-filter_complex",`[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[a];[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[b];[a][b]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[out]`,"-map","[out]","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","20","-pix_fmt","yuv420p","-r","30",next]))) reusedTransitions++;
+      if (await reuseVerifiedStage(next, { before: await hashFile(priorJoined), after: await hashFile(parts[i]), offset, transition, pipeline: "CFR30-v1", encoder: STORY_X264_PARAMS }, () => runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-y","-filter_complex_threads","1","-threads","1","-i",priorJoined,"-threads","1","-i",parts[i],"-filter_complex",`[0:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[a];[1:v]settb=AVTB,setpts=PTS-STARTPTS,fps=30,format=yuv420p[b];[a][b]xfade=transition=fade:duration=${transition}:offset=${offset.toFixed(6)}[out]`,"-map","[out]","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","20","-x264-params",STORY_X264_PARAMS,"-pix_fmt","yuv420p","-r","30",next]))) reusedTransitions++;
       joined = next;
     }
     // Camera JPEGs carry full-range color tags. Convert the sample range as
@@ -209,7 +212,7 @@ export class SceneStoryService {
       graph.push(`[1:a]asplit=2[voice][side];[2:a]volume=0.12,afade=t=in:d=1,afade=t=out:st=${plan.duration - 1}:d=1[music];[music][side]sidechaincompress=threshold=0.03:ratio=10:attack=20:release=400[ducked];[voice][ducked]amix=inputs=2:duration=first,loudnorm=I=-16:TP=-1.5:LRA=11[mixed]`); audioMap = "[mixed]";
     }
     const temporary = path.join(directory, "render.partial.mp4"), finalPath = path.join(directory, "render.mp4");
-    args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-color_range", "tv", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);
+    args.push("-filter_complex", graph.join(";"), "-map", `[${finalLabel}]`, "-map", audioMap, "-t", String(plan.duration), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "23", "-x264-params", STORY_X264_PARAMS, "-pix_fmt", "yuv420p", "-color_range", "tv", "-r", "30", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", temporary);
     await onStage("PROCESSING", "ASSEMBLY", 65); await runMedia(process.env.FFMPEG_PATH || "ffmpeg", args);
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
     const validation = await validateMp4(temporary, { requireAudio: true, requireAudibleNarration:true, duration: plan.duration, width, height, subtitleValidation: input.subtitles === false ? "NOT_REQUESTED" : "ASS_BURNED_WITH_MEASURED_VOICE_SEGMENTS" });

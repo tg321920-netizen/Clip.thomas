@@ -15,7 +15,9 @@ const latest = JSON.parse(await readFile("artifacts/spanish-reflections/latest.j
 const first = JSON.parse(await readFile(path.join(latest.directory, "evidence.json"), "utf8"));
 assert.ok(first.passed && first.r2 && first.secondNarration.filename);
 const stories = JSON.parse(await readFile(new URL("./fixtures/spanish-reflections.json", import.meta.url), "utf8"));
-const directory = path.join(first.directory, "mobile"); await mkdir(directory, { recursive: true });
+const directory = path.resolve(process.env.CLIPFORGE_MOBILE_OUTPUT || path.join(first.directory, "mobile")); await mkdir(directory, { recursive: true });
+const deliveryName = process.env.CLIPFORGE_MOBILE_DELIVERY_NAME || "una-pausa-tambien-cuenta.mp4";
+assert.match(deliveryName, /^[a-z0-9-]+\.mp4$/);
 process.env.CLIPFORGE_STORAGE_DIR = first.storage;
 process.env.CLIPFORGE_MEDIA_WIDTH = "1080"; process.env.CLIPFORGE_MEDIA_HEIGHT = "1920";
 for (const name of ["CLIPFORGE_REDIS_URL", "REDIS_URL"]) delete process.env[name];
@@ -37,21 +39,27 @@ try {
   page = await context.newPage(); page.on("pageerror", error => errors.push(error.message));
   await page.goto(base, { waitUntil: "networkidle" });
   const reviewResumed = process.env.CLIPFORGE_MOBILE_RESUME === "true";
-  let submitted, uploaded;
+  let submitted, uploaded, narrationPreviewPlayed = false;
   if (reviewResumed) {
     const checkpoint = JSON.parse(await readFile(path.join(directory, "submission.json"), "utf8"));
     assert.equal(checkpoint.browserClosedDuringRender, true);
     submitted = (await (await page.request.get(`${base}/api/media/jobs/${checkpoint.jobId}`)).json()).job;
     uploaded = checkpoint.uploaded;
+    narrationPreviewPlayed = checkpoint.narrationPreviewPlayed === true;
     assert.equal(submitted.payload.narrationAudio, uploaded.relativePath);
     assert.equal(await hashFile(path.join(first.storage, uploaded.relativePath)), await hashFile(first.secondNarration.filename));
   } else {
     await page.getByRole("button", { name: "CREAR HISTORIA CON IA", exact: true }).click();
     const form = page.getByRole("region", { name: "CREAR HISTORIA CON IA", exact: true });
-    await form.getByLabel("Tema o idea", { exact: true }).fill(stories[1].title);
+    await form.getByLabel("Tema o idea", { exact: true }).fill(`${stories[1].title}${process.env.CLIPFORGE_STORY_TITLE_SUFFIX || ""}`);
     await form.getByLabel("Voz de narración", { exact: true }).selectOption("UPLOAD");
     await form.getByLabel(/^Relato completo/).fill(stories[1].scenes.join(" "));
     await form.getByLabel("Mi narración en español", { exact: true }).setInputFiles(first.secondNarration.filename);
+    const preview = form.getByLabel("Escuchar mi narración antes de crear el video", { exact: true });
+    await preview.evaluate(async audio => { audio.muted = true; await audio.play(); });
+    await page.waitForFunction(() => { const audio = document.querySelector("audio"); return audio?.currentTime > 0 && audio.duration > 30 && !audio.error; });
+    await preview.evaluate(audio => audio.pause()); narrationPreviewPlayed = true;
+    await page.screenshot({ path: path.join(directory, "narration-preview.png"), fullPage: true });
     await form.getByRole("checkbox", { name: "Tengo derechos de uso sobre los recursos que subo.", exact: true }).check();
     const before = new Set((await (await page.request.get(`${base}/api/media/jobs`)).json()).jobs.map(job => job.id));
     const audioUpload = page.waitForResponse(response => response.url().endsWith("/api/media/assets") && response.request().method() === "POST");
@@ -71,7 +79,7 @@ try {
     assert.equal(submitted.payload.voiceMode, "UPLOAD"); assert.equal(submitted.payload.storyProfile, "SHORT_REFLECTION");
   }
   await page.close();
-  await writeFile(path.join(directory, "submission.json"), JSON.stringify({ jobId: submitted.id, uploaded, browserClosedDuringRender: true }));
+  await writeFile(path.join(directory, "submission.json"), JSON.stringify({ jobId: submitted.id, uploaded, narrationPreviewPlayed, browserClosedDuringRender: true }));
   if (submitted.status !== "READY") {
     const workerLog = await open(path.join(directory, "worker.log"), "w");
     const code = await new Promise((resolve, reject) => { const child = spawn(process.execPath, ["scripts/media-worker.mjs", "--once"], { env: { ...process.env, CLIPFORGE_MEDIA_STORAGE_PROVIDER: "local" }, stdio: ["ignore", workerLog.fd, workerLog.fd] }); child.on("error", reject); child.on("exit", resolve); });
@@ -115,8 +123,8 @@ try {
   const validation = await validateMp4(file, { width: 1080, height: 1920, duration: job.result.validation.duration, requireAudio: true, requireAudibleNarration: true });
   const subtitleEvidence = await verifySubtitleFrame({ file, cue: selectSubtitleReviewCue(project.story.subtitleCues), width: 1080, height: 1920, captionRegion: { top: 0.74, bottom: 0.86 }, output: path.join(directory, "subtitle-review") });
   for (const scene of project.story.scenes) await runMedia("ffmpeg", ["-v", "error", "-y", "-ss", String(scene.startTime + scene.duration / 2), "-i", file, "-frames:v", "1", "-q:v", "3", path.join(directory, `scene-${scene.order}.jpg`)]);
-  await copyFile(file, path.join(first.directory, "una-pausa-tambien-cuenta.mp4"));
-  await writeFile(path.join(directory, "evidence.json"), JSON.stringify({ passed: true, testedAt: new Date().toISOString(), viewport: "393x851", mocks: false, physicalAndroid: false, reviewResumed, jobId: job.id, projectId: job.projectId, result: job.result, validation, voice: project.story.voice, alignment: project.story.narrationAlignment, uploadedNarrationSource: first.secondNarration.source, uploadBytes: uploaded.sizeBytes, browserClosedDuringRender: true, originalRecordingPreserved: true, checks, r2: saved, subtitleEvidence, publishing: "OFF" }, null, 2));
+  await copyFile(file, path.join(first.directory, deliveryName));
+  await writeFile(path.join(directory, "evidence.json"), JSON.stringify({ passed: true, testedAt: new Date().toISOString(), viewport: "393x851", mocks: false, physicalAndroid: false, reviewResumed, narrationPreviewPlayed, jobId: job.id, projectId: job.projectId, result: job.result, validation, voice: project.story.voice, alignment: project.story.narrationAlignment, uploadedNarrationSource: first.secondNarration.source, uploadBytes: uploaded.sizeBytes, browserClosedDuringRender: true, originalRecordingPreserved: true, checks, r2: saved, subtitleEvidence, publishing: "OFF" }, null, 2));
   console.log(JSON.stringify({ passed: true, file, duration: validation.duration, r2: saved.id, evidence: path.join(directory, "evidence.json") }));
 } catch (error) {
   if (page && !page.isClosed()) { await page.screenshot({ path: path.join(directory, "failure.png"), fullPage: true }); await writeFile(path.join(directory, "failure.txt"), `${page.url()}\n${await page.locator("body").innerText()}\n${errors.join("\n")}`); }

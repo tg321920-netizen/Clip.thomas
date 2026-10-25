@@ -15,7 +15,7 @@ Estos pasos requieren ejecutar **esta versión** de la web y el worker. No const
 1. Abrir ClipForge y elegir **CREAR HISTORIA CON IA**.
 2. Escribir el tema y el relato completo: aproximadamente 80–110 palabras, al menos tantas frases completas como escenas. Dejar activado **Reflexión corta: 30–45 s** y formato vertical.
 3. Para empezar, elegir **Fotografías gratuitas de naturaleza (CC0)** y seis escenas. Sirve para reflexiones sobre semillas, raíces, crecimiento, caminos, pausas o amaneceres. Para otros temas, subir imágenes propias relacionadas: una distinta por escena.
-4. Elegir **Kokoro local en español**, si el worker lo tiene instalado, o **Subir mi narración**. La grabación acepta WAV, MP3 y M4A, hasta 20 MB; el modo corto verifica la duración real. Pegar también el texto corregido permite contrastarlo con el audio. Si falta texto se usa reconocimiento español, sujeto a revisión.
+4. Elegir **Kokoro local en español**, si el worker lo tiene instalado, o **Subir mi narración**. La grabación acepta WAV, MP3 y M4A, hasta 20 MB; se puede escuchar antes de generar y se muestra su duración. Una grabación de unos 30–44 segundos deja espacio para la pausa final del modo corto. Pegar también el texto corregido permite contrastarlo con el audio. Si falta texto se usa reconocimiento español, sujeto a revisión. El contador muestra las palabras del relato.
 5. Confirmar los derechos de los recursos propios, conservar subtítulos y pulsar **Crear video con fotos gratuitas** o el botón de imágenes propias. El trabajo se ejecuta en el worker; se puede cerrar la página y volver a **Mis videos**.
 6. Reproducirlo con sonido, revisar el final, subtítulos y **Revisar escenas y procedencia**. Descargar el MP4. **Clips guardados** permite reproducir/descargar la copia privada de R2; **Conservar** la protege de la retención automática.
 
@@ -53,9 +53,10 @@ npm run reframe:e2e
 npm run agent:e2e
 npm run reflection:e2e -- --r2
 CHROMIUM_PATH=/usr/bin/chromium node scripts/mobile-reflection-e2e.mjs
+node scripts/story-memory-e2e.mjs
 ```
 
-Las dos últimas pruebas usan historias originales incluidas en `scripts/fixtures/spanish-reflections.json`, fotos reales de la biblioteca, Kokoro y Whisper reales. `--r2` requiere los bindings privados existentes y crea solo objetos de prueba nuevos; nunca publica ni elimina archivos ajenos. La prueba móvil requiere el `latest.json` de la primera prueba y una compilación vigente. Su narración subida procede de Kokoro y se identifica como **fixture de grabación, no grabación humana**. No intercepta ni simula respuestas de la API web.
+Las pruebas de reflexión y móvil usan historias originales incluidas en `scripts/fixtures/spanish-reflections.json`, fotos reales de la biblioteca, Kokoro y Whisper reales. `--r2` requiere los bindings privados existentes y crea solo objetos de prueba nuevos; nunca publica ni elimina archivos ajenos. La prueba móvil requiere el `latest.json` de la primera prueba y una compilación vigente. Su narración subida procede de Kokoro y se identifica como **fixture de grabación, no grabación humana**. No intercepta ni simula respuestas de la API web. El benchmark de memoria usa el primer MP4 real, `python3` y el pico RSS registrado por el kernel Linux para cada proceso. Compara dos codificaciones y decodificaciones; no certifica la memoria agregada del servidor.
 
 Las pruebas generan MP4, fotogramas, logs, validación y recibos en `artifacts/spanish-reflections/`, excluido de Git. La prueba técnica del agente usa respuestas de modelo simuladas; no evalúa un modelo comercial real.
 
@@ -78,3 +79,5 @@ Kokoro v1.0: pesos declarados **Apache-2.0** por [hexgrad/Kokoro-82M](https://hu
 Se conserva la atribución de los datos CC BY declarados en la ficha original de Kokoro: [Koniwa](https://github.com/koniwa/koniwa), `tnc`, CC BY 3.0, menos de una hora; y [SIWIS](https://datashare.ed.ac.uk/handle/10283/2353), CC BY 4.0, menos de once horas. La ficha indica incorporación posterior al 22-11-2024. La salida no es una grabación del dataset ni una imitación solicitada de un creador.
 
 Se descartó la voz Piper davefx probada inicialmente: aunque su ficha menciona un dataset CC0, su ascendencia Lessac declara restricciones de investigación. No forma parte de la entrega comercial ni del instalador final.
+
+La comprobación más reciente, incluida la creación completa desde móvil y las mediciones de memoria, está en [SPANISH_REFLECTION_REFINEMENT_20261025.md](SPANISH_REFLECTION_REFINEMENT_20261025.md).

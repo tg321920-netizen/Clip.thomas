@@ -35,12 +35,12 @@ export async function validateMp4(filename, options = {}) {
   const videoDuration = Number(video.duration), audioDuration = Number(audio?.duration);
   if (audio && Number.isFinite(videoDuration) && Number.isFinite(audioDuration) && Math.abs(videoDuration - audioDuration) > 0.4) throw new Error("Las pistas de audio y video tienen duraciones incompatibles.");
   // Full decode catches truncated/corrupt payloads which ffprobe alone may accept.
-  await runMedia(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-xerror", "-i", filename, "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"]);
-  const scan = await runMedia(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-hide_banner", "-v", "info", "-i", filename, "-an", "-vf", "blackdetect=d=0.5:pix_th=0.04:pic_th=0.98", "-f", "null", "-"]);
+  await runMedia(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-threads", "1", "-filter_threads", "1", "-xerror", "-i", filename, "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"]);
+  const scan = await runMedia(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-hide_banner", "-v", "info", "-threads", "1", "-filter_threads", "1", "-i", filename, "-an", "-vf", "blackdetect=d=0.5:pix_th=0.04:pic_th=0.98", "-f", "null", "-"]);
   const blackIntervals = [...scan.stderr.matchAll(/black_start:([\d.]+) black_end:([\d.]+) black_duration:([\d.]+)/g)].map(m => ({ start: Number(m[1]), end: Number(m[2]), duration: Number(m[3]) }));
   const blackSeconds = blackIntervals.reduce((n, item) => n + item.duration, 0);
   let audioMeanDb=null,audioPeakDb=null;
-  if(audio&&options.requireAudio){const levels=await runMedia(process.env.FFMPEG_PATH?.trim()||"ffmpeg",["-hide_banner","-v","info","-i",filename,"-vn","-af","volumedetect","-f","null","-"]);audioMeanDb=Number(levels.stderr.match(/mean_volume: ([-\d.]+) dB/)?.[1]??-100);audioPeakDb=Number(levels.stderr.match(/max_volume: ([-\d.]+) dB/)?.[1]??-100);}
+  if(audio&&options.requireAudio){const levels=await runMedia(process.env.FFMPEG_PATH?.trim()||"ffmpeg",["-hide_banner","-v","info","-threads","1","-filter_threads","1","-i",filename,"-vn","-af","volumedetect","-f","null","-"]);audioMeanDb=Number(levels.stderr.match(/mean_volume: ([-\d.]+) dB/)?.[1]??-100);audioPeakDb=Number(levels.stderr.match(/max_volume: ([-\d.]+) dB/)?.[1]??-100);}
   if(options.requireAudibleNarration&&(audioPeakDb===null||audioPeakDb < -55))throw new Error("La narración solicitada está ausente o es inaudible.");
   // Intentional dark scenes are project data. Partial dark intervals remain evidence to review.
   if (blackSeconds >= duration * 0.95 && options.allowDarkVideo !== true) throw new Error("El render está prácticamente negro. Revisa los recursos visuales antes de exportar.");
