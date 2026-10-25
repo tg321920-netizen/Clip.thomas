@@ -1,5 +1,7 @@
 # Reacciones compartidas del chat: ajuste solicitado por el propietario
 
+**Actualización posterior:** la captura del VOD, la integración automática de chat, los nuevos borradores privados y los límites del monitor preparado están documentados en [WESTCOL_CAPTURE_RESCUE_20261025.md](WESTCOL_CAPTURE_RESCUE_20261025.md). Los estados de esta página corresponden a la sesión anterior.
+
 El propietario autorizó preparar más de cinco clips y pidió tomar en cuenta que varias personas repitan lo mismo. El número debe depender de momentos diferentes disponibles; un coro prolongado no se convierte en varias copias del mismo corte.
 
 ## Cambio comprobado
