@@ -27,6 +27,8 @@
     "worker:agent": "node scripts/agent-worker.mjs",
     "worker:agent:once": "node scripts/agent-worker.mjs --once",
     "agent:e2e": "node scripts/editor-agent-e2e.mjs",
+    "languages:e2e": "node scripts/editor-language-e2e.mjs",
+    "capabilities:e2e": "node scripts/editor-capabilities-e2e.mjs",
     "worker:news": "node scripts/news-worker.mjs",
     "worker:news:once": "node scripts/news-worker.mjs --once",
     "news:e2e": "node scripts/news-e2e.mjs",

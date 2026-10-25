@@ -2,18 +2,18 @@
 
 ## Estado comprobado en el entorno de desarrollo
 
-Revisión del 24 de octubre de 2026, hora de Costa Rica. Estos resultados corresponden a la rama de integración; no acreditan que la web de producción tenga esta versión desplegada.
+Revisión del 24 de octubre de 2026, hora de Costa Rica. Estos resultados corresponden a la rama de integración; no acreditan que la web de producción tenga esta versión desplegada. La aceptación posterior con resultados por idioma, evaluación de recortes y presupuesto está en [CAPABILITIES_ACCEPTANCE_20261024.md](CAPABILITIES_ACCEPTANCE_20261024.md).
 
 | Área | Capacidad existente | Límite de lo comprobado |
 | --- | --- | --- |
 | Videos existentes | Importación/subida, transcripción, candidatos, corte, subtítulos y render MP4 | Hay pruebas con fuentes propias y MP4 reales; cada URL externa depende del acceso y herramientas de su plataforma |
 | Selección editorial | Cinco perfiles: gaming, podcast, entretenimiento, noticias y motivación; transcripción, contexto, energía de audio y fotogramas acotados | Son señales para ordenar candidatos, no reconocimiento infalible de eventos ni garantía de viralidad |
-| Cantidad y duración | Solicitar cinco clips de unos 30 s y ajustar cantidad/duración | La fuente debe contener suficientes ideas completas; no se garantiza siempre entregar cinco buenos clips |
+| Cantidad y duración | Solicitar cinco clips de unos 30 s y ajustar cantidad/duración; entrega menor con aviso | Se produjeron cinco MP4 por idioma con heurísticas; la revisión encontró ventanas que mezclan temas |
 | Agente Z.ai | Credencial configurada; respuesta HTTP 200 y decisión JSON válida | La ejecución completa con el modelo real se detuvo por saturación del proveedor; todavía falta evaluar su selección editorial |
 | MP4 y encuadre | H.264/AAC, formato vertical, subtítulos y audio original | El flujo del agente se probó a 360×640 para reducir recursos; no acredita seguimiento del protagonista, cambio fiable de hablante o pantalla dividida automática |
 | Archivo privado | Subida y recuperación real de un MP4 de prueba en R2, integridad, rangos y Conservar | La retención de 30 días se aplica a clips sin protección; no equivale a copia de seguridad de todos los originales y trabajos |
 | Directos | Adaptadores y trabajos segmentados para Kick, Twitch y YouTube | No se acredita el flujo completo de las tres plataformas ni captura continua de cuatro horas/24×7 |
-| Revisión móvil | Pruebas de interfaz de agente y biblioteca con Chromium en tamaño móvil | No sustituye una prueba en un Android físico ni acredita que la versión esté desplegada |
+| Revisión móvil | Reproducción y descarga reales de dos muestras locales/R2 con Chromium a 393×851 | Se corrigió la caída por códec ausente. No sustituye un Android físico ni acredita despliegue |
 | Publicación | Preparación y revisión con conectores existentes | Publicación real desactivada; no se publicó contenido |
 
 ### Qué contenido conviene probar primero
@@ -26,7 +26,7 @@ Revisión del 24 de octubre de 2026, hora de Costa Rica. Estos resultados corres
 
 ### Idiomas
 
-Whisper puede detectar el idioma original o recibir un idioma configurado. Español e inglés son objetivos apropiados para la primera evaluación; todavía no hay una comparación editorial bilingüe documentada que garantice la calidad ante jerga, acentos, música o varias voces. El soporte multilingüe del modelo no significa que todos sus idiomas estén probados en esta aplicación.
+Whisper detectó español e inglés con inferencia real sobre dos voces sintéticas propias. El error de palabras fue 30,4 %/11,0 % con tiny y 10,8 %/2,1 % con base para español/inglés, respectivamente. No se midieron habla humana, jerga, acentos, música o varias voces; no son porcentajes universales de precisión. El soporte multilingüe del modelo no significa que todos sus idiomas estén probados en esta aplicación.
 
 Los subtítulos del clipping siguen la transcripción y se conserva el audio original. Traducir subtítulos, producir versiones en otro idioma y doblar el audio son funciones diferentes: este flujo no las tiene verificadas. La presencia de TTS para contenido original no demuestra doblaje de clips.
 

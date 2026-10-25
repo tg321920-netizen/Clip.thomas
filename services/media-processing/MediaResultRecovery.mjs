@@ -5,9 +5,13 @@ import { validateMp4 } from "./MediaValidationService.mjs";
 export async function recoverMediaResult(project, job, { validate = validateMp4 } = {}) {
   if (!project?.clips?.length || project.clips.some(clip => clip.status !== "READY" || !clip.render?.relativePath)) return null;
   if (job.type === "MEDIA_CLIPS" && project.clips.length !== Number(job.payload?.count ?? 3)) {
-    // A validated subset is a checkpoint, not a completed delivery. Return
-    // control to BestClipsService so it can reuse it and render the remainder.
-    return null;
+    // A render interruption must remain resumable. A deliberately smaller
+    // editorial delivery is complete only after every selected clip was saved.
+    const origin = project.clipsOrigin;
+    if (origin?.deliveryComplete !== true || origin.requestedCount !== Number(job.payload?.count ?? 3)
+      || origin.selectedCount !== project.clips.length || origin.selectedCount >= origin.requestedCount
+      || project.analysis?.candidates?.length !== project.clips.length
+      || !project.clips.every(clip => project.analysis.candidates.some(candidate => candidate.id === clip.candidateId))) return null;
   }
 
   const clips = [];
@@ -42,6 +46,9 @@ export async function recoverMediaResult(project, job, { validate = validateMp4 
     projectId: job.projectId,
     title: `Clips de ${project.source.originalName}`,
     clips,
+    requestedCount: Number(job.payload?.count ?? 3),
+    actualCount: clips.length,
+    warnings: project.clipsOrigin?.selectionWarning ? [project.clipsOrigin.selectionWarning] : [],
     validation: { valid: true, checkedAt: new Date().toISOString(), clipCount: clips.length },
   };
   return { ...clips[0], projectId: job.projectId, title: project.source.originalName, cuts: project.autoEditEvidence };

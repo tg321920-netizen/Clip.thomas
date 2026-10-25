@@ -54,10 +54,12 @@ export class BestClipsService {
       if (selected.some(s => Math.min(s.endTime, candidate.endTime) > Math.max(s.startTime, candidate.startTime))) continue;
       selected.push(candidate); if (selected.length === count) break;
     }
-    if (selected.length !== count) throw new WaitingResourceError(`Se encontraron ${selected.length} momentos completos y diferentes dentro de esos límites. Reduce la cantidad o ajusta la duración.`);
+    if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
+    const selectionWarning = selected.length < count
+      ? `Se prepararon ${selected.length} de ${count} clips solicitados: no se encontraron más momentos completos y diferentes dentro de esos límites.` : null;
     const reusable = matching ? previous.clips || [] : [];
     const now = new Date().toISOString();
-    const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey } };
+    const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
     // Persist the editorial decision before encoding so a restart does not call the model again.
     await replaceProjectFile(outputProjectId, project);
     const results = [];
@@ -77,14 +79,15 @@ export class BestClipsService {
       project.clips.push(clip);
       await replaceProjectFile(outputProjectId, project);
       results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
-      await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / count * 55));
+      await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
     }
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
-    await replaceProjectFile(outputProjectId, project);
     const posters = path.join(getStorageRoot(), "uploads", outputProjectId); await mkdir(posters, { recursive: true });
     try { await copyFile(resolveStoragePath(path.posix.join("uploads", original.id, "poster.jpg")), path.join(posters, "poster.jpg")); }
     catch { await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-i", resolveStoragePath(results[0].relativePath), "-frames:v", "1", path.join(posters, "poster.jpg")]); }
-    return { projectId: outputProjectId, clips: results, validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
+    project.clipsOrigin.deliveryComplete = true;
+    await replaceProjectFile(outputProjectId, project);
+    return { projectId: outputProjectId, clips: results, requestedCount: count, actualCount: results.length, warnings: selectionWarning ? [selectionWarning] : [], validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
   }
 }
 

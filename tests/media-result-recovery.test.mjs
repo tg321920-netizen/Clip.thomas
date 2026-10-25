@@ -51,3 +51,19 @@ test("revalidation failure is propagated and cannot become READY", async () => {
   await assert.rejects(recoverMediaResult(fixture(), job, { validate: async () => { throw new Error("archivo ausente"); } }), /archivo ausente/);
   await assert.rejects(recoverMediaResult(fixture(), job, { validate: async () => ({ valid: false }) }), /validación técnica/);
 });
+
+test("a deliberately smaller completed delivery is recoverable and explains the shortfall", async () => {
+  const project = fixture(2);
+  project.clips.forEach((clip, index) => { clip.candidateId = `candidate-${index}`; });
+  project.analysis = { candidates: project.clips.map(clip => ({ id: clip.candidateId })) };
+  project.clipsOrigin = { deliveryComplete: true, requestedCount: 3, selectedCount: 2, selectionWarning: "Se prepararon 2 de 3 clips solicitados." };
+  const result = await recoverMediaResult(project, job, { validate: async () => ({ valid: true }) });
+  assert.equal(result.actualCount, 2);
+  assert.equal(result.requestedCount, 3);
+  assert.match(result.warnings[0], /2 de 3/);
+  project.clipsOrigin.deliveryComplete = false;
+  assert.equal(await recoverMediaResult(project, job), null);
+  project.clipsOrigin.deliveryComplete = true;
+  project.analysis.candidates.pop();
+  assert.equal(await recoverMediaResult(project, job), null);
+});

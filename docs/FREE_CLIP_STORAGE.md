@@ -10,7 +10,7 @@ La integración añade una biblioteca de MP4 finales en Cloudflare R2 Standard. 
 - Las versiones sin protección vencen a los 30 días. El worker revisa el vencimiento como máximo una vez por hora. «Conservar» se persiste antes de confirmarse en la interfaz y excluye esa versión de la limpieza. Quitar la protección inicia un nuevo plazo de 30 días.
 - Un bloqueo remoto con escrituras condicionales serializa archivado, protección y borrado entre procesos. Registros inválidos o un listado incompleto detienen la limpieza. Los marcadores de versiones vencidas evitan que un reintento vuelva a subirlas.
 - La limpieza remota sólo elimina objetos e índices identificados dentro de `clipforge-managed/v1/`. No borra otros objetos del bucket, archivos locales originales ni publicaciones. Los temporales de renders siguen usando `MediaTempCleanup` y su lista explícita de nombres permitidos tras READY.
-- No se habilita todavía una captura continua de cuatro horas ni la selección con el modelo visual. La limitación de 1 GB por ingesta y la captura por ventanas deben resolverse antes de prometer ese flujo completo.
+- No se acredita todavía una captura continua de cuatro horas ni la calidad de selección del modelo visual, aunque su integración ya existe. La limitación de 1 GB por ingesta y la captura por ventanas deben resolverse antes de prometer ese flujo completo.
 
 ## Configurar R2
 

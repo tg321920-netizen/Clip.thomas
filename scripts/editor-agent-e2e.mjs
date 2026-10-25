@@ -12,6 +12,7 @@ import { loadProjectFile, replaceProjectFile } from '../lib/project-files.mjs';
 import { BestClipsService } from '../services/analysis/BestClipsService.mjs';
 import { validateMp4 } from '../services/media-processing/MediaValidationService.mjs';
 import { AIUsageService } from '../services/usage/AIUsageService.mjs';
+import { recoverMediaResult } from '../services/media-processing/MediaResultRecovery.mjs';
 
 function run(command,args,env=process.env){return new Promise((resolve,reject)=>{const child=spawn(command,args,{env,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(`E2E child exited ${code}`)));});}
 const fixtureRoot=path.resolve('artifacts/live-clipping');
@@ -60,19 +61,23 @@ const address=server.address();
 Object.assign(process.env,{CLIPFORGE_AGENT_PROVIDER:'zai',CLIPFORGE_ZAI_API_KEY:'fixture-local-only',CLIPFORGE_ZAI_MODEL:'local-editor-fixture',CLIPFORGE_EDITOR_MODEL:'local-editor-fixture',CLIPFORGE_ZAI_BASE_URL:`http://127.0.0.1:${address.port}/v1`,CLIPFORGE_EDITOR_VISION:'true',NO_PROXY:[process.env.NO_PROXY,'127.0.0.1','localhost'].filter(Boolean).join(',')});
 try{
   const runtime=new AgentRuntimeService();
-  const task=await runtime.createTask({objective:'Prepare two clips for review with clips.prepare and report the job.',autonomyMode:'SEMI_AUTO',projectId,context:{clipping:{count:2,duration:30,rightsConfirmed:true,contentProfile:'PODCAST'}}});
+  const task=await runtime.createTask({objective:'Prepare up to five clips for review with clips.prepare and report the job.',autonomyMode:'SEMI_AUTO',projectId,context:{clipping:{count:5,duration:30,rightsConfirmed:true,contentProfile:'PODCAST'}}});
   const execution=await runtime.runExecution(task.id);assert.equal(execution.status,'COMPLETED');
   const queued=execution.results.find(item=>item.tool==='clips.prepare').result;assert.equal(queued.status,'QUEUED');
   await run(process.execPath,['scripts/media-worker.mjs','--once']);
   const job=await new JobStore().get(queued.jobId);assert.equal(job.status,'READY',job.error);assert.equal(job.result.clips.length,2);
+  assert.equal(job.result.requestedCount,5);assert.equal(job.result.actualCount,2);assert.match(job.result.warnings[0],/2 de 5/);
   for(const clip of job.result.clips){await validateMp4(path.join(process.env.CLIPFORGE_STORAGE_DIR,clip.relativePath),{width:360,height:640,duration:clip.duration,requireAudio:true});assert.ok(clip.aiAssessment.visualFrameTimes.length>0);}
   assert.equal(decisions,2);assert.equal(rankings,2);assert.equal(visualRequests,1);
   const saved=await loadProjectFile(job.projectId);const first=saved.clips[0];const firstHash=createHash('sha256').update(await readFile(path.join(process.env.CLIPFORGE_STORAGE_DIR,first.render.relativePath))).digest('hex');
   await replaceProjectFile(job.projectId,{...saved,clips:[first]});
+  assert.equal(await recoverMediaResult({...saved,clips:[first]},job),null,'an interrupted subset cannot be delivered as a completed shortfall');
   const resumed=await new BestClipsService().render(job.projectId,job.payload);
   assert.equal(resumed.clips.length,2);assert.equal(rankings,2,'restart must reuse the persisted editorial decision');
+  const recovered=await recoverMediaResult(await loadProjectFile(job.projectId),job);
+  assert.equal(recovered.actualCount,2);assert.match(recovered.warnings[0],/2 de 5/);
   assert.equal(createHash('sha256').update(await readFile(path.join(process.env.CLIPFORGE_STORAGE_DIR,first.render.relativePath))).digest('hex'),firstHash);
   const usage=await new AIUsageService().list({projectId});assert.equal(usage.length,4);
-  const evidence={passed:true,jobId:job.id,projectId:job.projectId,clips:resumed.clips.map(c=>({duration:c.duration,relativePath:c.relativePath,validation:c.validation})),realLocalHttp:true,realWorker:true,realFfmpeg:true,whisperProvider:original.transcript.provider,rankings,visualRequests,totalFrames,reusedDecisionAfterInterruption:true,publishing:'OFF',scope:'Model decisions are explicit local fixtures. No external AI call or model-quality claim.'};
+  const evidence={passed:true,jobId:job.id,projectId:job.projectId,requestedCount:5,actualCount:2,warnings:resumed.warnings,completedShortfallRecovery:true,clips:resumed.clips.map(c=>({duration:c.duration,relativePath:c.relativePath,validation:c.validation})),realLocalHttp:true,realWorker:true,realFfmpeg:true,whisperProvider:original.transcript.provider,rankings,visualRequests,totalFrames,reusedDecisionAfterInterruption:true,publishing:'OFF',scope:'Model decisions are explicit local fixtures. No external AI call or model-quality claim.'};
   await writeFile(path.join(directory,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
 }finally{await new Promise(resolve=>server.close(resolve));}

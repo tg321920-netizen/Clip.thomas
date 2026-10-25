@@ -145,8 +145,8 @@ export function RecentProjects() {
 
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-500">
                 <span>{formatDuration(project.source.durationSeconds)}</span>
-                <span>{project.source.codec.toUpperCase()}</span>
-                <span>{project.source.aspectRatio}</span>
+                <span>{typeof project.source.codec === "string" && project.source.codec ? project.source.codec.toUpperCase() : "Códec pendiente"}</span>
+                <span>{project.source.aspectRatio || "Formato pendiente"}</span>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
