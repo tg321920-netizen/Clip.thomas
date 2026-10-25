@@ -48,12 +48,7 @@ export class BestClipsService {
         throw error;
       }
     }
-    const selected = [];
-    for (const candidate of candidates) {
-      if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
-      if (selected.some(s => Math.min(s.endTime, candidate.endTime) > Math.max(s.startTime, candidate.startTime))) continue;
-      selected.push(candidate); if (selected.length === count) break;
-    }
+    const selected = selectIndependentClips(candidates, { count, minDuration, maxDuration });
     if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
     const selectionWarning = selected.length < count
       ? `Se prepararon ${selected.length} de ${count} clips solicitados: no se encontraron más momentos completos y diferentes dentro de esos límites.` : null;
@@ -89,5 +84,19 @@ export class BestClipsService {
     await replaceProjectFile(outputProjectId, project);
     return { projectId: outputProjectId, clips: results, requestedCount: count, actualCount: results.length, warnings: selectionWarning ? [selectionWarning] : [], validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
   }
+}
+
+/** Preserve the rescue branch's finite, non-overlapping candidate validation. */
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration }) {
+  const selected = [];
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
+        !Number.isFinite(candidate?.duration) || candidate.endTime <= candidate.startTime ||
+        candidate.duration < minDuration || candidate.duration > maxDuration) continue;
+    if (selected.some(existing => Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime))) continue;
+    selected.push(candidate);
+    if (selected.length >= count) break;
+  }
+  return selected;
 }
 
