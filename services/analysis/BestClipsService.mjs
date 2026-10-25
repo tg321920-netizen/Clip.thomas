@@ -27,15 +27,13 @@ export class BestClipsService {
     const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
     const selectionTranscript = { ...original.transcript, segments: sentenceSegments(original.transcript.segments) };
     const candidates = await new TranscriptCandidateProvider().analyze({ transcript: selectionTranscript, audioEnergyWindows, options: { minDuration, maxDuration, targetDuration, maxCandidates: 50, requireCompleteSentences: true } });
-    const selected = [];
-    for (const candidate of candidates) {
-      if (candidate.duration < minDuration || candidate.duration > maxDuration) continue;
-      if (selected.some(s => Math.min(s.endTime, candidate.endTime) > Math.max(s.startTime, candidate.startTime))) continue;
-      selected.push(candidate); if (selected.length === count) break;
-    }
-    if (selected.length !== count) throw new WaitingResourceError(`Se encontraron ${selected.length} momentos completos y diferentes dentro de esos límites. Reduce la cantidad o ajusta la duración.`);
+    const selected = selectIndependentClips(candidates, { count, minDuration, maxDuration });
+    if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
+    const shortfallReason = selected.length < count
+      ? `Se solicitaron ${count} clips, pero solo hay ${selected.length} candidatos completos y sin solapamiento. No se añadieron cortes repetidos ni incompletos.`
+      : null;
     const now = new Date().toISOString();
-    const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false } };
+    const project = { id: outputProjectId, createdAt: now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: "transcript-heuristic-v2", requestedCount: count, deliveredCount: selected.length, shortfallReason, completedAt: now }, clips: [], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false } };
     const results = [];
     for (const candidate of selected) {
       const clip = { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
@@ -43,14 +41,34 @@ export class BestClipsService {
       clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
       project.clips.push(clip);
       results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
-      await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / count * 55));
+      await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
     }
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
     await replaceProjectFile(outputProjectId, project);
     const posters = path.join(getStorageRoot(), "uploads", outputProjectId); await mkdir(posters, { recursive: true });
     try { await copyFile(resolveStoragePath(path.posix.join("uploads", original.id, "poster.jpg")), path.join(posters, "poster.jpg")); }
     catch { await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-i", resolveStoragePath(results[0].relativePath), "-frames:v", "1", path.join(posters, "poster.jpg")]); }
-    return { projectId: outputProjectId, clips: results, validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
+    return { projectId: outputProjectId, clips: results, validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), requestedCount: count, clipCount: results.length, partial: results.length < count, shortfallReason, distinct: true }, title: `Clips de ${original.source.originalName}` };
   }
 }
 
+
+/**
+ * Conservative selection: keep only complete transcript candidates that do not
+ * overlap. It is valid to deliver fewer clips than requested; quantity is not
+ * evidence of editorial quality. Human review remains required.
+ */
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration }) {
+  const selected = [];
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
+        !Number.isFinite(candidate?.duration) || candidate.endTime <= candidate.startTime ||
+        candidate.duration < minDuration || candidate.duration > maxDuration) continue;
+    if (selected.some(existing =>
+      Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime)
+    )) continue;
+    selected.push(candidate);
+    if (selected.length >= count) break;
+  }
+  return selected;
+}
