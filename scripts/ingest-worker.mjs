@@ -36,8 +36,8 @@ while (!stopping) {
   try {
     const result = await ingestUrlJob(job, {
       signal: controller.signal,
-      onProgress: async (progress, stage) => {
-        await store.updateProgress(job.id, progress, stage);
+      onProgress: async (progress, stage, details) => {
+        await store.updateProgress(job.id, progress, stage, details);
         await store.heartbeat(job.id);
       },
     });

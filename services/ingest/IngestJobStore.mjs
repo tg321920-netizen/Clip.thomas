@@ -38,7 +38,11 @@ export class IngestJobStore {
   async create(input = {}) {
     await this.#ensureDirectory();
     const now = new Date().toISOString();
-    const id = randomUUID();
+    const id = input.id || randomUUID();
+    assertId(id);
+    // Internal monitor retries use a deterministic id, even after a crash
+    // between enqueue and checkpoint. The HTTP endpoint never accepts an id.
+    if (input.id) { const existing = await this.get(id); if (existing) return existing; }
     const mode = String(input.mode || "IMPORT").trim().toUpperCase();
     if (!new Set(["IMPORT", "STREAM"]).has(mode)) {
       throw new Error("Unsupported ingest mode.");
@@ -50,10 +54,15 @@ export class IngestJobStore {
       type: "INGEST_URL",
       source: {
         autoClip: mode === "STREAM" && input.autoClip === true,
+        ...(input.analysisProvider === "heuristic" ? { analysisProvider: "heuristic" } : {}),
         ...(mode === "STREAM" ? normalizeLiveClipSettings(input) : {}),
         clipDuration: Math.max(15, Math.min(90, Number(input.clipDuration) || 30)),
         contentProfile: String(input.contentProfile || "GAMING"),
         subtitles: input.subtitles !== false,
+        onlyChatReactions: input.onlyChatReactions === true,
+        excludedReactionPeaks: (Array.isArray(input.excludedReactionPeaks) ? input.excludedReactionPeaks : []).filter(t => Number.isFinite(Date.parse(t))).slice(-256),
+        captureChat: input.captureChat !== false,
+        startTimeSeconds: mode === "STREAM" ? normalizeStartTime(input.startTimeSeconds) : 0,
         kind: mode === "STREAM" ? "STREAM_URL" : "URL",
         url: String(input.url || ""),
         mode,
@@ -166,12 +175,13 @@ export class IngestJobStore {
     return updated;
   }
 
-  async updateProgress(id, progress, stage = null) {
+  async updateProgress(id, progress, stage = null, details = null) {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return job;
     return this.update(id, {
       progress: Math.max(0, Math.min(99, Math.round(Number(progress) || 0))),
       ...(stage ? { stage: String(stage) } : {}),
+      ...(details ? { details: { chatStatus: String(details.chatStatus || "UNAVAILABLE"), acceptedMessages: Math.max(0, Math.round(Number(details.acceptedMessages) || 0)) } } : {}),
     });
   }
 
@@ -354,6 +364,12 @@ export class IngestJobStore {
     assertId(id);
     return path.join(this.#jobsDir(), `${id}.lock`);
   }
+}
+
+export function normalizeStartTime(value) {
+  const seconds = value === undefined ? 0 : Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400) throw new Error("El comienzo de la captura debe estar entre 0 y 86400 segundos.");
+  return seconds;
 }
 
 function normalizeCaptureSeconds(value) {

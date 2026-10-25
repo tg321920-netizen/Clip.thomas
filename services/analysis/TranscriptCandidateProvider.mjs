@@ -23,7 +23,7 @@ export class TranscriptCandidateProvider {
       throw new Error("A completed transcript with valid segments is required.");
     }
 
-    const windows = buildWindows(segments, config);
+    const windows = buildWindows(segments, config).filter(window => !config.continuityBreaks.some(time => window.startTime < time && window.endTime > time));
     const scored = windows
       .map((window) => {
         window.audioEnergy = windowEnergy(window,audioEnergyWindows);
@@ -41,6 +41,7 @@ export class TranscriptCandidateProvider {
           analysisMethod: this.name,
         };
       })
+      .filter(candidate => !config.requireChatReaction || ((candidate.chatEvidence?.isCollectiveReaction || candidate.chatEvidence?.isPeak) && candidate.chatEvidence.score >= 25))
       .sort(
         (a, b) =>
           b.viralScore - a.viralScore ||
@@ -81,6 +82,8 @@ export function normalizeAnalysisOptions(options = {}) {
     ),
     contentProfile: ["GAMING", "PODCAST", "ENTERTAINMENT", "NEWS", "MOTIVATION"].includes(options.contentProfile) ? options.contentProfile : "PODCAST",
     requireCompleteSentences: options.requireCompleteSentences === true,
+    requireChatReaction: options.requireChatReaction === true,
+    continuityBreaks: (Array.isArray(options.continuityBreaks) ? options.continuityBreaks : []).filter(t => Number.isFinite(t) && t >= 0),
   };
 }
 

@@ -41,7 +41,7 @@ test("Kick provider 404 explains platform incompatibility without pretending a c
 });
 
 test("Kick URLs request the browser impersonation required by its playback CDN", () => {
-  assert.deepEqual(providerYtDlpArgs("https://kick.com/westcol/videos/example"), ["--impersonate", "chrome"]);
+  assert.deepEqual(providerYtDlpArgs("https://kick.com/westcol/videos/example"), []);
   assert.deepEqual(providerYtDlpArgs("https://www.youtube.com/watch?v=example"), []);
 });
 

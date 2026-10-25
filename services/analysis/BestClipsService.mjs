@@ -22,6 +22,7 @@ export class BestClipsService {
   async render(outputProjectId, input, onStage = async () => {}) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
+    if (original.source?.captureValidation?.valid === false) throw new WaitingResourceError("La fuente fue rechazada durante la verificación de captura. Revisa el intervalo y vuelve a capturarlo.");
     const count = Number(input.count ?? 3), minDuration = Number(input.minDuration ?? 30), maxDuration = Number(input.maxDuration ?? 60), targetDuration = Number(input.targetDuration ?? ((minDuration + maxDuration) / 2));
     if (!Number.isSafeInteger(count) || count < 1 || count > 10 || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 15 || minDuration > 180 || maxDuration < minDuration || maxDuration > 180) throw new Error("Elige entre uno y diez clips de 15 a 180 segundos.");
     if (!Number.isFinite(targetDuration) || targetDuration < minDuration || targetDuration > maxDuration) throw new Error("La duración aproximada debe estar dentro del intervalo permitido.");
@@ -32,7 +33,7 @@ export class BestClipsService {
     await onStage("PROCESSING", "SELECTING", 35);
     const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
     const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
-      transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
+      transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], continuityBreaks: original.source.capture?.continuityBreaks || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
     const previous = await loadProjectFile(outputProjectId);
     const matching = previous?.clipsOrigin?.checkpointKey === checkpointKey;
     let candidates = matching ? previous.analysis?.candidates : null;
@@ -43,13 +44,17 @@ export class BestClipsService {
       try {
         candidates = await provider.analyze({ project: original, transcript: selectionTranscript, audioEnergyWindows, sceneChanges,
           chatActivityWindows: original.liveObservation?.chatActivityWindows || [],
-          options: { minDuration, maxDuration, targetDuration, maxCandidates: provider.strictSelection ? Math.min(12, count + 3) : 50, requireCompleteSentences: true, contentProfile: input.contentProfile } });
+          options: { minDuration, maxDuration, targetDuration, maxCandidates: provider.strictSelection ? Math.min(12, count + 3) : 50, requireCompleteSentences: true, contentProfile: input.contentProfile,
+            requireChatReaction: input.onlyChatReactions === true, continuityBreaks: original.source.capture?.continuityBreaks || [] } });
       } catch (error) {
         if (provider.name !== "transcript-heuristic-v2" && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);
         throw error;
       }
     }
-    const selected = selectIndependentClips(candidates, { count, minDuration, maxDuration });
+    const selected = selectIndependentClips(candidates, { count, minDuration, maxDuration,
+      onlyChatReactions: input.onlyChatReactions === true, excludedReactionPeaks: input.excludedReactionPeaks || [],
+      sourceEnd: Math.min(original.source.durationSeconds, original.source.audioDurationSeconds || Infinity, original.source.videoDurationSeconds || Infinity),
+      continuityBreaks: original.source.capture?.continuityBreaks || [] });
     if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
     const selectionWarning = selected.length < count
       ? `Se prepararon ${selected.length} de ${count} clips solicitados: no se encontraron más momentos completos y diferentes dentro de esos límites.` : null;
@@ -88,13 +93,24 @@ export class BestClipsService {
 }
 
 /** Preserve the rescue branch's finite, non-overlapping candidate validation. */
-export function selectIndependentClips(candidates, { count, minDuration, maxDuration }) {
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, excludedReactionPeaks = [], continuityBreaks = [] }) {
   const selected = [];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
         !Number.isFinite(candidate?.duration) || candidate.endTime <= candidate.startTime ||
-        candidate.duration < minDuration || candidate.duration > maxDuration) continue;
+        candidate.duration < minDuration || candidate.duration > maxDuration ||
+        Math.abs(candidate.duration - (candidate.endTime - candidate.startTime)) > 0.05 ||
+        candidate.startTime < 0 || candidate.endTime > sourceEnd ||
+        continuityBreaks.some(t => Number.isFinite(t) && candidate.startTime < t && candidate.endTime > t)) continue;
     if (selected.some(existing => Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime))) continue;
+    const reaction = candidate.chatEvidence;
+    if (onlyChatReactions && (!(reaction?.isCollectiveReaction || reaction?.isPeak) || !Number.isFinite(reaction?.score) || reaction.score < 25)) continue;
+    if (excludedReactionPeaks.some(time => Number.isFinite(Date.parse(time)) && Math.abs(Date.parse(time) - Date.parse(reaction?.peakUtc)) < 30000)) continue;
+    if ((reaction?.isCollectiveReaction || reaction?.isPeak) && selected.some(existing => {
+      const other = existing.chatEvidence;
+      return (other?.isCollectiveReaction || other?.isPeak) && Number.isFinite(Date.parse(reaction.peakUtc)) &&
+        Math.abs(Date.parse(other.peakUtc) - Date.parse(reaction.peakUtc)) < 30000;
+    })) continue;
     selected.push(candidate);
     if (selected.length >= count) break;
   }
