@@ -1,5 +1,12 @@
 # Reanudar ClipForge: clips auténticos de Westcol
 
+**Nueva prioridad del propietario:** utilizar el editor manual y las sugerencias
+locales desde Android sin esperar al monitor. Leer primero
+[STABLE_ANDROID_DELIVERY_20261026.md](STABLE_ANDROID_DELIVERY_20261026.md).
+La versión estable candidata está probada localmente, con un MP4 real en R2;
+su despliegue accesible sigue bloqueado por acceso administrativo al hosting.
+Conservar los avances de chat `c5c5958` y editor `761e291`; no repetir sus renders.
+
 Checkpoint comprobado el 26 de octubre de 2026, UTC. Este documento permite
 continuar el trabajo; no programa el reinicio de Codex cuando vuelve su cuota.
 

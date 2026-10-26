@@ -14,6 +14,13 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+La prioridad vigente es el editor utilizable desde Android: subida, selección
+manual de intervalo, render real y descarga, sin depender de IA o LIVE. Leer
+`docs/STABLE_ANDROID_DELIVERY_20261026.md`. El perfil estable mantiene el clipping
+manual y local; las funciones experimentales se conservan en el perfil de
+desarrollo, sin despliegue automático. No presentar la versión local como ya
+disponible en el dominio público.
+
 ClipForge Studio mantiene cuatro entradas visibles: importar URL autorizada, subir y editar, extraer clips y crear historias de 6–12 escenas. Durante este rescate, `PUBLISHING = OFF`. Se conservan los conectores y el agente, pero no se activan publicaciones ni demostraciones audiovisuales al arrancar.
 
 Flujo objetivo:
