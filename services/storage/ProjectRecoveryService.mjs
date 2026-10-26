@@ -25,12 +25,18 @@ export function projectRecoveryEnabled(env=process.env){
 // No credentials, signed query strings, process leases or publishing jobs enter
 // a checkpoint. The LIVE archive cannot restore ordinary upload/render queues.
 function sanitized(value,key=''){
-  if(/token|secret|password|authorization|cookie|headers|access.?key/i.test(key))return undefined;
+  if(/token|secret|password|authorization|cookie|headers|access.?key|api.?key|credential/i.test(key))return undefined;
   if(Array.isArray(value))return value.map(v=>sanitized(v));
   if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value)
     .map(([k,v])=>[k,sanitized(v,k)]).filter(([,v])=>v!==undefined));
   if(typeof value==='string'&&/^https?:\/\//i.test(value)){
-    try{const url=new URL(value);url.username='';url.password='';url.search='';url.hash='';return url.toString();}catch{return undefined;}
+    try{
+      const url=new URL(value),videoId=['youtube.com','www.youtube.com','m.youtube.com'].includes(url.hostname)?url.searchParams.get('v'):null;
+      url.username='';url.password='';url.search='';url.hash='';
+      // The public YouTube video identifier is provenance, not a signature.
+      if(/^[a-zA-Z0-9_-]{11}$/.test(videoId||''))url.searchParams.set('v',videoId);
+      return url.toString();
+    }catch{return undefined;}
   }
   return value;
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,symlink,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {randomUUID,createHash} from 'node:crypto';
@@ -64,6 +64,7 @@ test('malformed manifests, traversal and symlinks cannot write outside the proje
   await f.cloud.putJson(prefix+'project-recovery/'+f.id+'.json',saved);
   const target=path.join(f.root,'symlinks'),outside=path.join(f.root,'outside');await mkdir(target);await mkdir(outside);await symlink(outside,path.join(target,'uploads'));
   await assert.rejects(f.service.restore(f.id,{targetRoot:target}),e=>e.code==='RECOVERY_INVALID');
+  assert.deepEqual(await readdir(outside),[]);
 });
 test('existing source/output objects are reused and storage outage does not replace the last good checkpoint',async t=>{
   const f=await fixture(t),sourceHash=createHash('sha256').update('Original immutable unit bytes').digest('hex');
@@ -120,4 +121,28 @@ test('backup and ordinary storage archival share one MP4 object even when the ba
   const before=f.cloud.objects.size,saved=await f.service.library.archive(f.project,f.project.clips[0],{root:f.root});
   assert.equal(saved.keep,true);assert.equal(f.cloud.objects.size,before);assert.equal(f.cloud.uploads,1);
   const sha=snapshot.outputs[0].sha256;assert.equal((await f.cloud.list(prefix+'sources/sha256/'+sha)).length,0);
+});
+test('quota exhaustion preserves the last checkpoint and local original without deleting any media',async t=>{
+  const f=await fixture(t),previous=await f.service.backup(f.id);
+  f.project.clips[0].title='Pending edit while storage is full';await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  f.cloud.objects.set('unrelated-preserved-object',{body:Buffer.from('unit'),size:8_000_000_000,etag:'"full"',metadata:{}});
+  await assert.rejects(f.service.backup(f.id),e=>e.code==='STORAGE_QUOTA');
+  assert.equal((await f.cloud.getJson(prefix+'project-recovery/'+f.id+'.json')).value.snapshotHash,previous.snapshotHash);
+  assert.equal(await readFile(path.join(f.root,f.source),'utf8'),'Original immutable unit bytes');assert.equal(f.cloud.deletes.length,0);
+});
+test('a mislabeled publishing job cannot enter an editing checkpoint or be re-enqueued by restore',async t=>{
+  const f=await fixture(t);
+  await writeFile(path.join(f.root,'jobs',f.job.id+'.json'),JSON.stringify({...f.job,type:'PUBLISH_POST'}));
+  await assert.rejects(f.service.backup(f.id),e=>e.code==='RECOVERY_INVALID');
+  assert.equal((await f.cloud.list(prefix+'project-recovery/')).length,0);assert.equal(f.cloud.uploads,0);
+});
+test('backup redacts API keys and signed URLs without losing a public YouTube source identifier',async t=>{
+  const f=await fixture(t);
+  f.project.source.originUrl='https://www.youtube.com/watch?v=abcdefghijk&token=private-signature';
+  f.project.source.api_key='unit-secret-key';
+  await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  const checkpoint=await f.service.backup(f.id),snapshot=(await f.cloud.getJson(checkpoint.snapshotKey)).value;
+  assert.equal(snapshot.project.source.originUrl,'https://www.youtube.com/watch?v=abcdefghijk');
+  assert.equal(snapshot.project.source.api_key,undefined);
+  assert.equal(JSON.stringify(snapshot).includes('private-signature'),false);
 });

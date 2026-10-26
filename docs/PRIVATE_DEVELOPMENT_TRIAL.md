@@ -25,8 +25,8 @@ desarrollo, sin actualizar los dos sitios existentes ni habilitar auto deploy.
 No ejecutar todavía esa operación.
 
 El plan gratuito ofrece recursos limitados y filesystem efímero. Se propone
-720×1280 por defecto, un codificador/hilo y respaldo separado. El propietario
-puede elegir 1080p; su viabilidad requiere medir memoria y CPU del servidor
+720×1280 por defecto, un codificador/hilo y respaldo separado. Un perfil local equivalente completó un recorte 720p de 30 s en 304,908 s desde encolar hasta READY
+y 274,406 MiB, sin el worker R2. El propietario puede elegir 1080p; su viabilidad requiere medir memoria y CPU del servidor
 completo. HIGH/1080p no está certificado para 512 MiB. Una medición local de RSS
 individual no sustituye esa verificación. No se promete trabajo permanente.
 

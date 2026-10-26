@@ -55,3 +55,39 @@ el mismo hash y ejecutaron cero codificadores adicionales.
 Evidencia: artifacts/render-profiles/real-20261026-b/evidence.json.
 La antigua medición de 0,1 CPU/512 MiB no completó 30 s antes de 180 s.
 Falta medir el hosting real; no se promete tiempo ni 1080p permanente allí.
+
+
+## Perfil limitado nuevo, Node 22 / 512 MiB / 0,1 CPU
+
+La prueba del perfil EFFICIENT terminó: 30 s de vídeo real, 720×1280,
+H.264/AAC, un hilo, **304,908 s desde encolar hasta READY (cola, render y validación)**, pico **274,406 MiB**.
+El arranque y recorrido completos tardaron 354,397 s. Decodificación íntegra,
+audio original, acceso sin sesión rechazado con 401, OOMKilled=false y salida 0.
+Los límites se comprobaron en cgroup: memory.max=536870912 y cpu.max=10000 100000.
+
+Se usó la imagen local clipforge-node22-media-profile:20261026, Node 22.23.4,
+FFmpeg/FFprobe 5.1.9. La aplicación/ingesta/scheduler/render compartieron el límite
+con el proceso medidor. El worker R2 estuvo desactivado: no se certifica la memoria
+del ensayo completo con respaldos, Whisper o varios renders a la vez. No es una
+prueba del servicio Render ni modela su suspensión por inactividad.
+
+Script: scripts/limited-runtime-profile.mjs. Solo se ejecuta en un contenedor con
+la aplicación de solo lectura en /app, resultados escribibles en /profile y la
+fuente real montada en /profile/storage/uploads/8e56073f-ae3a-4c2c-a73d-b11085dbd1b6/source.mp4.
+Requiere --rights-confirmed y CLIPFORGE_PROFILE_SOURCE_SHA256. Configurar
+CLIPFORGE_STORAGE_DIR=/profile/storage, dimensiones 720×1280 y un hilo.
+El script rechaza una ejecución que no tenga exactamente 512 MiB y 0,1 CPU.
+No pasar secretos, no conectar la red y mantener publicación/LIVE/agente apagados.
+
+Evidencia preservada fuera del checkout para evitar incluir medios de QA en el
+build: /workspace/clipforge-tools/hosting-profile/efficient-512-20261026/{result,container-state}.json.
+Fuente SHA a53c477728d61778ceda6b7b33a7c86b6ab479333d6d9abc09e4e96e7dd08783.
+MP4 técnico SHA de23cf255ae30e2051ee0eee15b10492e65efdf6cf2e62caa10e39a7a2db9d15.
+No se archivó como clip nuevo del streamer.
+
+Conclusión práctica: un recorte aislado puede completarse con estos recursos,
+pero aproximadamente cinco minutos por treinta segundos no equivalen a edición
+rápida, captura permanente o análisis de cuatro horas en tiempo real. 1080p se
+conserva como opción; no se certificó bajo este límite. Falta medir el hosting
+real y el conjunto con R2. Para uso permanente sin contratar servicios, un
+servidor propio ya disponible sigue siendo una alternativa que requiere prueba.
