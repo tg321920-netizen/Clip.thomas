@@ -61,7 +61,13 @@ async function fileProof(root,relative){
   if(before.size!==after.size||before.mtimeMs!==after.mtimeMs||before.ino!==after.ino)fail('RECOVERY_SOURCE_CHANGED','El archivo cambió durante el respaldo; se conserva para reintentar.');
   return {relativePath:relative,sha256:sha.digest('hex'),md5:md5.digest('base64'),sizeBytes:before.size};
 }
-function allowedSource(id,relative){return typeof relative==='string'&&new RegExp('^uploads/'+id+'/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\\.(mp4|mov|webm)$','i').test(relative);}
+function allowedSource(id,relative){
+  if(typeof relative!=='string')return false;
+  const shared=relative.match(/^uploads\/([a-f0-9-]{36})\/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\.(mp4|mov|webm)$/i);
+  // BestClipsService deliberately references the original project's upload.
+  // Preserve that relation; copying it into another upload would waste space.
+  return Boolean(shared&&isProjectId(shared[1]))||relative==='auto-videos/'+id+'/edited-clean.mp4';
+}
 function snapshotOf(project,jobs){
   const value=sanitized(project);
   delete value.recovery;
@@ -139,6 +145,13 @@ export class ProjectRecoveryService{
         const expected='clips/'+id+'/'+clip.id+'/render.mp4';
         if(clip.render.relativePath!==expected)fail('RECOVERY_INVALID','El resultado no corresponde a este proyecto.');
         const proof=await fileProof(this.root,expected);
+        // Archive eligible final renders through the existing library FIRST.
+        // Otherwise the backup and storage workers would upload the same MP4
+        // under two keys when they race after a render finishes.
+        if(clip.render.archiveEligible===true){
+          const saved=await this.library.archive(project,clip,{root:this.root});
+          if(saved?.status!=='READY')fail('STORAGE_NOT_FOUND','No se confirmó el archivo privado del resultado.');
+        }
         const archiveId=digest(id+'/'+clip.id+'/'+proof.sha256);
         const archiveKey=PREFIX+'media/'+archiveId+'.mp4',archived=await this.cloud.head(archiveKey);
         proof.key=PREFIX+'sources/sha256/'+proof.sha256;
@@ -218,7 +231,11 @@ export class ProjectRecoveryService{
           try{for await(const chunk of object.body){bytes+=chunk.length;if(bytes>file.sizeBytes)fail('STORAGE_INTEGRITY','El tamaño del respaldo cambió.');hash.update(chunk);await handle.writeFile(chunk);}}
           finally{await handle.close();object.body.destroy?.();}
           if(bytes!==file.sizeBytes||hash.digest('hex')!==file.sha256)fail('STORAGE_INTEGRITY','El SHA-256 del archivo recuperado no coincide.');
-          if(file!==m.source)await this.validate(target,{requireAudio:snapshot.project.source.hasAudio!==false,duration:snapshot.project.clips.find(c=>c.id===file.clipId).duration});
+          if(file!==m.source){
+            const clip=snapshot.project.clips.find(c=>c.id===file.clipId);
+            await this.validate(target,{requireAudio:snapshot.project.source.hasAudio!==false,duration:clip.duration,
+              width:clip.render?.width,height:clip.render?.height,allowDarkVideo:snapshot.project.allowDarkVideo});
+          }
         }
         const project=snapshot.project;
         for(const key of ['transcript','analysis'])if(['PROCESSING','QUEUED'].includes(project[key]?.status)){

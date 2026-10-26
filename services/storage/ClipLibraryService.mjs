@@ -4,7 +4,7 @@ import path from 'node:path';
 import { chatEvidenceForWindow } from '../analysis/ChatActivityService.mjs';
 import { clipMediaOrigin } from '../../lib/clip-media-origin.mjs';
 import { isProjectId } from '../../lib/project-id.mjs';
-import { getStorageRoot, resolveStoragePath } from '../../lib/storage-paths.mjs';
+import { getStorageRoot } from '../../lib/storage-paths.mjs';
 import { signPrivateClip } from './SignedMediaAccess.mjs';
 import { parseByteRange } from '../../lib/http-range.mjs';
 import { R2ObjectStore, readR2Config, storageError } from './R2ObjectStore.mjs';
@@ -105,13 +105,15 @@ export class ClipLibraryService {
     if (!Number.isFinite(used) || used + extra > this.maxBytes) throw storageError('STORAGE_QUOTA', 'Se alcanzó el límite de almacenamiento. El clip local se conserva; los protegidos no se borran.');
     return used;
   }
-  async archive(project, clip) {
+  async archive(project, clip, {root=getStorageRoot()} = {}) {
     // Opt in only new RenderService results. Never adopt/delete legacy files.
     if (clip?.render?.archiveEligible !== true || clip.status !== 'READY' || clip.render.validation?.valid !== true) return null;
     const clipPath = clip.render.relativePath === `clips/${project?.id}/${clip.id}/render.mp4`;
     const storyPath = project?.story && clip.candidateId === 'story' && clip.render.relativePath === `stories/${project.id}/render.mp4` && project.source?.relativePath === clip.render.relativePath;
     if (!isProjectId(project?.id) || !isProjectId(clip.id) || !(clipPath || storyPath)) throw storageError('STORAGE_INVALID', 'La ruta del clip no corresponde a su proyecto.');
-    const file = await open(resolveStoragePath(clip.render.relativePath), 'r');
+    // The exact project/clip path was validated above. A recovery worker can
+    // archive another explicit storage root without mutating process.env.
+    const file = await open(/* turbopackIgnore: true */ path.join(path.resolve(root),clip.render.relativePath), 'r');
     try {
       const info = await file.stat();
       if (!info.isFile() || info.size <= 0 || info.size > MAX_FILE) throw storageError('STORAGE_LIMIT', 'El clip supera el límite de 512 MB para guardarlo en la nube.');

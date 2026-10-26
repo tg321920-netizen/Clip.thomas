@@ -24,6 +24,10 @@ consultar la fecha de la última copia confirmada.
 Se guardan original, proyecto, transcripción/análisis incluidos en sus metadatos,
 intervalos, cola de render/transcripción/análisis y MP4 completos. Se excluyen
 credenciales, leases, operaciones de publicación, cabeceras y queries firmadas.
+Los proyectos derivados conservan la referencia a la subida compartida; también
+se admite la fuente editada auto-videos/UUID/edited-clean.mp4. El proyecto bruto
+del que proviene una edición se respalda por separado, sin inventar los cortes
+que ya no estén en esa fuente editada.
 Los originales idénticos se direccionan por SHA-256 y se reutilizan también los
 originales LIVE/VOD existentes. Los MP4 ya archivados se referencian sin copiarlos.
 La limpieza de clips protege resultados referenciados por checkpoints actuales.
@@ -37,7 +41,9 @@ trabajos incompletos en WAITING_RESOURCE. Se reanudan explícitamente desde el e
 No restaura locks ni inicia modelos, publicación o captura. Un MP4 completo se
 reutiliza; un render interrumpido no se considera terminado.
 
-El límite es 1 GiB por archivo original, 2 GiB por recuperación y el cupo global
+El límite es 1 GiB por archivo original, 1,9 MB por checkpoint de metadatos,
+100 clips y 100 trabajos por proyecto, 200 proyectos en el listado de recuperación,
+2 GiB por recuperación y el cupo global
 R2 de 8 GB. La restauración exige espacio para staging y 128 MiB de margen.
 No es un backup de todo el servidor ni de transferencias todavía incompletas.
 No incluye cachés de audio ni miniaturas. Se conserva la reproducción del original.
@@ -58,3 +64,13 @@ Intervalo 50–80 s y resultado READY conservados. Cero renders y cero escritura
 de medios: solo metadatos R2. La repetición reutilizó el mismo checkpoint.
 Es pérdida de filesystem simulada con R2 real; no un reinicio de Render ni una
 prueba en Android físico.
+
+Se verificó además el proyecto derivado 9bb28252-c86b-5325-a4e8-51d534020277:
+original compartido de 153416535 bytes y MP4 de 17786881 bytes restaurados con
+hashes idénticos, sin renders ni nuevas escrituras de medios R2. Evidencia:
+artifacts/project-recovery/derived-real-20261026/evidence.json.
+
+El respaldo archiva primero mediante ClipLibraryService los renders elegibles:
+el worker de biblioteca reutiliza luego ese mismo objeto, sin una segunda copia.
+La prueba con un directorio de almacenamiento alternativo reutilizó un MP4 real
+protegido en R2 sin escrituras nuevas: root-archive-proof.json en esos artefactos.

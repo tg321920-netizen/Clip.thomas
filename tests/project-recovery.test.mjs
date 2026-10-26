@@ -102,3 +102,22 @@ test('an unchanged snapshot repairs a missing cloud output instead of reporting 
   const repaired=await f.service.backup(f.id);assert.equal(repaired.reused,false);
   assert.ok(await f.cloud.head(key));assert.equal(f.cloud.deletes.length,0);
 });
+test('derived clip projects restore a shared original at its existing path without duplicating cloud media',async t=>{
+  const f=await fixture(t);await f.service.backup(f.id);const before=(await f.cloud.list(prefix+'sources/')).length,derivedId=randomUUID();
+  const derived={...f.project,id:derivedId,source:{...f.project.source,projectId:derivedId},clips:[],clipsOrigin:{projectId:f.id}};
+  await writeFile(path.join(f.root,'projects',derivedId+'.json'),JSON.stringify(derived));
+  const snapshot=await f.service.backup(derivedId);assert.equal(snapshot.source.relativePath,f.source);
+  assert.equal((await f.cloud.list(prefix+'sources/')).length,before);
+  const target=path.join(f.root,'derived-restored');await f.service.restore(derivedId,{targetRoot:target});
+  assert.equal(await readFile(path.join(target,f.source),'utf8'),'Original immutable unit bytes');
+  assert.equal(JSON.parse(await readFile(path.join(target,'projects',derivedId+'.json'),'utf8')).clipsOrigin.projectId,f.id);
+});
+test('backup and ordinary storage archival share one MP4 object even when the backup worker arrives first',async t=>{
+  const f=await fixture(t);f.project.clips[0].render.archiveEligible=true;
+  await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  const snapshot=await f.service.backup(f.id);
+  assert.match(snapshot.outputs[0].key,/\/media\/[a-f0-9]{64}\.mp4$/);
+  const before=f.cloud.objects.size,saved=await f.service.library.archive(f.project,f.project.clips[0],{root:f.root});
+  assert.equal(saved.keep,true);assert.equal(f.cloud.objects.size,before);assert.equal(f.cloud.uploads,1);
+  const sha=snapshot.outputs[0].sha256;assert.equal((await f.cloud.list(prefix+'sources/sha256/'+sha)).length,0);
+});
