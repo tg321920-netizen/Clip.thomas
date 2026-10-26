@@ -72,6 +72,10 @@ de cuatro horas en tiempo real, suspensión de Render ni servicio permanente.
 - Chromium 393×851 con tacto: sin mocks de API; Android físico pendiente.
 - Sin nuevas llamadas a Z.ai/modelos pagos. El 429 anterior no se reevaluó.
 - Sin consultas repetidas a Render ni cambios de producción/publicación.
+- CI del código confirmada en f25e138eb279ad6180125fadb30a55c21e8eed1c:
+  [ClipForge CI aprobada](https://github.com/tg321920-netizen/Clip.thomas/actions/runs/40393982710).
+  Un commit posterior solo enlaza este checkpoint desde AGENTS y el handoff;
+  no cambia el código probado ni requiere repetir pruebas audiovisuales.
 
 Evidencias preservadas:
 

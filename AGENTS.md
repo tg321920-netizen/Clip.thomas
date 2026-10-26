@@ -14,6 +14,12 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Para los avances posteriores a la candidata 761e291, leer primero
+`docs/CONTINUE_WITHOUT_RENDER_20261026.md`: recuperación R2, controles móviles,
+perfil económico y prueba Node 22/512 MiB/0,1 CPU ya comprobados. No repetir sus
+renders para mostrar progreso ni confundir la integración de desarrollo con un
+despliegue público. Se conserva la rama operativa indicada arriba.
+
 La prioridad vigente es el editor utilizable desde Android: subida, selección
 manual de intervalo, render real y descarga, sin depender de IA o LIVE. Leer
 `docs/STABLE_ANDROID_DELIVERY_20261026.md`. El perfil estable mantiene el clipping

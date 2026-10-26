@@ -1,5 +1,11 @@
 # Reanudar ClipForge: clips auténticos de Westcol
 
+**Avance posterior de edición/recuperación:** leer primero
+[CONTINUE_WITHOUT_RENDER_20261026.md](CONTINUE_WITHOUT_RENDER_20261026.md).
+Conserva siete commits sobre 774de6e, con código hasta 40cd791 y aceptación
+local/R2/Node 22 comprobada. No volver a generar esas pruebas. La candidata
+761e291 y el monitor apagado permanecen intactos; no hay despliegue nuevo.
+
 **Nueva prioridad del propietario:** utilizar el editor manual y las sugerencias
 locales desde Android sin esperar al monitor. Leer primero
 [STABLE_ANDROID_DELIVERY_20261026.md](STABLE_ANDROID_DELIVERY_20261026.md).
