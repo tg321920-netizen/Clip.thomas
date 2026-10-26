@@ -17,6 +17,7 @@ export function RecentProjects() {
   const [loaded, setLoaded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [previewId,setPreviewId] = useState<string|null>(null);
 
   useEffect(() => {
@@ -29,8 +30,9 @@ export function RecentProjects() {
         const payload = (await response.json()) as { projects?: ProjectRecord[] };
         if (!active) return;
         setProjects(payload.projects ?? []);
+        setLoadError("");
       } catch {
-        // The upload experience remains usable even if history cannot load.
+        if (active) setLoadError("No se pudo consultar el historial. Tus proyectos no se han borrado; vuelve a abrir la página cuando regrese la conexión.");
       } finally {
         if (active) setLoaded(true);
       }
@@ -101,11 +103,12 @@ export function RecentProjects() {
     }
   }
 
-  if (!loaded || projects.length === 0) return <ProjectRecoveryPanel projects={projects}/>;
+  if (!loaded || projects.length === 0) return <><ProjectRecoveryPanel projects={projects}/>{loadError&&<p role="status" className="py-3 text-sm text-amber-200">{loadError}</p>}</>;
 
   return (
     <section className="border-t border-white/10 py-8">
       <ProjectRecoveryPanel projects={projects}/>
+      {loadError&&<p role="status" className="py-3 text-sm text-amber-200">{loadError}</p>}
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">

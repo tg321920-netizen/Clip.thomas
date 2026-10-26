@@ -75,7 +75,7 @@ export async function POST(
 
     return NextResponse.json({
       subtitles,
-      renderInvalidated: true,
+      renderInvalidated: (await getClip(ids.projectId, ids.clipId))?.status !== "READY",
     });
   } catch (error) {
     return subtitleError(error);
@@ -105,7 +105,7 @@ export async function PATCH(
 
     return NextResponse.json({
       subtitles,
-      renderInvalidated: true,
+      renderInvalidated: (await getClip(ids.projectId, ids.clipId))?.status !== "READY",
     });
   } catch (error) {
     return subtitleError(error);

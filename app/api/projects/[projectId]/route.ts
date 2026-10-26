@@ -38,7 +38,7 @@ export async function DELETE(
             ? error.message
             : "No se pudo eliminar el proyecto.",
       },
-      { status: 500 },
+      { status: error && typeof error === 'object' && 'code' in error && error.code === 'PROJECT_IN_USE' ? 409 : 500 },
     );
   }
 }

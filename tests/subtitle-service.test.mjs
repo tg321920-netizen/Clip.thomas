@@ -142,6 +142,9 @@ test("subtitle edits serialize with project updates and reject an active render"
   assert.equal(project.annotation, 'Preserve this newer update');
   assert.equal(project.clips[0].subtitles.cues.length, 1);
   assert.equal(project.clips[0].editRevision, 1);
+  const unchanged = await updateSubtitleTrack(id, clipId, { cues: project.clips[0].subtitles.cues });
+  assert.equal(unchanged.updatedAt, project.clips[0].subtitles.updatedAt);
+  assert.equal((await loadProjectFile(id)).clips[0].editRevision, 1);
   await updateProjectFile(id, p => { p.clips[0].status = 'RENDERING'; });
   await assert.rejects(updateSubtitleTrack(id, clipId, { enabled: false }), { code: 'SUBTITLE_BUSY' });
   assert.equal((await loadProjectFile(id)).clips[0].status, 'RENDERING');

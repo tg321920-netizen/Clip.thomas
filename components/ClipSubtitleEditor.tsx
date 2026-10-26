@@ -13,6 +13,7 @@ import type {
 type SubtitleResponse = {
   subtitles?: SubtitleTrack | null;
   job?: { id: string };
+  renderInvalidated?: boolean;
   error?: string;
 };
 
@@ -103,7 +104,7 @@ export function ClipSubtitleEditor({
       }
 
       setTrack(payload.subtitles);
-      await onRenderNeeded();
+      if (payload.renderInvalidated !== false) await onRenderNeeded();
     } catch (actionError) {
       setError(
         actionError instanceof Error

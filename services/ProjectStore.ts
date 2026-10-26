@@ -1,5 +1,7 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assertProjectDeletionSafe } from "@/lib/project-deletion-guard.mjs";
+import { withLocalStateLock } from "@/lib/atomic-local-state.mjs";
 import { getStorageRoot } from "@/services/StorageService";
 import type { UploadedVideo } from "@/types/video";
 import type { TranscriptRecord } from "@/types/transcription";
@@ -60,6 +62,8 @@ export class ProjectStore {
   async delete(projectId: string): Promise<boolean> {
     const root = getStorageRoot();
     const metadataPath = path.join(getProjectsDir(), `${projectId}.json`);
+    return withLocalStateLock(metadataPath, async () => {
+    await assertProjectDeletionSafe(projectId, { root });
     let existed = true;
 
     try {
@@ -77,6 +81,7 @@ export class ProjectStore {
     ]);
 
     return existed;
+    });
   }
 }
 

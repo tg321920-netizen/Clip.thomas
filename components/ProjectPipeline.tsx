@@ -250,7 +250,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
     }
   }
 
-  async function queueClip(candidateId: string) {
+  async function queueClip(candidateId: string, clipId?: string) {
     const action = `clip:${candidateId}`;
     setLoadingAction(action);
     setError(null);
@@ -261,7 +261,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(clipId ? { retryClipId: clipId } : {
           candidateId,
           framingMode: "FILL",
           quality: "BALANCED",
@@ -586,7 +586,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                           key={`${clip.id}:${clip.updatedAt}`}
                           projectId={projectId}
                           clip={clip}
-                          onRenderNeeded={() => queueClip(candidate.id)}
+                          onRenderNeeded={() => queueClip(candidate.id, clip.id)}
                         />
                       </div>
                     ) : (

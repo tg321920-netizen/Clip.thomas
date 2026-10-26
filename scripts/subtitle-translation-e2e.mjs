@@ -16,6 +16,7 @@ import {ProjectRecoveryService} from '../services/storage/ProjectRecoveryService
 if(!process.argv.includes('--rights-confirmed')||!process.env.CLIPFORGE_TEST_VIDEO||!process.env.CLIPFORGE_TEST_SOURCE_URL)throw new Error('An actual authorized video, source URL and --rights-confirmed are required.');
 if(!process.env.CLIPFORGE_TRANSLATION_PYTHON||!process.env.CLIPFORGE_TRANSLATION_MODEL_PATH)throw new Error('Configure the offline translation runtime first.');
 const cloud=process.env.CLIPFORGE_RUN_R2_TESTS==='true';
+const review=process.argv.includes('--review-corrections');
 const output=path.resolve('artifacts/subtitle-translation');await mkdir(output,{recursive:true});
 const resume=process.argv.find(arg=>arg.startsWith('--resume-run='))?.slice('--resume-run='.length);
 const run=resume?path.resolve(resume):await mkdtemp(path.join(output,'run-'));
@@ -62,17 +63,45 @@ try{
   job=await waitUntil(async()=>{const value=await(await context.request.get(`${base}/api/media/jobs/${queued.job.id}`)).json();const j=value.job;if(['FAILED','WAITING_RESOURCE','CANCELLED'].includes(j?.status))throw Object.assign(new Error('REAL_AUTO_PIPELINE_FAILED'),{jobState:j.status,jobError:j.error});return j?.status==='READY'?j:false;},360);
   }
   stage='PLAYBACK_SRT_DOWNLOAD';process.env.CLIPFORGE_STORAGE_DIR=storage;
-  const project=await loadProjectFile(job.projectId);assert.equal(project.transcript.language,'en');assert.ok(project.clips.length>0&&project.clips.length<=5);
+  let project=await loadProjectFile(job.projectId);assert.equal(project.transcript.language,'en');assert.ok(project.clips.length>0&&project.clips.length<=5);
   assert.equal(await hashFile(path.join(storage,project.source.relativePath)),sourceHash);
+  if(review){
+    stage='MOBILE_EDITORIAL_CORRECTIONS';
+    assert.match(project.source.originalName,/kennedy-rice-480-630/);
+    page=await context.newPage();await page.goto(base);await page.getByRole('button',{name:'Abrir proyecto',exact:true}).first().click();
+    await page.locator(`#manual-clip-${project.id}`).waitFor();
+    await page.getByRole('button',{name:'CREAR MEJORES CLIPS',exact:true}).click();await page.getByText('Revisar candidatos y ajustar cortes',{exact:true}).click();
+    const corrections=[
+      {'cue-0003':'Y su oportunidad de cooperación pacífica puede','cue-0004':'no volver a presentarse.','cue-0010':'¿Por qué juega Rice contra Texas?'},
+      {'cue-0005':'Hemos sentido temblar el suelo y el','cue-0006':'aire estremecerse por las pruebas de un','cue-0007':'cohete impulsor Saturno C-1.'},
+    ];
+    const ids=project.clips.map(c=>c.id);
+    const blockedDeletion=await context.request.delete(`${base}/api/projects/${project.transcript.projectId}`);
+    assert.equal(blockedDeletion.status(),409);assert.equal(await hashFile(path.join(storage,project.source.relativePath)),sourceHash);
+    for(let index=0;index<project.clips.length;index++){
+      const clip=project.clips[index];
+      if(clip.subtitles.translation.manuallyEdited&&Object.entries(corrections[index]).every(([id,text])=>clip.subtitles.cues.find(c=>c.id===id)?.text===text))continue;
+      const article=page.locator('article').filter({has:page.getByRole('heading',{name:clip.title,exact:true})});
+      await article.getByText('Comparar con el texto inglés original',{exact:true}).click();
+      for(const [cue,text] of Object.entries(corrections[index]))await article.getByLabel(`Texto del subtítulo ${cue}`,{exact:true}).fill(text);
+      const saved=page.waitForResponse(r=>r.url().endsWith(`/clips/${clip.id}/subtitles`)&&r.request().method()==='PATCH');
+      await article.getByRole('button',{name:'Guardar y volver a renderizar',exact:true}).click();assert.equal((await saved).status(),200);
+      await waitUntil(async()=>{const p=await loadProjectFile(project.id);assert.deepEqual(p.clips.map(c=>c.id),ids);const current=p.clips.find(c=>c.id===clip.id);if(current.status==='FAILED')throw new Error('CORRECTION_RENDER_FAILED');return current.status==='READY'&&current.render.sha256!==clip.render.sha256;},180);
+    }
+    project=await loadProjectFile(project.id);assert.ok(project.clips.every(c=>c.subtitles.machineCues&&c.subtitles.translation.manuallyEdited));
+    assert.ok(project.clips.every(c=>c.edit.framingMode==='CONVERSATION'));
+    const manual=page.getByRole('region',{name:'Recorte manual'});await context.setOffline(true);await manual.getByText('No se pudo actualizar el recorte.',{exact:false}).waitFor({timeout:15000});await context.setOffline(false);await manual.getByText('No se pudo actualizar el recorte.',{exact:false}).waitFor({state:'hidden',timeout:15000});
+    await page.close();evidence={...evidence,editorialCorrections:'CODEX_TEST_REVIEW_NOT_AUTOMATIC',sameClipIdsAndFraming:true,originalMachineTextPreserved:true,offlineUiRecovery:true};
+  }
   const clips=[];
   page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(base);
   const history=page.getByRole('region',{name:'Mis videos'});await history.getByRole('link',{name:'Descargar MP4',exact:true}).first().waitFor({timeout:30000});
   for(const clip of project.clips){
     assert.equal(clip.status,'READY');assert.equal(clip.subtitles.language,'es');assert.equal(clip.subtitles.translation.provider,'ctranslate2-cpu-local');assert.equal(clip.subtitles.translation.audioReplaced,false);assert.equal(clip.editorialReview.analysisKind,'LOCAL_HEURISTIC');
     const player=history.locator(`video[src="${clip.render.sourceUrl}"]`);await player.evaluate(async video=>{video.muted=true;await video.play();});await page.waitForFunction(url=>{const v=[...document.querySelectorAll('video')].find(v=>v.getAttribute('src')===url);return v&&v.currentTime>0.2&&v.videoWidth===720&&v.videoHeight===1280;},clip.render.sourceUrl);await player.evaluate(v=>v.pause());
-    const file=path.join(run,clip.id+'.mp4');const downloaded=await context.request.get(base+clip.render.sourceUrl+'?download=1');assert.equal(downloaded.status(),200);await writeFile(file,await downloaded.body());assert.equal(await hashFile(file),clip.render.sha256);
+    const file=path.join(run,clip.id+(review?'-corrected':'')+'.mp4');const downloaded=await context.request.get(base+clip.render.sourceUrl+'?download=1');assert.equal(downloaded.status(),200);await writeFile(file,await downloaded.body());assert.equal(await hashFile(file),clip.render.sha256);
     const validation=await validateMp4(file,{width:720,height:1280,duration:clip.duration,requireAudio:true});
-    const srtResponse=await context.request.get(`${base}/api/projects/${project.id}/clips/${clip.id}/subtitles?format=srt`);assert.equal(srtResponse.status(),200);const srt=await srtResponse.text();assert.match(srt,/\d\d:\d\d:\d\d,\d\d\d -->/);await writeFile(path.join(run,clip.id+'.srt'),srt);
+    const srtResponse=await context.request.get(`${base}/api/projects/${project.id}/clips/${clip.id}/subtitles?format=srt`);assert.equal(srtResponse.status(),200);const srt=await srtResponse.text();assert.match(srt,/\d\d:\d\d:\d\d,\d\d\d -->/);await writeFile(path.join(run,clip.id+(review?'-corrected':'')+'.srt'),srt);
     clips.push({clipId:clip.id,startTime:clip.startTime,endTime:clip.endTime,originalStart:evidence.sourceOffset+clip.startTime,originalEnd:evidence.sourceOffset+clip.endTime,sha256:clip.render.sha256,validation,file,srt:path.join(run,clip.id+'.srt'),subtitles:clip.subtitles,reason:clip.reason});
   }
   assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:path.join(run,'mobile.png'),fullPage:false});
@@ -82,10 +111,10 @@ try{
     for(const clip of project.clips){const saved=await retryStorage(()=>library.archive(project,clip));await retryStorage(()=>library.setKeep(saved.id,true));archives.push({id:saved.id,sha256:saved.sha256});
       const access=await(await context.request.post(`${base}/api/media/library/${saved.id}/access`)).json();assert.ok(access.url);const renewed=await context.request.get(new URL(access.url,base).href);assert.equal(renewed.status(),200);const copy=path.join(run,saved.id+'-private.mp4');await writeFile(copy,await renewed.body());assert.equal(await hashFile(copy),clip.render.sha256);
     }
-    const recovery=new ProjectRecoveryService({root:storage});const checkpoint=await retryStorage(()=>recovery.backup(project.id));const restoredRoot=path.join(run,'restored');await recovery.restore(project.id,{targetRoot:restoredRoot});
+    const recovery=new ProjectRecoveryService({root:storage});const checkpoint=await retryStorage(()=>recovery.backup(project.id));const restoredRoot=path.join(run,review?'restored-corrected':'restored');await recovery.restore(project.id,{targetRoot:restoredRoot});
     process.env.CLIPFORGE_STORAGE_DIR=restoredRoot;const restored=await loadProjectFile(project.id);assert.equal(await hashFile(path.join(restoredRoot,restored.source.relativePath)),sourceHash);assert.deepEqual(restored.clips.map(c=>c.subtitles),project.clips.map(c=>c.subtitles));
     evidence={...evidence,archives,checkpoint,restoredRoot,privateDownloadHashesMatch:true,translatedProjectRestored:true};
   }
-  await writeFile(path.join(run,'evidence.json'),JSON.stringify({...evidence,passed:true},null,2));console.log(JSON.stringify({passed:true,run,actualCount:clips.length,requestedCount:5,privateR2:cloud,realModel:true,publicDeployment:false,physicalAndroid:false}));
+  await writeFile(path.join(run,review?'corrected-evidence.json':'evidence.json'),JSON.stringify({...evidence,passed:true},null,2));console.log(JSON.stringify({passed:true,run,actualCount:clips.length,requestedCount:5,privateR2:cloud,realModel:true,manualCorrections:review,publicDeployment:false,physicalAndroid:false}));
 }catch(error){await writeFile(path.join(run,`failure-${Date.now()}.json`),JSON.stringify({passed:false,stage,code:error.code||error.name,jobState:error.jobState||null,jobError:error.jobError||null},null,2));console.error(JSON.stringify({passed:false,stage,code:error.code||error.name,run}));process.exitCode=1;}
 finally{await browser?.close();server.kill('SIGTERM');await Promise.race([once(server,'exit'),delay(12000)]);await log.close();}

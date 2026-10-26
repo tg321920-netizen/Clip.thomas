@@ -119,6 +119,11 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
   if (!Array.isArray(cues) || cues.length === 0) {
     throw new Error("Subtitle track must contain at least one valid cue.");
   }
+  const cueSignature = items => JSON.stringify(items.map(c => ({ id: c.id, startTime: c.startTime, endTime: c.endTime, text: c.text,
+    words: c.words?.map(w => ({ startTime: w.startTime, endTime: w.endTime, text: w.text })) })));
+  if (style === clip.subtitles.style && enabled === (clip.subtitles.enabled !== false) && cueSignature(cues) === cueSignature(clip.subtitles.cues)) {
+    return clip.subtitles;
+  }
 
   clip.subtitles = {
     ...clip.subtitles,
