@@ -61,6 +61,8 @@ export class IngestJobStore {
         contentProfile: String(input.contentProfile || "GAMING"),
         subtitles: input.subtitles !== false,
         onlyChatReactions: input.onlyChatReactions === true,
+        preferChatReactions: input.preferChatReactions === true,
+        chatReactionLagSeconds: Math.max(0, Math.min(30, Number(input.chatReactionLagSeconds) || 0)),
         excludedReactionPeaks: (Array.isArray(input.excludedReactionPeaks) ? input.excludedReactionPeaks : []).filter(t => Number.isFinite(Date.parse(t))).slice(-256),
         captureChat: input.captureChat !== false,
         startTimeSeconds: mode === "STREAM" ? normalizeStartTime(input.startTimeSeconds) : 0,
@@ -91,14 +93,14 @@ export class IngestJobStore {
     return job;
   }
 
-  async enqueueLiveWindow({ id, sessionId, coreIndex, segmentIndices, priority = 0, ownershipStartUtc, ownershipEndUtc, onlyChatReactions = true }) {
+  async enqueueLiveWindow({ id, sessionId, coreIndex, segmentIndices, priority = 0, ownershipStartUtc, ownershipEndUtc, onlyChatReactions = true, preferChatReactions = false, chatReactionLagSeconds = 0 }) {
     assertId(id); assertId(sessionId);
     if (!Number.isSafeInteger(coreIndex) || coreIndex < 0 || !Array.isArray(segmentIndices) || segmentIndices.length > 3 ||
       !segmentIndices.every(i => Number.isSafeInteger(i) && i >= 0)) throw new Error("Ventana de captura no válida.");
     const existing = await this.get(id); if (existing) return existing;
     const now = new Date().toISOString();
     const job = { id, projectId: id, type: "INGEST_LIVE_WINDOW", priority: Math.max(0, Math.min(100, Number(priority) || 0)),
-      source: { mode: "WINDOW", sessionId, coreIndex, segmentIndices, ownershipStartUtc, ownershipEndUtc, onlyChatReactions,
+      source: { mode: "WINDOW", sessionId, coreIndex, segmentIndices, ownershipStartUtc, ownershipEndUtc, onlyChatReactions, preferChatReactions, chatReactionLagSeconds,
         clipCount: 10, clipDuration: 30, contentProfile: "ENTERTAINMENT", subtitles: false, analysisProvider: "heuristic", autoClip: true, clipMode: "CAPTURE" },
       status: "QUEUED", stage: "QUEUED", progress: 0, attempts: 0, maxAttempts: this.maxAttempts, error: null, result: null,
       createdAt: now, updatedAt: now, startedAt: null, completedAt: null, nextAttemptAt: now };

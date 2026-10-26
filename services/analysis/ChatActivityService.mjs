@@ -108,12 +108,13 @@ export function buildChatActivityWindows(bins, { sourceStartUtc, binSeconds = 10
   });
 }
 
-export function chatEvidenceForWindow(candidate, windows) {
+export function chatEvidenceForWindow(candidate, windows, { reactionLagSeconds = 0 } = {}) {
+  if (!Number.isFinite(reactionLagSeconds) || reactionLagSeconds < 0 || reactionLagSeconds > 30) throw new Error("El margen de reacción debe estar entre 0 y 30 segundos.");
   const relevant = (Array.isArray(windows) ? windows : []).filter(w =>
     Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start &&
     Number.isFinite(w.score) && w.score >= 0 && w.score <= 100 &&
     Number.isSafeInteger(w.messages) && w.messages >= 0 &&
-    Math.min(candidate.endTime, w.end) - Math.max(candidate.startTime, w.start) >= 1);
+    Math.min(candidate.endTime, w.end - reactionLagSeconds) - Math.max(candidate.startTime, w.start - reactionLagSeconds) >= 1);
   if (!relevant.length) return null;
   const strongest = relevant.reduce((best, row) => row.score > best.score ||
     (row.score === best.score && row.messages > best.messages) ? row : best);
@@ -122,7 +123,8 @@ export function chatEvidenceForWindow(candidate, windows) {
     baselineMessages: strongest.baselineMessages, ratio: strongest.ratio, isPeak: strongest.isPeak === true,
     isCollectiveReaction: strongest.isCollectiveReaction === true, repetitionEvidence: strongest.repetitionEvidence,
     observedBuckets: relevant.length, clockUncertaintySeconds: strongest.clockUncertaintySeconds,
-    limitations: strongest.limitations, method: strongest.method, reviewRequired: true };
+    reactionLagSeconds, eventSearchStart: strongest.start - reactionLagSeconds, eventSearchEnd: strongest.end - reactionLagSeconds,
+    limitations: [...(strongest.limitations || []), ...(reactionLagSeconds > 0 ? ["REACTION_LAG_ASSUMED_NOT_MEASURED"] : [])], method: strongest.method, reviewRequired: true };
 }
 
 function median(values) {

@@ -149,3 +149,25 @@ test('a new real session measures shared reactions from 20 and 31 participants w
   assert.ok(reactions.every(w => w.repetitionEvidence.scope === 'SAME_TEXT_MEASURED' && w.score > 0));
   assert.equal(fixture.videoCaptured, false, 'observed chat does not certify an MP4');
 });
+
+test('reaction lag searches earlier video without rewriting the observed UTC or claiming measured causality',()=>{
+ const row={start:34,end:44,utc:'2026-10-25T17:00:34Z',score:80,messages:90,uniqueSenders:75,isPeak:true,limitations:['REACTION_DELAY_UNKNOWN']};
+ assert.equal(chatEvidenceForWindow({startTime:0,endTime:30},[row]),null);
+ const evidence=chatEvidenceForWindow({startTime:0,endTime:30},[row],{reactionLagSeconds:8});
+ assert.equal(evidence.peakUtc,row.utc);assert.equal(evidence.eventSearchStart,26);assert.equal(evidence.peakUniqueSenders,75);
+ assert.ok(evidence.limitations.includes('REACTION_LAG_ASSUMED_NOT_MEASURED'));assert.equal(evidence.reviewRequired,true);
+ assert.throws(()=>chatEvidenceForWindow({startTime:0,endTime:30},[row],{reactionLagSeconds:31}));
+});
+
+test('chat-first selection needs audible real measurements and scene evidence, and can use an explicitly chat-free AV fallback',async()=>{
+ const transcript={segments:Array.from({length:10},(_,i)=>({startTime:i*10,endTime:(i+1)*10,text:`La explicación número ${i} tiene una idea completa y termina con su conclusión.`}))};
+ const audioEnergyWindows=Array.from({length:10},(_,i)=>({start:i*10,end:(i+1)*10,score:50,db:-20}));
+ const chatActivityWindows=[{start:65,end:75,utc:'2026-10-25T17:01:05Z',score:85,messages:100,uniqueSenders:90,isPeak:true}];
+ const provider=new TranscriptCandidateProvider(),options={minDuration:20,maxDuration:30,maxCandidates:1,requireCompleteSentences:true,preferChatReactions:true,requireAvEvidence:true,chatReactionLagSeconds:8};
+ const selected=await provider.analyze({transcript,audioEnergyWindows,sceneChanges:[],chatActivityWindows,options});
+ assert.equal(selected.length,1);assert.equal(selected[0].chatEvidence.isPeak,true);assert.equal(selected[0].audiovisualEvidence.semanticConfirmation,'NOT_PERFORMED');
+ assert.deepEqual(await provider.analyze({transcript,audioEnergyWindows:audioEnergyWindows.map(w=>({...w,db:-100})),sceneChanges:[],chatActivityWindows,options}),[]);
+ assert.deepEqual(await provider.analyze({transcript,audioEnergyWindows,sceneChanges:null,chatActivityWindows,options}),[]);
+ const fallback=await provider.analyze({transcript,audioEnergyWindows,sceneChanges:[],options});
+ assert.equal(fallback.length,1);assert.equal(fallback[0].chatEvidence,null);assert.ok(fallback[0].missingSignals.includes('chatActivity'));
+});

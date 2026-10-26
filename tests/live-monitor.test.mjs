@@ -35,7 +35,8 @@ test("monitor captures only Westcol, at most ten per batch and resumes the exist
     const first = new LiveMonitorService(f.options), state = await first.tick();
     assert.equal(state.status, "CAPTURE_QUEUED"); assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0].url, "https://kick.com/westcol"); assert.equal(f.calls[0].clipCount, 10);
-    assert.equal(f.calls[0].subtitles, false); assert.equal(f.calls[0].onlyChatReactions, true);
+    assert.equal(f.calls[0].subtitles, false); assert.equal(f.calls[0].onlyChatReactions, false);
+    assert.equal(f.calls[0].preferChatReactions,true); assert.equal(f.calls[0].chatReactionLagSeconds,8);
     assert.equal(f.calls[0].analysisProvider, "heuristic");
     assert.equal((await new LiveMonitorService(f.options).tick()).activeJobId, state.activeJobId);
     assert.equal(f.calls.length, 1);

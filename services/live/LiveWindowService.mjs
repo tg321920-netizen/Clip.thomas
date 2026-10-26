@@ -31,8 +31,9 @@ export async function inspectLiveSegment(file, { signal } = {}) {
 
 /** Bounded materialization queue. Capture only journals originals; this function
  * can run while FFmpeg is writing the next segment, regardless of editor/R2. */
-export async function enqueueReadyLiveWindows(sessionId, { sessions = new LiveSessionStore(), jobs = new IngestJobStore(), mediaJobs = new JobStore(), observations = new LiveObservationStore(), maxPending = 6, onlyChatReactions = true } = {}) {
+export async function enqueueReadyLiveWindows(sessionId, { sessions = new LiveSessionStore(), jobs = new IngestJobStore(), mediaJobs = new JobStore(), observations = new LiveObservationStore(), maxPending = 6, onlyChatReactions = null } = {}) {
   const state = await sessions.get(sessionId); if (!state) return;
+  const strictChat = onlyChatReactions ?? state.selectionPolicy?.onlyChatReactions ?? true;
   const loaded = await observations.loadForSource(state.source, { includeCloud: false });
   const available = state.segments.filter(s => s.status === "CAPTURED");
   const inflight = await Promise.all(state.windows.map(w => jobs.get(w.jobId)));
@@ -49,7 +50,8 @@ export async function enqueueReadyLiveWindows(sessionId, { sessions = new LiveSe
     const ownershipEndUtc = Number.isFinite(Date.parse(core.sourceStartUtc)) ? new Date(Date.parse(core.sourceStartUtc)+core.durationSeconds*1000).toISOString() : null;
     const id = liveId(`${sessionId}:window:${core.index}`);
     await jobs.enqueueLiveWindow({ id, sessionId, coreIndex: core.index, segmentIndices: refs.map(s => s.index), priority,
-      ownershipStartUtc: core.sourceStartUtc, ownershipEndUtc, onlyChatReactions });
+      ownershipStartUtc: core.sourceStartUtc, ownershipEndUtc, onlyChatReactions:strictChat, preferChatReactions:state.selectionPolicy?.preferChatReactions === true,
+      chatReactionLagSeconds:state.selectionPolicy?.chatReactionLagSeconds || 0 });
     await sessions.update(sessionId, s => { if (!s.windows.some(w => w.jobId === id)) s.windows.push({ jobId: id, coreIndex: core.index, priority, status: "QUEUED" }); });
     pending++;
   }

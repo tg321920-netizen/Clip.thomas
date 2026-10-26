@@ -489,6 +489,8 @@ export async function queueCapturedBatch({ projectId, job }) {
     targetDuration, subtitles: job.source.subtitles !== false,
     contentProfile: job.source.contentProfile || "GAMING",
     onlyChatReactions: job.source.onlyChatReactions === true,
+    preferChatReactions: job.source.preferChatReactions === true,
+    chatReactionLagSeconds: job.source.chatReactionLagSeconds || 0,
     excludedReactionPeaks: job.source.excludedReactionPeaks || [],
     ...(job.source.analysisProvider === "heuristic" ? { analysisProvider: "heuristic" } : {}),
   });

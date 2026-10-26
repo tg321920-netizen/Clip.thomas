@@ -68,3 +68,10 @@ test('a candidate wholly inside a measured packet gap cannot become a clip',()=>
   const candidate={id:'gap',startTime:20,endTime:40,duration:20};
   assert.deepEqual(selectIndependentClips([candidate],{count:10,minDuration:15,maxDuration:45,continuityIntervals:[{start:18,end:42}]}),[]);
 });
+
+test('a chat-free AV event belongs to exactly one source-clock window and needs no invented chat peak',()=>{
+ const candidates=[clip('av-only',20,50)],options={count:10,minDuration:15,maxDuration:45,sourceRanges:[{offsetSeconds:0,sourceStartUtc:'2026-10-25T17:00:00Z'}]};
+ assert.equal(selectIndependentClips(candidates,{...options,ownershipStartUtc:'2026-10-25T17:00:00Z',ownershipEndUtc:'2026-10-25T17:01:00Z'}).length,1);
+ assert.equal(selectIndependentClips(candidates,{...options,ownershipStartUtc:'2026-10-25T17:01:00Z',ownershipEndUtc:'2026-10-25T17:02:00Z'}).length,0);
+ assert.equal(selectIndependentClips(candidates,{...options,onlyChatReactions:true}).length,0);
+});

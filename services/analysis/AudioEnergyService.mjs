@@ -12,6 +12,16 @@ export function windowEnergy(candidate, windows) {
   for(const w of windows){const overlap=Math.max(0,Math.min(w.end,candidate.endTime)-Math.max(w.start,candidate.startTime));seconds+=overlap;total+=overlap*w.score;}
   return seconds?Math.round(total/seconds):null;
 }
+export function windowAudibility(candidate, windows) {
+  let coveredSeconds = 0, total = 0;
+  for (const window of windows) {
+    const overlap = Math.max(0, Math.min(window.end, candidate.endTime) - Math.max(window.start, candidate.startTime));
+    if (!Number.isFinite(window.db)) continue;
+    coveredSeconds += overlap; total += overlap * window.db;
+  }
+  const meanDb = coveredSeconds > 0 ? total / coveredSeconds : null;
+  return { coveredSeconds, meanDb, audible: meanDb !== null && meanDb >= -55 };
+}
 export function sentenceSegments(segments=[]) {
   const result=[];let current=null;
   for(const segment of segments){

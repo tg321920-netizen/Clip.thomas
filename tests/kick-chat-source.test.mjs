@@ -44,6 +44,14 @@ test('closed chat freezes coverage so a partial bucket cannot become complete af
   assert.equal(chat.snapshot().bins[0].complete, false);
   socket.publish('late', '669512'); assert.equal(chat.snapshot().acceptedMessages, 1);
 });
+
+test('an unexpected socket disconnect freezes coverage and stops accepting late events',async()=>{
+ let now=Date.parse('2026-10-25T17:00:01Z');const socket=new ViewerSocket(),deps=dependencies(socket);
+ const chat=await openKickChat({channelId:'669746',chatroomId:'669512',now:()=>now,...deps});
+ socket.publish('one','669512');socket.close();now+=60000;
+ assert.equal(chat.snapshot().status,'DISCONNECTED');assert.equal(chat.snapshot().bins[0].complete,false);
+ socket.publish('late','669512');assert.equal(chat.snapshot().acceptedMessages,1);chat.close();assert.equal(chat.snapshot().bins[0].complete,false);
+});
 test('rejected subscriptions and unsafe endpoints never masquerade as connected chat', async () => {
   const socket = new ViewerSocket({ reject: true }), deps = dependencies(socket);
   await assert.rejects(openKickChat({ channelId: '669746', chatroomId: '669512', ...deps }), e => e.code === 'CHAT_CONNECT_REJECTED');

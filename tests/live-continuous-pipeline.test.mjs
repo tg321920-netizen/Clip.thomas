@@ -6,7 +6,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { LiveSessionStore,liveId } from "../services/live/LiveSessionStore.mjs";
 import { enqueueReadyLiveWindows } from "../services/live/LiveWindowService.mjs";
-import { LiveCaptureService } from "../services/live/LiveCaptureService.mjs";
+import { LiveCaptureService, mergeObservedChatBins } from "../services/live/LiveCaptureService.mjs";
 import { IngestJobStore } from "../services/ingest/IngestJobStore.mjs";
 import { EditorialEventStore } from "../services/analysis/EditorialEventStore.mjs";
 const source={platform:"OWNED_HLS",channel:"owned",channelId:"123",sourceId:"owned-stream-1",sourceKind:"LIVE",startedAt:"2026-10-25T12:00:00Z"};
@@ -109,4 +109,20 @@ test('targeting a media job preserves other queued work and executes stale-state
   const a=await jobs.enqueueMedia('MEDIA_CLIPS',liveId('media-a'),{}),b=await jobs.enqueueMedia('MEDIA_CLIPS',liveId('media-b'),{});
   const claimed=await jobs.claimNext(['MEDIA_CLIPS'],b.id);assert.equal(claimed.id,b.id);assert.equal((await jobs.get(a.id)).status,'QUEUED');assert.equal(await jobs.claimNext(['MEDIA_CLIPS'],b.id),null);await jobs.release(b.id);
  }finally{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await f.clean();}
+});
+
+test('chat reconnects retain complete history and never sum partial buckets or promote coverage',()=>{
+ const old={utc:'2026-10-25T17:00:00Z',messages:20,complete:true},partial={...old,messages:50,complete:false};
+ const next={utc:'2026-10-25T17:00:10Z',messages:7,complete:false};
+ assert.deepEqual(mergeObservedChatBins([old,partial,next,next]),[old,next]);
+ assert.equal(mergeObservedChatBins([old,{...old,messages:25}])[0].messages,25);
+});
+
+test('window coordination preserves the session chat-preferred AV fallback after worker restart',async()=>{
+ const f=await setup();try{
+  await f.sessions.update(f.id,s=>{s.capture.status='ENDED';s.selectionPolicy={onlyChatReactions:false,preferChatReactions:true,chatReactionLagSeconds:8};});
+  await f.sessions.addSegment(f.id,await segment(f,0,{seconds:60}));
+  const queued=[];await enqueueReadyLiveWindows(f.id,{sessions:f.sessions,jobs:{get:async()=>null,enqueueLiveWindow:async j=>queued.push(j)},mediaJobs:{get:async()=>null},observations:{loadForSource:async()=>({bins:[]})}});
+  assert.equal(queued.length,1);assert.equal(queued[0].onlyChatReactions,false);assert.equal(queued[0].preferChatReactions,true);assert.equal(queued[0].chatReactionLagSeconds,8);
+ }finally{await f.clean();}
 });

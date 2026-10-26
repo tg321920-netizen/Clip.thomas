@@ -113,7 +113,8 @@ export class LiveMonitorService {
     const id=jobId(`westcol:${state.source.sourceId}:${state.recoveryPeak || state.sequence}`);
     const job=await this.ingestStore.create({ id, url:resolved.canonicalUrl || SOURCE, mode:"STREAM", captureSession:true, expectedSource:state.source,
       captureSeconds:resolved.captureSeconds || 21600, startTimeSeconds:resolved.startTimeSeconds || 0, segmentSeconds:60,
-      autoClip:true,clipMode:"SEGMENTS",clipCount:10,clipDuration:30,subtitles:false,contentProfile:"ENTERTAINMENT",onlyChatReactions:true,analysisProvider:"heuristic" });
+      autoClip:true,clipMode:"SEGMENTS",clipCount:10,clipDuration:30,subtitles:false,contentProfile:"ENTERTAINMENT",onlyChatReactions:false,preferChatReactions:true,
+      chatReactionLagSeconds:Math.max(0,Math.min(30,Number(this.env.CLIPFORGE_LIVE_CHAT_REACTION_LAG_SECONDS ?? 8)||0)),analysisProvider:"heuristic" });
     state.activeJobId=job.id;state.status=state.recoveryPeak ? "VOD_RECOVERY_QUEUED" : "CAPTURE_QUEUED";state.errorCode=null;
     return this.save(state);
   }

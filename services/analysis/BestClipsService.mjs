@@ -49,7 +49,8 @@ export class BestClipsService {
         candidates = await provider.analyze({ project: original, transcript: selectionTranscript, audioEnergyWindows, sceneChanges,
           chatActivityWindows: original.liveObservation?.chatActivityWindows || [],
           options: { minDuration, maxDuration, targetDuration, maxCandidates: provider.strictSelection ? Math.min(12, count + 3) : 50, requireCompleteSentences: true, contentProfile: input.contentProfile,
-            requireChatReaction: input.onlyChatReactions === true, continuityBreaks: original.source.capture?.continuityBreaks || [] } });
+            requireChatReaction: input.onlyChatReactions === true, preferChatReactions: input.preferChatReactions === true, requireAvEvidence: input.preferChatReactions === true,
+            chatReactionLagSeconds: input.chatReactionLagSeconds || 0, continuityBreaks: original.source.capture?.continuityBreaks || [] } });
       } catch (error) {
         if (provider.name !== "transcript-heuristic-v2" && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);
         throw error;
@@ -59,6 +60,7 @@ export class BestClipsService {
       onlyChatReactions: input.onlyChatReactions === true, excludedReactionPeaks: input.excludedReactionPeaks || [],
       sourceEnd: Math.min(original.source.durationSeconds, original.source.audioDurationSeconds || Infinity, original.source.videoDurationSeconds || Infinity),
       ownershipStartUtc: original.source.capture?.ownershipStartUtc, ownershipEndUtc: original.source.capture?.ownershipEndUtc,
+      sourceRanges: original.source.capture?.sourceRanges || [],
       continuityBreaks: original.source.capture?.continuityBreaks || [], continuityIntervals:original.source.capture?.continuityIntervals || [] });
     const eventStore=new EditorialEventStore(), eventSource=original.liveObservation?.source, selected=[];
     for(const candidate of independent){
@@ -83,7 +85,7 @@ export class BestClipsService {
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
       if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
       try{if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
       catch(error){await eventStore.release(eventSource,outputProjectId);throw error;}
@@ -105,7 +107,7 @@ export class BestClipsService {
 }
 
 /** Preserve the rescue branch's finite, non-overlapping candidate validation. */
-export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, excludedReactionPeaks = [], continuityBreaks = [], continuityIntervals = [] }) {
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, sourceRanges = [], excludedReactionPeaks = [], continuityBreaks = [], continuityIntervals = [] }) {
   const selected = [];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
@@ -117,7 +119,13 @@ export function selectIndependentClips(candidates, { count, minDuration, maxDura
         continuityIntervals.some(g=>candidate.startTime<g.end&&candidate.endTime>g.start)) continue;
     if (selected.some(existing => Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime))) continue;
     const reaction = candidate.chatEvidence;
-    if (ownershipStartUtc && (!Number.isFinite(Date.parse(reaction?.peakUtc)) || Date.parse(reaction.peakUtc)<Date.parse(ownershipStartUtc) || Date.parse(reaction.peakUtc)>=Date.parse(ownershipEndUtc))) continue;
+    if (ownershipStartUtc) {
+      const midpoint = (candidate.startTime + candidate.endTime) / 2;
+      const range = [...sourceRanges].reverse().find(r=>Number.isFinite(r.offsetSeconds) && r.offsetSeconds<=midpoint && Number.isFinite(Date.parse(r.sourceStartUtc)));
+      const hasReaction = (reaction?.isCollectiveReaction || reaction?.isPeak) && reaction.score >= 25;
+      const anchor = hasReaction ? Date.parse(reaction.peakUtc) : range ? Date.parse(range.sourceStartUtc)+(midpoint-range.offsetSeconds)*1000 : NaN;
+      if (!Number.isFinite(anchor) || anchor<Date.parse(ownershipStartUtc) || anchor>=Date.parse(ownershipEndUtc)) continue;
+    }
     if (onlyChatReactions && (!(reaction?.isCollectiveReaction || reaction?.isPeak) || !Number.isFinite(reaction?.score) || reaction.score < 25)) continue;
     if (excludedReactionPeaks.some(time => Number.isFinite(Date.parse(time)) && Math.abs(Date.parse(time) - Date.parse(reaction?.peakUtc)) < 30000)) continue;
     if ((reaction?.isCollectiveReaction || reaction?.isPeak) && selected.some(existing => {

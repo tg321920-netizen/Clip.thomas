@@ -32,8 +32,8 @@ export async function openKickChat({ channelId, chatroomId, signal, request = ki
   let subscriptions = 0, rejectedSubscriptions = 0;
   const socket = socketFactory(url.toString()); let closed = false, closedAt = null, timer, settleResolve, settleReject;
   const ready = new Promise((resolve, reject) => { settleResolve = resolve; settleReject = reject; });
-  const fail = code => { state.error = code; state.status = "DISCONNECTED"; settleReject(new KickChatError(code)); };
-  const close = () => { if (closed) return; closed = true; closedAt = now(); clearTimeout(timer); signal?.removeEventListener("abort", abort); try { socket.close(); } catch { /* Already closed. */ } state.status = "CLOSED"; };
+  const fail = code => { closedAt ??= now(); state.error = code; state.status = "DISCONNECTED"; settleReject(new KickChatError(code)); };
+  const close = () => { if (closed) return; closed = true; closedAt ??= now(); clearTimeout(timer); signal?.removeEventListener("abort", abort); try { socket.close(); } catch { /* Already closed. */ } state.status = "CLOSED"; };
   const abort = () => { fail("CHAT_CANCELLED"); close(); };
   const send = command => { if (!closed && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command)); };
   socket.addEventListener("open", () => send({ id: 1, connect: { token, name: "clipforge-viewer" } }));
@@ -53,6 +53,7 @@ export async function openKickChat({ channelId, chatroomId, signal, request = ki
         subscriptions++;
         state.status = "SUBSCRIBED"; clearTimeout(timer); settleResolve(); continue;
       }
+      if (state.status !== "SUBSCRIBED") continue;
       let data = message.push?.pub?.data;
       if (!data) continue;
       try { if (typeof data === "string") data = JSON.parse(data); } catch { continue; }

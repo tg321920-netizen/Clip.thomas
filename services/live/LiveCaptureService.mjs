@@ -28,24 +28,29 @@ export class LiveCaptureService {
         await this.sessions.update(job.id,s=>{s.capture={...s.capture,status:"SOURCE_CHANGED",errorCode:"LIVE_SOURCE_CHANGED"};});
         throw Object.assign(new Error("Cambió la transmisión. Los segmentos anteriores no se mezclan con ella."), { code: "LIVE_SOURCE_CHANGED" });
       }
-      let chat = null, chatAttempts = 0, captureMetadata = null, snapshotting = false, lastCapacity = null, checkedAt = 0, finishing = false;
+      let chat = null, chatAttempts = 0, captureMetadata = null, snapshotting = null, lastCapacity = null, checkedAt = 0, finishing = false;
       const saved = await this.observations.loadForSource(expected, { includeCloud: expected.sourceKind === "VOD" });
-      const publishChat = async () => {
-        if (snapshotting) return; snapshotting = true;
+      let retainedBins = mergeObservedChatBins(saved.bins);
+      const publishChat = () => {
+        if (snapshotting) return snapshotting;
+        snapshotting = (async () => {
         try {
           if ((!chat || chat.snapshot().status === "DISCONNECTED") && expected.sourceKind === "LIVE" && expected.platform === "KICK" && chatAttempts < 3 && !finishing && !signal?.aborted) {
+            if(chat) retainedBins = mergeObservedChatBins([...retainedBins,...chat.snapshot().bins]);
             chat?.close(); chatAttempts++;
             try { chat = await this.openChat({ channelId: expected.channelId, chatroomId: expected.chatroomId, signal }); }
             catch { chat = null; }
           }
           const current = chat?.snapshot();
           if (current) {
-            await this.observations.save({ id: job.id, source: expected, bins: [...saved.bins, ...current.bins], chatStatus: current.status, captureStatus: "CAPTURING" });
+            await this.observations.save({ id: job.id, source: expected, bins: mergeObservedChatBins([...retainedBins, ...current.bins]), chatStatus: current.status, captureStatus: "CAPTURING" });
             await this.sessions.update(job.id, s => { s.chat = { status: current.status, acceptedMessages: current.acceptedMessages, connectionAttempts: chatAttempts }; });
           } else await this.sessions.update(job.id, s => { s.chat = { status: saved.bins.length ? "SAVED_OBSERVATIONS" : "UNAVAILABLE", acceptedMessages: 0, connectionAttempts: chatAttempts }; });
-        } finally { snapshotting = false; }
+        } finally { snapshotting = null; }
+        })();
+        return snapshotting;
       };
-      const state = await this.sessions.update(job.id, s => { s.capture = { ...s.capture, lastFailure:s.capture.errorCode?{code:s.capture.errorCode,diagnostic:s.capture.diagnostic||null,at:s.capture.stoppedAt||null}:s.capture.lastFailure||null, errorCode:null, diagnostic:null, status: "CAPTURING", attempts: s.capture.attempts+1, startedAt: s.capture.startedAt || new Date().toISOString() }; });
+      const state = await this.sessions.update(job.id, s => { s.selectionPolicy = { onlyChatReactions:job.source.onlyChatReactions !== false, preferChatReactions:job.source.preferChatReactions === true, chatReactionLagSeconds:job.source.chatReactionLagSeconds || 0 }; s.capture = { ...s.capture, lastFailure:s.capture.errorCode?{code:s.capture.errorCode,diagnostic:s.capture.diagnostic||null,at:s.capture.stoppedAt||null}:s.capture.lastFailure||null, errorCode:null, diagnostic:null, status: "CAPTURING", attempts: s.capture.attempts+1, startedAt: s.capture.startedAt || new Date().toISOString() }; });
       await publishChat();
       const timer = setInterval(() => { void publishChat().catch(() => {}); }, 5000); timer.unref();
       let failed = false;
@@ -99,11 +104,24 @@ export class LiveCaptureService {
       } finally {
         finishing = true; clearInterval(timer); await publishChat().catch(()=>{}); chat?.close();
         const current = chat?.snapshot();
-        if(current) await this.observations.save({id:job.id,source:expected,bins:[...saved.bins,...current.bins],chatStatus:current.status,captureStatus:failed ? "INTERRUPTED" : "ENDED"});
+        if(current) await this.observations.save({id:job.id,source:expected,bins:mergeObservedChatBins([...retainedBins,...current.bins]),chatStatus:current.status,captureStatus:failed ? "INTERRUPTED" : "ENDED"});
         await this.enqueue(job.id,{sessions:this.sessions,observations:this.observations,onlyChatReactions:job.source.onlyChatReactions !== false});
         // Persist capture clocks, never a signed upstream URL or native headers.
         if(captureMetadata) await this.sessions.update(job.id,s=>{s.capture.sourceRanges=captureMetadata.sourceRanges || [];});
       }
     },{timeoutMs:1000});
   }
+}
+
+/** Reconnects retain completed buckets. Partial/replayed observations are never
+ * summed, because their participant sets cannot be reconstructed safely. */
+export function mergeObservedChatBins(bins) {
+  const byTime = new Map();
+  for (const bin of bins || []) {
+    const time = Date.parse(bin.utc); if (!Number.isFinite(time)) continue;
+    const previous = byTime.get(time);
+    if (!previous || (bin.complete !== false && previous.complete === false) ||
+      ((bin.complete !== false) === (previous.complete !== false) && bin.messages > previous.messages)) byTime.set(time,bin);
+  }
+  return [...byTime.values()].sort((a,b)=>Date.parse(a.utc)-Date.parse(b.utc)).slice(-1440);
 }

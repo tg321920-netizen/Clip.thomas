@@ -1,5 +1,5 @@
 import { scoreCandidate } from "./ViralScoreService.mjs";
-import { windowEnergy, sceneActivity } from "./AudioEnergyService.mjs";
+import { windowEnergy, sceneActivity, windowAudibility } from "./AudioEnergyService.mjs";
 import { chatEvidenceForWindow } from "./ChatActivityService.mjs";
 
 const DEFAULTS = {
@@ -29,7 +29,8 @@ export class TranscriptCandidateProvider {
         window.audioEnergy = windowEnergy(window,audioEnergyWindows);
         window.visualActivity = sceneActivity(window, sceneChanges);
         window.contentProfile = config.contentProfile;
-        window.chatEvidence = chatEvidenceForWindow(window, chatActivityWindows);
+        window.chatEvidence = chatEvidenceForWindow(window, chatActivityWindows, { reactionLagSeconds: config.chatReactionLagSeconds });
+        window.audiovisualEvidence = { audio: windowAudibility(window, audioEnergyWindows), sceneScanMeasured: Array.isArray(sceneChanges), semanticConfirmation: "NOT_PERFORMED", reviewRequired: true };
         const scoring = scoreCandidate(window);
         return {
           ...window,
@@ -41,9 +42,11 @@ export class TranscriptCandidateProvider {
           analysisMethod: this.name,
         };
       })
+      .filter(candidate => !config.requireAvEvidence || (candidate.audiovisualEvidence.audio.audible && candidate.audiovisualEvidence.sceneScanMeasured && candidate.components.clarity >= 60 && candidate.components.standaloneComprehensibility >= 50))
       .filter(candidate => !config.requireChatReaction || ((candidate.chatEvidence?.isCollectiveReaction || candidate.chatEvidence?.isPeak) && candidate.chatEvidence.score >= 25))
       .sort(
         (a, b) =>
+          (config.preferChatReactions ? Number(hasUsefulReaction(b)) - Number(hasUsefulReaction(a)) : 0) ||
           b.viralScore - a.viralScore ||
           Math.abs(a.duration - config.targetDuration) -
             Math.abs(b.duration - config.targetDuration) ||
@@ -83,8 +86,15 @@ export function normalizeAnalysisOptions(options = {}) {
     contentProfile: ["GAMING", "PODCAST", "ENTERTAINMENT", "NEWS", "MOTIVATION"].includes(options.contentProfile) ? options.contentProfile : "PODCAST",
     requireCompleteSentences: options.requireCompleteSentences === true,
     requireChatReaction: options.requireChatReaction === true,
+    preferChatReactions: options.preferChatReactions === true,
+    requireAvEvidence: options.requireAvEvidence === true,
+    chatReactionLagSeconds: boundedNumber(options.chatReactionLagSeconds, 0, 30, 0),
     continuityBreaks: (Array.isArray(options.continuityBreaks) ? options.continuityBreaks : []).filter(t => Number.isFinite(t) && t >= 0),
   };
+}
+
+function hasUsefulReaction(candidate) {
+  return Boolean((candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25);
 }
 
 function buildWindows(segments, config) {
