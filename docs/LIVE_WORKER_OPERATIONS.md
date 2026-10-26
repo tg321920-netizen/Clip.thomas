@@ -46,7 +46,7 @@ No cambiar los cuatro primeros a `true` hasta comprobar infraestructura y autori
 ## Límites y pérdidas
 
 - Sesiones de hasta seis horas; segmentos originales de 60 segundos por defecto. El ensamblado usa como máximo tres segmentos contiguos para contexto.
-- Cola de materialización/selección/render acotada a seis trabajos pendientes. Una cola llena difiere análisis; el capturador continúa únicamente mientras exista disco.
+- Cola de materialización/selección/render acotada a seis trabajos en cola/procesando por sesión. Las incidencias WAITING_RESOURCE/FAILED se conservan aparte; este contador no es un límite global entre varias sesiones. Una cola llena difiere análisis; el capturador continúa únicamente mientras exista disco.
 - Límite local actual de 2 GiB de medios y al menos 1 GiB libre. El directorio incluye originales, ventanas materializadas y renders: no equivale a 2 GiB adicionales por worker.
 - Archivo R2 con límite conservador de 8 GB del bucket; hasta tres intentos de archivar cada original, con espera. No contratar espacio ni borrar originales para seguir.
 - Los checkpoints tienen límites de cantidad/tamaño. Consultar su fecha y cantidad de originales confirmados: no implican que todo lo más reciente ya esté respaldado.
