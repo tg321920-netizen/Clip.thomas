@@ -9,6 +9,7 @@ const WEIGHTS = {
   visualActivity: 3,
   profileRelevance: 5,
   chatActivity: 5,
+  dialogueStructure:6,
 };
 
 const HOOK_PATTERNS = [
@@ -57,6 +58,7 @@ export function scoreCandidate(candidate, options = {}) {
     audioEnergy,
     visualActivity: normalizeOptionalScore(candidate?.visualActivity),
     chatActivity: normalizeOptionalScore(candidate?.chatEvidence?.score),
+    dialogueStructure:normalizeOptionalScore(candidate?.dialogueEvidence?.contextScore),
     profileRelevance: candidate?.contentProfile && PROFILE_PATTERNS[candidate.contentProfile]
       ? (PROFILE_PATTERNS[candidate.contentProfile].test(text) ? 80 : 30) : null,
   };
@@ -77,6 +79,9 @@ export function scoreCandidate(candidate, options = {}) {
   const redundancyPenalty = clampPenalty(options.redundancyPenalty || 0);
   const viralScore = clamp(baseScore - redundancyPenalty);
   const reasons = buildReasons(components, text, duration, redundancyPenalty);
+  if(candidate?.dialogueEvidence?.questionWithFollowingSpeech)reasons.push('Conserva una pregunta y la intervención posterior; revisa si la respuesta completa está incluida.');
+  if(candidate?.dialogueEvidence?.speakerChanges>0)reasons.push('Incluye cambios de hablante según las etiquetas aportadas por la transcripción; no se ejecutó diarización nueva.');
+  if(candidate?.dialogueEvidence?.lexicalHumorCue)reasons.push('El texto contiene una posible referencia al humor; confirma la reacción en el audio.');
   if (candidate?.chatEvidence?.isCollectiveReaction === true) {
     const repeated = candidate.chatEvidence.repetitionEvidence;
     reasons.push(repeated?.scope === "SAME_TEXT_MEASURED"
@@ -90,7 +95,7 @@ export function scoreCandidate(candidate, options = {}) {
       ...(audioEnergy === null ? ["audioEnergy"] : []),
       ...(components.visualActivity === null ? ["visualActivity"] : []),
       ...(components.chatActivity === null ? ["chatActivity"] : []),
-      "speakerChanges", "visualEventRecognition",
+      ...(candidate?.dialogueEvidence?.speakerChanges===null||candidate?.dialogueEvidence===undefined?["speakerChanges"]:[]), "visualEventRecognition",
     ],
     viralScore,
     baseScore: clamp(baseScore),

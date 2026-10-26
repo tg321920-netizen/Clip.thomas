@@ -3,7 +3,7 @@ import {
   loadProjectFile,
   updateProjectFile,
 } from "../../lib/project-files.mjs";
-import { normalizeAnalysisOptions } from "./TranscriptCandidateProvider.mjs";
+import { normalizeAnalysisOptions,TRANSCRIPT_HEURISTIC_VERSION } from "./TranscriptCandidateProvider.mjs";
 import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
 import { releasePolicy } from "../../lib/release-policy.mjs";
 import { resolveStoragePath } from "../../lib/storage-paths.mjs";
@@ -64,13 +64,13 @@ export async function analyzeProject(projectId, options = {}) {
       ? await Promise.all([measureAudioEnergy(resolveStoragePath(project.source.relativePath)),measureSceneChanges(resolveStoragePath(project.source.relativePath))]) : [[],null];
     const candidates = await provider.analyze({
       project,
-      transcript: config.requireCompleteSentences ? {...transcript,segments:sentenceSegments(transcript.segments)} : transcript,
+      transcript: config.requireCompleteSentences ? {...transcript,segments:sentenceSegments(transcript.segments,{maxGapSeconds:config.maxSilenceGapSeconds})} : transcript,
       options: config,
       audioEnergyWindows, sceneChanges, chatActivityWindows:project.liveObservation?.chatActivityWindows || [],
     });
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
-      throw new Error("Content analysis produced no valid candidates.");
+      throw new Error("No se encontraron momentos completos dentro de la duración elegida. Ajusta el intervalo o usa el recorte manual.");
     }
 
     project.analysis = {
@@ -112,6 +112,7 @@ export function isAnalysisCurrent(
 
   return Boolean(
     analysis &&
+      (!/^transcript-heuristic-v\d+$/.test(analysis.provider)||analysis.provider===TRANSCRIPT_HEURISTIC_VERSION) &&
       analysis.status === "COMPLETED" &&
       analysis.sourceKey === sourceKey &&
       Array.isArray(analysis.candidates) &&

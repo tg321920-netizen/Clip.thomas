@@ -22,9 +22,12 @@ export function windowAudibility(candidate, windows) {
   const meanDb = coveredSeconds > 0 ? total / coveredSeconds : null;
   return { coveredSeconds, meanDb, audible: meanDb !== null && meanDb >= -55 };
 }
-export function sentenceSegments(segments=[]) {
+export function sentenceSegments(segments=[],{maxGapSeconds=8}={}) {
   const result=[];let current=null;
   for(const segment of segments){
+    const previousSpeaker=current?.speakerId??current?.speaker,nextSpeaker=segment.speakerId??segment.speaker;
+    if(current&&(segment.startTime-current.endTime>maxGapSeconds||
+      (previousSpeaker!==undefined&&nextSpeaker!==undefined&&previousSpeaker!==nextSpeaker))){result.push(current);current=null;}
     if(!current)current={...segment,words:[...(segment.words||[])]};
     else{current.endTime=segment.endTime;current.text+=` ${segment.text}`;current.words.push(...(segment.words||[]));}
     if(/[.!?…]["'»”)]?$/.test(current.text.trim())){result.push(current);current=null;}

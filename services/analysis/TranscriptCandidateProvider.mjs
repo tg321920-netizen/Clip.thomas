@@ -8,10 +8,11 @@ const DEFAULTS = {
   targetDuration: 30,
   maxCandidates: 10,
 };
+export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v3';
 
 export class TranscriptCandidateProvider {
   constructor(options = {}) {
-    this.name = "transcript-heuristic-v2";
+    this.name = TRANSCRIPT_HEURISTIC_VERSION;
     this.options = normalizeAnalysisOptions(options);
   }
 
@@ -29,6 +30,7 @@ export class TranscriptCandidateProvider {
         window.audioEnergy = windowEnergy(window,audioEnergyWindows);
         window.visualActivity = sceneActivity(window, sceneChanges);
         window.contentProfile = config.contentProfile;
+        window.dialogueEvidence=dialogueEvidence(segments.slice(window.segmentStartIndex,window.segmentEndIndex+1));
         window.chatEvidence = chatEvidenceForWindow(window, chatActivityWindows, { reactionLagSeconds: config.chatReactionLagSeconds });
         window.audiovisualEvidence = { audio: windowAudibility(window, audioEnergyWindows), sceneScanMeasured: Array.isArray(sceneChanges), semanticConfirmation: "NOT_PERFORMED", reviewRequired: true };
         const scoring = scoreCandidate(window);
@@ -53,7 +55,7 @@ export class TranscriptCandidateProvider {
           a.startTime - b.startTime,
       );
 
-    return selectDistinct(scored, config.maxCandidates);
+    return selectDistinct(scored, config.maxCandidates,config.maxTemporalOverlap);
   }
 }
 
@@ -91,6 +93,9 @@ export function normalizeAnalysisOptions(options = {}) {
     measureMediaEvidence: options.measureMediaEvidence === true,
     chatReactionLagSeconds: boundedNumber(options.chatReactionLagSeconds, 0, 30, 0),
     continuityBreaks: (Array.isArray(options.continuityBreaks) ? options.continuityBreaks : []).filter(t => Number.isFinite(t) && t >= 0),
+    maxSilenceGapSeconds:boundedNumber(options.maxSilenceGapSeconds,0.5,30,8),
+    preserveDialogueContext:options.preserveDialogueContext!==false,
+    maxTemporalOverlap:boundedNumber(options.maxTemporalOverlap,0.1,0.72,0.55),
   };
 }
 
@@ -102,12 +107,16 @@ function buildWindows(segments, config) {
   const windows = [];
 
   for (let startIndex = 0; startIndex < segments.length; startIndex += 1) {
+    if(config.preserveDialogueContext&&config.contentProfile==='PODCAST'&&startIndex>0&&
+      /[?？]["'»”)]?$/.test(segments[startIndex-1].text.trim())&&
+      segments[startIndex].startTime-segments[startIndex-1].endTime<=Math.min(2,config.maxSilenceGapSeconds))continue;
     if (config.requireCompleteSentences && startIndex > 0 &&
         !hasSentenceEnd(segments[startIndex - 1].text)) continue;
     const start = segments[startIndex].startTime;
     let best = null;
 
     for (let endIndex = startIndex; endIndex < segments.length; endIndex += 1) {
+      if(endIndex>startIndex&&segments[endIndex].startTime-segments[endIndex-1].endTime>config.maxSilenceGapSeconds)break;
       const end = segments[endIndex].endTime;
       const duration = end - start;
 
@@ -152,7 +161,10 @@ function buildWindows(segments, config) {
     const last = segments[segments.length - 1];
     const duration = last.endTime - first.startTime;
 
-    if (duration > 0) {
+    // A sparse transcript must never fall back to a minutes-long clip after
+    // the normal windows rejected it for exceeding the requested duration.
+    if (duration >= config.minDuration && duration <= config.maxDuration &&
+        segments.every((s,i)=>i===0||s.startTime-segments[i-1].endTime<=config.maxSilenceGapSeconds)) {
       windows.push({
         startTime: round(first.startTime),
         endTime: round(last.endTime),
@@ -168,6 +180,24 @@ function buildWindows(segments, config) {
   return windows;
 }
 
+function dialogueEvidence(segments){
+  let speakerChanges=0,questionWithFollowingSpeech=false,largestGapSeconds=0;
+  const labeled=segments.filter(s=>s.speaker!==null);
+  for(let i=1;i<segments.length;i++){
+    const previous=segments[i-1],current=segments[i];
+    if(previous.speaker!==null&&current.speaker!==null&&previous.speaker!==current.speaker)speakerChanges++;
+    if(/[?？]["'»”)]?$/.test(previous.text.trim()))questionWithFollowingSpeech=true;
+    largestGapSeconds=Math.max(largestGapSeconds,current.startTime-previous.endTime);
+  }
+  const text=segments.map(s=>s.text).join(' '),lexicalHumorCue=/\b(?:ja(?:ja)+|ha(?:ha)+|risas?|laugh(?:s|ing)?|broma|joke)\b/iu.test(text);
+  const lexicalDisagreementCue=/\b(?:no estoy de acuerdo|sin embargo|en cambio|i disagree|however|but actually)\b/iu.test(text);
+  return {questionWithFollowingSpeech,speakerChanges:labeled.length>=2?speakerChanges:null,
+    speakerBasis:labeled.length>=2?'PROVIDED_TRANSCRIPT_LABELS':'NOT_AVAILABLE',largestTranscriptGapSeconds:round(largestGapSeconds),
+    lexicalHumorCue,lexicalDisagreementCue,emotionRecognition:'NOT_PERFORMED',
+    contextScore:questionWithFollowingSpeech||speakerChanges>0||lexicalHumorCue||lexicalDisagreementCue?
+      Math.min(100,45+(questionWithFollowingSpeech?25:0)+(speakerChanges>0?15:0)+(lexicalHumorCue?10:0)+(lexicalDisagreementCue?10:0)):null};
+}
+
 // Punctuation is timing evidence, not proof that the idea stands on its own.
 // An ellipsis is deliberately not accepted as a finished sentence.
 function hasSentenceEnd(text) {
@@ -175,7 +205,7 @@ function hasSentenceEnd(text) {
   return /[.!?]$/.test(ending) && !/[.…]{2,}$/.test(ending);
 }
 
-function selectDistinct(candidates, maxCandidates) {
+function selectDistinct(candidates, maxCandidates,maximumOverlap) {
   const selected = [];
 
   for (const candidate of candidates) {
@@ -190,7 +220,7 @@ function selectDistinct(candidates, maxCandidates) {
 
     // Nearly identical time windows or transcript content add no value as a
     // second clip. Less severe similarity is retained but explicitly penalized.
-    if (overlap >= 0.72 || lexicalSimilarity >= 0.9) continue;
+    if (overlap >= maximumOverlap || lexicalSimilarity >= 0.9) continue;
 
     const redundancyPenalty = Math.round(
       Math.max(overlap * 28, lexicalSimilarity * 18),
@@ -262,6 +292,8 @@ function normalizeSegments(segments) {
       startTime: Number(segment?.startTime),
       endTime: Number(segment?.endTime),
       text: String(segment?.text || "").trim(),
+      speaker:typeof (segment?.speakerId??segment?.speaker)==='string' || Number.isSafeInteger(segment?.speakerId??segment?.speaker)
+        ?String(segment.speakerId??segment.speaker).slice(0,64):null,
     }))
     .filter(
       (segment) =>

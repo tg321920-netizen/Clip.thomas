@@ -52,7 +52,7 @@ export class BestClipsService {
             requireChatReaction: input.onlyChatReactions === true, preferChatReactions: input.preferChatReactions === true, requireAvEvidence: input.preferChatReactions === true,
             chatReactionLagSeconds: input.chatReactionLagSeconds || 0, continuityBreaks: original.source.capture?.continuityBreaks || [] } });
       } catch (error) {
-        if (provider.name !== "transcript-heuristic-v2" && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);
+        if (!/^transcript-heuristic-v\d+$/.test(provider.name) && error.retryable !== true) throw new WaitingResourceError(`No se pudo completar la selección con IA: ${error.message}`);
         throw error;
       }
     }
