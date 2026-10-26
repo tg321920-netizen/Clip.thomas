@@ -1,4 +1,4 @@
-import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 
 const STYLES = new Set(["CLEAN", "VIRAL", "KARAOKE"]);
 
@@ -13,11 +13,10 @@ export async function getSubtitleTrack(projectId, clipId) {
 }
 
 export async function generateSubtitleTrack(projectId, clipId, options = {}) {
-  const project = await loadProjectFile(projectId);
-  if (!project) throw new Error("Project not found.");
-
+  return updateProjectFile(projectId, project => {
   const clip = findClip(project, clipId);
   if (!clip) throw new Error("Clip not found.");
+  assertSubtitleEditable(clip);
 
   const transcript = project.transcript;
   if (
@@ -49,17 +48,15 @@ export async function generateSubtitleTrack(projectId, clipId, options = {}) {
   clip.subtitles.enabled = clip.edit.subtitlesEnabled;
 
   invalidateClipRender(clip);
-  await replaceProjectFile(projectId, project);
-
   return clip.subtitles;
+  });
 }
 
 export async function updateSubtitleTrack(projectId, clipId, input = {}) {
-  const project = await loadProjectFile(projectId);
-  if (!project) throw new Error("Project not found.");
-
+  return updateProjectFile(projectId, project => {
   const clip = findClip(project, clipId);
   if (!clip) throw new Error("Clip not found.");
+  assertSubtitleEditable(clip);
 
   if (!clip.subtitles) {
     throw new Error("Subtitle track has not been generated.");
@@ -96,9 +93,24 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
   };
 
   invalidateClipRender(clip);
-  await replaceProjectFile(projectId, project);
-
   return clip.subtitles;
+  });
+}
+
+export function assertSubtitleEditable(clip) {
+  if (["QUEUED", "RENDERING", "PROCESSING"].includes(clip?.status)) {
+    throw Object.assign(new Error("Espera a que termine el trabajo antes de cambiar los subtítulos."), { code: "SUBTITLE_BUSY" });
+  }
+}
+
+export function buildSrtDocument(track) {
+  const cues = sanitizeSubtitleCues(track?.cues, Math.max(...(track?.cues || []).map(c => Number(c.endTime)), 0));
+  return cues.map((cue, index) => `${index + 1}\n${srtTime(cue.startTime)} --> ${srtTime(cue.endTime)}\n${cue.text.replace(/\r/g, "").replace(/\n\s*\n/g, "\n")}\n`).join("\n");
+}
+
+function srtTime(value) {
+  const ms = Math.round(value * 1000);
+  return `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
 }
 
 export function buildSubtitleTrack({ transcript, clip, style = "CLEAN" }) {
@@ -200,9 +212,13 @@ export function sanitizeSubtitleCues(cues, clipDuration) {
     throw new Error("Clip duration is invalid.");
   }
 
-  return cues
+  const result = cues
     .map((cue, index) => sanitizeCue(cue, index, duration))
     .sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
+  if (result.some((cue, index) => index > 0 && cue.startTime < result[index - 1].endTime - 0.001)) {
+    throw new Error("Los subtítulos se solapan. Ajusta sus tiempos antes de guardar.");
+  }
+  return result;
 }
 
 export function buildAssDocument(track) {
@@ -296,6 +312,10 @@ function buildWordCues(words, clipStart, clipEnd, maxWords) {
   let current = [];
 
   for (const word of normalized) {
+    if (current.length && word.startTime - current[current.length - 1].endTime > 0.6) {
+      groups.push(current);
+      current = [];
+    }
     current.push(word);
 
     const span = current[current.length - 1].endTime - current[0].startTime;
@@ -382,11 +402,13 @@ function sanitizeCue(cue, index, clipDuration) {
     ? idValue
     : `cue-${String(index + 1).padStart(4, "0")}`;
 
-  const words = Array.isArray(cue?.words)
+  let words = Array.isArray(cue?.words)
     ? cue.words
         .map((word) => sanitizeWord(word, startTime, endTime))
         .filter(Boolean)
     : [];
+  // Edited/translated text must never burn the old words in KARAOKE mode.
+  if (joinWords(words.map(word => word.text)) !== text) words = [];
 
   return {
     id,
@@ -421,6 +443,7 @@ function sanitizeWord(word, cueStart, cueEnd) {
 }
 
 function invalidateClipRender(clip) {
+  clip.editRevision = Number(clip.editRevision || 0) + 1;
   clip.status = "DRAFT";
   clip.render = null;
   clip.error = null;

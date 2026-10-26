@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { isProjectId } from "@/lib/project-id.mjs";
+import { readBoundedJson } from "@/lib/bounded-json.mjs";
 import { getClip } from "@/services/clip/ClipService.mjs";
 import {
   generateSubtitleTrack,
   getSubtitleTrack,
   updateSubtitleTrack,
+  buildSrtDocument,
 } from "@/services/subtitles/SubtitleService.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: {
     params: Promise<{ projectId: string; clipId: string }>;
   },
@@ -24,9 +26,18 @@ export async function GET(
     return NextResponse.json({ error: "Clip no encontrado." }, { status: 404 });
   }
 
+  const track = await getSubtitleTrack(ids.projectId, ids.clipId);
+  if (new URL(request.url).searchParams.get("format") === "srt") {
+    if (!track?.cues?.length) return NextResponse.json({ error: "Este recorte todavía no tiene subtítulos." }, { status: 404 });
+    return new Response(buildSrtDocument(track), { headers: {
+      "Content-Type": "application/x-subrip; charset=utf-8",
+      "Content-Disposition": `attachment; filename="clip-${ids.clipId}.srt"`,
+      "Cache-Control": "private, no-store",
+    } });
+  }
   return NextResponse.json(
     {
-      subtitles: await getSubtitleTrack(ids.projectId, ids.clipId),
+      subtitles: track,
       clipStatus: clip.status,
     },
     { headers: { "Cache-Control": "no-store" } },
@@ -42,9 +53,8 @@ export async function POST(
   const ids = await validIds(context);
   if (!ids.ok) return ids.response;
 
-  const body = await safeJson(request);
-
   try {
+    const body = await safeJson(request);
     const subtitles = await generateSubtitleTrack(
       ids.projectId,
       ids.clipId,
@@ -72,9 +82,8 @@ export async function PATCH(
   const ids = await validIds(context);
   if (!ids.ok) return ids.response;
 
-  const body = await safeJson(request);
-
   try {
+    const body = await safeJson(request);
     const subtitles = await updateSubtitleTrack(
       ids.projectId,
       ids.clipId,
@@ -117,18 +126,17 @@ async function validIds(context: {
 
 async function safeJson(request: Request): Promise<Record<string, unknown>> {
   try {
-    const value = await request.json();
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
+    const value = await readBoundedJson(request, 250_000);
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
+    return value as Record<string, unknown>;
   } catch {
-    return {};
+    throw new Error("Solicitud de subtítulos inválida o demasiado grande.");
   }
 }
 
 function subtitleError(error: unknown) {
   const message =
     error instanceof Error ? error.message : "No se pudieron guardar los subtítulos.";
-  const status = /not found/i.test(message) ? 404 : 422;
+  const status = /not found/i.test(message) ? 404 : /Espera a que termine/.test(message) ? 409 : 422;
   return NextResponse.json({ error: message }, { status });
 }

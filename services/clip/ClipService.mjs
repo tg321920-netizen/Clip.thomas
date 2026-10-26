@@ -173,7 +173,11 @@ async function saveClipState(projectId, clip) {
   return updateProjectFile(projectId, project => {
     const current = project.clips?.find(c => c.id === clip.id);
     if (!current) throw new Error('Clip not found.');
-    Object.assign(current, clip);
+    if (Number(current.editRevision || 0) !== Number(clip.editRevision || 0)) {
+      throw Object.assign(new Error('El recorte cambió durante el procesamiento. Sus cambios se conservaron; vuelve a renderizar.'), { code: 'CLIP_EDIT_CONFLICT' });
+    }
+    // A render owns these fields, not newer captions, review notes or settings.
+    for (const key of ['status', 'render', 'error', 'updatedAt']) current[key] = clip[key];
   });
 }
 
