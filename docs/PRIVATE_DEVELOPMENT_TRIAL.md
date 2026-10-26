@@ -14,6 +14,7 @@ Desplegar, crear un servicio o cambiar producción requiere otra aprobación.
 - Candidata del ensayo: etiqueta nueva clipforge-development-candidate-20261026.2
   y rama congelada preview/clipforge-android-20261026.2. Ambas deben señalar el
   mismo SHA revisado. No moverlas cuando continúe el desarrollo.
+  SHA fijado: b6936e610e8cd0fafe05d4d326f57db9537b7d24.
   La aplicación coincide con el código aprobado en 986ab90; la preparación nueva
   cambia únicamente la referencia de despliegue y documentación.
 - render.stable-preview.yaml no se alteró.
@@ -49,6 +50,12 @@ RENDER_API_KEY no está vinculada al runtime y su requisito privado figura sin
 valor guardado. No se enviaron peticiones administrativas ni nuevos 401.
 La conexión permite primero GET de servicio/despliegues; no autoriza creación.
 Después del diagnóstico se requiere aprobación específica del ensayo.
+
+El repositorio se comprobó público y no archivado. Para un ensayo independiente
+puede utilizarse la cuenta actual de Render del propietario: no es obligatorio
+recuperar la cuenta del servicio antiguo. El primer diagnóstico debe identificar
+la cuenta/workspace mediante GET autorizado. Que el servicio antiguo no sea
+accesible en otra cuenta no demuestra que la clave sea inválida.
 
 El plan gratuito ofrece recursos limitados y filesystem efímero. Se propone
 720×1280 por defecto, un codificador/hilo y respaldo separado. Un perfil local equivalente completó un recorte 720p de 30 s en 304,908 s desde encolar hasta READY
