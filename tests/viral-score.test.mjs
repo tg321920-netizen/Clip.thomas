@@ -32,6 +32,16 @@ test("strong hooks score above a plain fragment with the same duration", () => {
   assert.ok(strong.viralScore > plain.viralScore);
 });
 
+test("a question later in a clip cannot masquerade as its opening hook", () => {
+  const opening='We organized the project and completed the work with the whole team.';
+  const later=scoreCandidate({duration:30,text:opening+' Why was the result so surprising?'});
+  const plain=scoreCandidate({duration:30,text:opening+' The result was useful for everyone.'});
+  assert.equal(later.components.hook,plain.components.hook);
+  assert.ok(!later.reasons.includes('El inicio contiene señales de hook fuertes.'));
+  const dependent=scoreCandidate({duration:30,text:'Its results require understanding the earlier conversation before the explanation makes sense.'});
+  assert.ok(dependent.components.standaloneComprehensibility<plain.components.standaloneComprehensibility);
+});
+
 test("redundancy penalty is explicit and reduces the final score without changing base score", () => {
   const candidate = {
     duration: 30,

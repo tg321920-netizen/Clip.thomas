@@ -4,10 +4,14 @@ import { spawnMediaProcess } from "../../lib/media-execution.mjs";
 /** Optional offline CPU translator. Never downloads a model or calls a paid API. */
 export class LocalTranslationProvider {
   constructor({ env = process.env } = {}) { this.env = env; }
-  async translate(texts) {
+  assertConfigured() {
     const python = this.env.CLIPFORGE_TRANSLATION_PYTHON;
     const model = this.env.CLIPFORGE_TRANSLATION_MODEL_PATH;
     if (!python || !model) throw Object.assign(new Error("La traducción local inglés-español no está configurada. Puedes usar subtítulos originales o editar el recorte sin subtítulos."), { code: "TRANSLATION_NOT_CONFIGURED" });
+    return { python, model };
+  }
+  async translate(texts) {
+    const { python, model } = this.assertConfigured();
     if (!Array.isArray(texts) || !texts.length || texts.length > 500 || texts.some(text => typeof text !== "string" || !text.trim() || text.length > 1000)) throw new Error("Texto de traducción fuera de los límites permitidos.");
     return new Promise((resolve, reject) => {
       const child = spawnMediaProcess(python, [path.resolve("scripts/translate-subtitles.py"), model], {

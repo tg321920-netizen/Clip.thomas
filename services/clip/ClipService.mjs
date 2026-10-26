@@ -6,6 +6,7 @@ import { RenderService } from "./RenderService.mjs";
 import {manualOutputOptions} from '../../lib/render-options.mjs';
 import { SUBTITLE_MODES, prepareSubtitleTrack } from '../subtitles/SubtitleService.mjs';
 import { transcribeProject } from '../transcription/TranscriptionService.mjs';
+import { LocalTranslationProvider } from '../subtitles/LocalTranslationProvider.mjs';
 
 const defaultWidth=Number(process.env.CLIPFORGE_MEDIA_WIDTH||1080),defaultHeight=Number(process.env.CLIPFORGE_MEDIA_HEIGHT||1920);
 
@@ -124,6 +125,7 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
 
   try {
     if (clip.edit?.subtitleMode && clip.edit.subtitleMode !== 'NONE') {
+      if (clip.edit.subtitleMode === 'TRANSLATE_ES') new LocalTranslationProvider().assertConfigured();
       if (project.transcript?.status !== 'COMPLETED') {
         await transcribeProject(projectId);
         project = await loadProjectFile(projectId);

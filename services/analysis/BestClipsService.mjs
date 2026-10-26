@@ -13,6 +13,7 @@ import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
 import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
 import { sampleCandidateFingerprint } from "./VisualEvidenceService.mjs";
 import { EditorialEventStore } from "./EditorialEventStore.mjs";
+import { LocalTranslationProvider } from "../subtitles/LocalTranslationProvider.mjs";
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -25,6 +26,10 @@ export class BestClipsService {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
     if (input.subtitleMode !== undefined && !SUBTITLE_MODES.includes(input.subtitleMode)) throw new Error("Modo de subtítulos inválido.");
+    if (input.subtitleMode === "TRANSLATE_ES") {
+      try { new LocalTranslationProvider({ env: this.env }).assertConfigured(); }
+      catch (error) { throw new WaitingResourceError(error.message); }
+    }
     if (original.source?.captureValidation?.valid === false) throw new WaitingResourceError("La fuente fue rechazada durante la verificación de captura. Revisa el intervalo y vuelve a capturarlo.");
     const count = Number(input.count ?? 3), minDuration = Number(input.minDuration ?? 30), maxDuration = Number(input.maxDuration ?? 60), targetDuration = Number(input.targetDuration ?? ((minDuration + maxDuration) / 2));
     if (!Number.isSafeInteger(count) || count < 1 || count > 10 || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 15 || minDuration > 180 || maxDuration < minDuration || maxDuration > 180) throw new Error("Elige entre uno y diez clips de 15 a 180 segundos.");

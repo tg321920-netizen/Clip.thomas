@@ -78,6 +78,12 @@ while (!stopping) {
       reused: result.reused,
     });
   } catch (error) {
+    if (["TRANSLATION_NOT_CONFIGURED", "TRANSLATION_UNAVAILABLE"].includes(error.code)) {
+      await store.transition(job.id, "WAITING_RESOURCE", "WAITING_RESOURCE", null, { error: error.message });
+      await store.release(job.id);
+      if (once) break;
+      continue;
+    }
     // Resource contention is backpressure, not a failed encoding attempt.
     const waiting=error.code==="RENDER_CAPACITY_BUSY"||error.code==="STATE_BUSY";
     const failed = await store.fail(waiting?{...job,attempts:Math.max(0,job.attempts-1)}:job, error);

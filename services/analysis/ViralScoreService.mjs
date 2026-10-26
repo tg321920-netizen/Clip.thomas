@@ -114,10 +114,11 @@ export function scoreCandidate(candidate, options = {}) {
 
 function scoreHook(text) {
   if (!text) return 0;
+  const opening = (text.split(/(?<=[.!?…])\s+/u)[0] || text).slice(0, 180);
   let score = 35;
-  if (HOOK_PATTERNS.some((pattern) => pattern.test(text))) score += 35;
-  if (/^.{0,80}[?!]/.test(text)) score += 12;
-  if (/\b\d+[\d.,%]*\b/.test(text)) score += 8;
+  if (HOOK_PATTERNS.some((pattern) => pattern.test(opening))) score += 35;
+  if (/^.{0,80}[?!]/.test(opening)) score += 12;
+  if (/\b\d+[\d.,%]*\b/.test(opening)) score += 8;
   if (text.split(/\s+/).length >= 8) score += 5;
   return clamp(score);
 }
@@ -173,6 +174,7 @@ function scoreStandalone(text) {
 
   let score = 72;
   if (FRAGMENT_START.test(trimmed)) score -= 25;
+  if (/^(its|their|his|her|su|sus)\s/iu.test(trimmed)) score -= 20;
   if (!/[.!?…]["'»”)]?$/.test(trimmed)) score -= 10;
   if (trimmed.split(/\s+/).length < 12) score -= 15;
   if (

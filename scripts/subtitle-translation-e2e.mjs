@@ -90,8 +90,13 @@ try{
     }
     project=await loadProjectFile(project.id);assert.ok(project.clips.every(c=>c.subtitles.machineCues&&c.subtitles.translation.manuallyEdited));
     assert.ok(project.clips.every(c=>c.edit.framingMode==='CONVERSATION'));
+    const unchangedArticle=page.locator('article').filter({has:page.getByRole('heading',{name:project.clips[0].title,exact:true})});
+    const unchangedResponse=page.waitForResponse(r=>r.url().endsWith(`/clips/${project.clips[0].id}/subtitles`)&&r.request().method()==='PATCH');
+    await unchangedArticle.getByRole('button',{name:'Guardar y volver a renderizar',exact:true}).click();
+    const unchanged=await(await unchangedResponse).json();assert.equal(unchanged.renderInvalidated,false);
+    assert.equal((await loadProjectFile(project.id)).clips[0].render.sha256,project.clips[0].render.sha256);
     const manual=page.getByRole('region',{name:'Recorte manual'});await context.setOffline(true);await manual.getByText('No se pudo actualizar el recorte.',{exact:false}).waitFor({timeout:15000});await context.setOffline(false);await manual.getByText('No se pudo actualizar el recorte.',{exact:false}).waitFor({state:'hidden',timeout:15000});
-    await page.close();evidence={...evidence,editorialCorrections:'CODEX_TEST_REVIEW_NOT_AUTOMATIC',sameClipIdsAndFraming:true,originalMachineTextPreserved:true,offlineUiRecovery:true};
+    await page.close();evidence={...evidence,editorialCorrections:'CODEX_TEST_REVIEW_NOT_AUTOMATIC',sameClipIdsAndFraming:true,originalMachineTextPreserved:true,offlineUiRecovery:true,unchangedCaptionSaveReusesMp4:true,sharedOriginalDeletionBlocked:true};
   }
   const clips=[];
   page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(base);
@@ -105,7 +110,7 @@ try{
     clips.push({clipId:clip.id,startTime:clip.startTime,endTime:clip.endTime,originalStart:evidence.sourceOffset+clip.startTime,originalEnd:evidence.sourceOffset+clip.endTime,sha256:clip.render.sha256,validation,file,srt:path.join(run,clip.id+'.srt'),subtitles:clip.subtitles,reason:clip.reason});
   }
   assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:path.join(run,'mobile.png'),fullPage:false});
-  evidence={...evidence,projectId:project.transcript.projectId,outputProjectId:project.id,jobId:job.id,tabClosedDuringProcessing:true,elapsedSeconds:(Date.now()-started)/1000,actualCount:clips.length,requestedCount:5,selectionMethod:'LOCAL_HEURISTIC',chatEvidence:'NOT_AVAILABLE',transcript:project.transcript,clips};
+  evidence={...evidence,projectId:project.transcript.projectId,outputProjectId:project.id,jobId:job.id,tabClosedDuringProcessing:true,verificationElapsedSeconds:(Date.now()-started)/1000,pipelineOriginalElapsedSeconds:(Date.parse(job.completedAt)-Date.parse(job.startedAt))/1000,actualCount:clips.length,requestedCount:5,selectionMethod:'LOCAL_HEURISTIC',chatEvidence:'NOT_AVAILABLE',transcript:project.transcript,clips};
   if(cloud){
     stage='PRIVATE_R2_RECOVERY';const library=new ClipLibraryService();const archives=[];
     for(const clip of project.clips){const saved=await retryStorage(()=>library.archive(project,clip));await retryStorage(()=>library.setKeep(saved.id,true));archives.push({id:saved.id,sha256:saved.sha256});
