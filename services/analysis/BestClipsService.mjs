@@ -2,11 +2,11 @@ import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, copyFile } from "node:fs/promises";
 import path from "node:path";
-import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, replaceProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { transcribeProject } from "../transcription/TranscriptionService.mjs";
 import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
-import { buildSubtitleTrack } from "../subtitles/SubtitleService.mjs";
+import { buildSubtitleTrack, prepareSubtitleTrack, SUBTITLE_MODES } from "../subtitles/SubtitleService.mjs";
 import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
@@ -24,6 +24,7 @@ export class BestClipsService {
   async render(outputProjectId, input, onStage = async () => {}) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
+    if (input.subtitleMode !== undefined && !SUBTITLE_MODES.includes(input.subtitleMode)) throw new Error("Modo de subtítulos inválido.");
     if (original.source?.captureValidation?.valid === false) throw new WaitingResourceError("La fuente fue rechazada durante la verificación de captura. Revisa el intervalo y vuelve a capturarlo.");
     const count = Number(input.count ?? 3), minDuration = Number(input.minDuration ?? 30), maxDuration = Number(input.maxDuration ?? 60), targetDuration = Number(input.targetDuration ?? ((minDuration + maxDuration) / 2));
     if (!Number.isSafeInteger(count) || count < 1 || count > 10 || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 15 || minDuration > 180 || maxDuration < minDuration || maxDuration > 180) throw new Error("Elige entre uno y diez clips de 15 a 180 segundos.");
@@ -74,7 +75,11 @@ export class BestClipsService {
     const now = new Date().toISOString();
     const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, liveObservation:original.liveObservation || null, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
     // Persist the editorial decision before encoding so a restart does not call the model again.
-    await replaceProjectFile(outputProjectId, project);
+    if (previous) await updateProjectFile(outputProjectId, current => {
+      current.analysis = project.analysis;
+      current.clipsOrigin = project.clipsOrigin;
+    });
+    else await replaceProjectFile(outputProjectId, project);
     const results = [];
     for (const candidate of selected) {
       const saved = reusable.find(clip => clip.status === "READY" && clip.startTime === candidate.startTime && clip.endTime === candidate.endTime);
@@ -86,12 +91,22 @@ export class BestClipsService {
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
       const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
-      if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
-      try{if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
+      try {
+      if (!recovered) {
+        if (input.subtitleMode !== undefined) {
+          clip.edit.subtitleMode = input.subtitleMode;
+          clip.edit.subtitlesEnabled = input.subtitleMode !== "NONE";
+          if (clip.edit.subtitlesEnabled) clip.subtitles = await prepareSubtitleTrack(original, clip);
+        } else if (input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
+      }
+      if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
       catch(error){await eventStore.release(eventSource,outputProjectId);throw error;}
       project.clips = project.clips.filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
       project.clips.push(clip);
-      await replaceProjectFile(outputProjectId, project);
+      await updateProjectFile(outputProjectId, current => {
+        current.clips = (current.clips || []).filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
+        current.clips.push(clip);
+      });
       await eventStore.confirm(eventSource,candidate.id,outputProjectId);
       results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
@@ -101,7 +116,7 @@ export class BestClipsService {
     try { await copyFile(resolveStoragePath(path.posix.join("uploads", original.id, "poster.jpg")), path.join(posters, "poster.jpg")); }
     catch { await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-i", resolveStoragePath(results[0].relativePath), "-frames:v", "1", path.join(posters, "poster.jpg")]); }
     project.clipsOrigin.deliveryComplete = true;
-    await replaceProjectFile(outputProjectId, project);
+    await updateProjectFile(outputProjectId, current => { current.clipsOrigin.deliveryComplete = true; });
     return { projectId: outputProjectId, clips: results, requestedCount: count, actualCount: results.length, warnings: selectionWarning ? [selectionWarning] : [], validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
   }
 }

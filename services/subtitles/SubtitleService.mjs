@@ -1,6 +1,48 @@
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
+import { LocalTranslationProvider } from "./LocalTranslationProvider.mjs";
+import { spokenTranscriptText } from "../../lib/transcript-normalizer.mjs";
 
 const STYLES = new Set(["CLEAN", "VIRAL", "KARAOKE"]);
+export const SUBTITLE_MODES = ["NONE", "ORIGINAL_ES", "ORIGINAL_EN", "TRANSLATE_ES"];
+
+export async function requestSubtitleMode(projectId, clipId, mode, style = "CLEAN") {
+  if (!SUBTITLE_MODES.includes(mode)) throw new Error("Modo de subtítulos inválido.");
+  return updateProjectFile(projectId, project => {
+    const clip = findClip(project, clipId);
+    if (!clip) throw new Error("Clip not found.");
+    assertSubtitleEditable(clip);
+    clip.edit = { ...clip.edit, subtitleMode: mode, subtitleStyle: normalizeSubtitleStyle(style), subtitlesEnabled: mode !== "NONE" };
+    // Keep previous texts recoverable until the new track has succeeded.
+    invalidateClipRender(clip);
+    return clip;
+  });
+}
+
+/** Called by the existing render worker; never performs inference in a route. */
+export async function prepareSubtitleTrack(project, clip, { translator = new LocalTranslationProvider() } = {}) {
+  const mode = clip.edit?.subtitleMode;
+  if (!mode || mode === "NONE") return null;
+  if (clip.subtitles?.mode === mode && clip.subtitles?.sourceTranscriptId === project.transcript?.id) return clip.subtitles;
+  const expected = mode === "ORIGINAL_ES" ? "es" : "en";
+  if (project.transcript?.language !== expected) throw new Error(`El audio detectado no es ${expected === "es" ? "español" : "inglés"}. Revisa la transcripción y el idioma seleccionado.`);
+  const source = buildSubtitleTrack({ transcript: project.transcript, clip, style: clip.edit.subtitleStyle });
+  if (!source.cues.length) throw new Error("No hay texto transcrito en este intervalo.");
+  if (mode !== "TRANSLATE_ES") return { ...source, mode, language: expected, timingBasis: "SOURCE_TRANSCRIPT", reviewStatus: "PENDING" };
+  // Translate complete sentence groups, rather than isolated eight-word chunks.
+  const groups = [];
+  for (const cue of source.cues) {
+    const previous = groups.at(-1);
+    if (previous && cue.startTime - previous.endTime <= 0.6 && !/[.!?…]["'”)]?$/.test(previous.text) && previous.text.length + cue.text.length < 850 && cue.endTime - previous.startTime <= 18) {
+      previous.text += " " + cue.text; previous.endTime = cue.endTime;
+    } else groups.push({ startTime: cue.startTime, endTime: cue.endTime, text: cue.text });
+  }
+  const translated = await translator.translate(groups.map(c => c.text));
+  if (translated.texts.length !== groups.length) throw new Error("Cantidad de traducciones inválida.");
+  const segments = groups.map((cue, index) => ({ ...cue, text: translated.texts[index] }));
+  const track = buildSubtitleTrack({ transcript: { id: project.transcript.id, segments }, clip: { startTime: 0, endTime: clip.duration, duration: clip.duration }, style: clip.edit.subtitleStyle });
+  return { ...track, mode, language: "es", sourceLanguage: "en", sourceCues: source.cues, timingBasis: "SOURCE_SENTENCE_INTERVALS", reviewStatus: "PENDING",
+    translation: { provider: translated.provider, modelSha256: translated.modelSha256, audioReplaced: false, reviewRequired: true } };
+}
 
 export async function getSubtitleTrack(projectId, clipId) {
   const project = await loadProjectFile(projectId);
@@ -80,6 +122,11 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
 
   clip.subtitles = {
     ...clip.subtitles,
+    ...(clip.subtitles.translation && Array.isArray(input.cues) ? {
+      machineCues: clip.subtitles.machineCues || clip.subtitles.cues,
+      translation: { ...clip.subtitles.translation, manuallyEdited: true, reviewRequired: true },
+      reviewStatus: "PENDING",
+    } : {}),
     enabled,
     style,
     cues,
@@ -135,7 +182,7 @@ export function buildSubtitleTrack({ transcript, clip, style = "CLEAN" }) {
   for (const segment of transcript?.segments || []) {
     const segmentStart = Number(segment?.startTime);
     const segmentEnd = Number(segment?.endTime);
-    const text = String(segment?.text || "").trim();
+    const text = spokenTranscriptText(segment?.text);
 
     if (
       !Number.isFinite(segmentStart) ||
@@ -285,7 +332,7 @@ function buildWordCues(words, clipStart, clipEnd, maxWords) {
     .map((word) => {
       const start = Number(word?.startTime);
       const end = Number(word?.endTime);
-      const text = String(word?.text || "").trim();
+      const text = spokenTranscriptText(word?.text);
 
       if (
         !Number.isFinite(start) ||

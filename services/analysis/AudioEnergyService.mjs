@@ -1,4 +1,5 @@
 import { runMedia } from "../media-processing/MediaValidationService.mjs";
+import { spokenTranscriptText } from "../../lib/transcript-normalizer.mjs";
 export async function measureAudioEnergy(filename) {
   const scan = await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v","error","-i",filename,"-vn","-af","aresample=16000,asetnsamples=n=80000:p=0,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-","-f","null","/dev/null"]);
   const windows=[]; let start=0;
@@ -25,11 +26,13 @@ export function windowAudibility(candidate, windows) {
 export function sentenceSegments(segments=[],{maxGapSeconds=8}={}) {
   const result=[];let current=null;
   for(const segment of segments){
+    const spoken = spokenTranscriptText(segment.text);
+    if (!spoken) continue;
     const previousSpeaker=current?.speakerId??current?.speaker,nextSpeaker=segment.speakerId??segment.speaker;
     if(current&&(segment.startTime-current.endTime>maxGapSeconds||
       (previousSpeaker!==undefined&&nextSpeaker!==undefined&&previousSpeaker!==nextSpeaker))){result.push(current);current=null;}
-    if(!current)current={...segment,words:[...(segment.words||[])]};
-    else{current.endTime=segment.endTime;current.text+=` ${segment.text}`;current.words.push(...(segment.words||[]));}
+    if(!current)current={...segment,text:spoken,words:[...(segment.words||[])]};
+    else{current.endTime=segment.endTime;current.text+=` ${spoken}`;current.words.push(...(segment.words||[]));}
     if(/[.!?…]["'»”)]?$/.test(current.text.trim())){result.push(current);current=null;}
   }
   if(current)result.push(current);return result;

@@ -113,6 +113,14 @@ test("SRT uses local millisecond times and refuses overlapping captions", () => 
   assert.throws(() => sanitizeSubtitleCues([{ startTime: 0, endTime: 2, text: 'Uno' }, { startTime: 1, endTime: 3, text: 'Dos' }], 4), /solapan/);
 });
 
+test("ASR non-speech markers are not translated or burned as spoken words", () => {
+  const transcript = { segments: [{ startTime: 10, endTime: 12, text: '[APPLAUSE]' }, { startTime: 14, endTime: 20, text: 'We choose the moon. [BLANK_AUDIO]' }] };
+  const before = JSON.stringify(transcript);
+  const track = buildSubtitleTrack({ clip, transcript });
+  assert.equal(track.cues.length, 1);assert.equal(track.cues[0].text, 'We choose the moon.');
+  assert.equal(track.cues[0].startTime, 4);assert.equal(JSON.stringify(transcript), before);
+});
+
 test("subtitle edits serialize with project updates and reject an active render", async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-subtitle-atomic-'));
   const previous = process.env.CLIPFORGE_STORAGE_DIR;

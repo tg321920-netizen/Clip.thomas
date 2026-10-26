@@ -7,10 +7,12 @@ import type {
   SubtitleCue,
   SubtitleStyle,
   SubtitleTrack,
+  SubtitleMode,
 } from "@/types/clip";
 
 type SubtitleResponse = {
-  subtitles?: SubtitleTrack;
+  subtitles?: SubtitleTrack | null;
+  job?: { id: string };
   error?: string;
 };
 
@@ -32,6 +34,8 @@ export function ClipSubtitleEditor({
   );
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<SubtitleMode>(clip.edit.subtitleMode || (clip.subtitles?.language === 'en' ? 'ORIGINAL_EN' : 'ORIGINAL_ES'));
+  const modeControls = <label className="mt-3 block text-sm">Idioma de subtítulos<select aria-label="Idioma de subtítulos" className="mt-2 min-h-12 w-full rounded-lg border border-white/20 bg-zinc-950 px-3 text-base" value={mode} disabled={busy !== null} onChange={event=>setMode(event.target.value as SubtitleMode)}><option value="NONE">Sin subtítulos</option><option value="ORIGINAL_ES">Español → español</option><option value="ORIGINAL_EN">Inglés → inglés</option><option value="TRANSLATE_ES">Inglés → español traducido</option></select></label>;
 
   async function generate() {
     setBusy("generate");
@@ -46,18 +50,21 @@ export function ClipSubtitleEditor({
           body: JSON.stringify({
             style,
             enabled: true,
+            mode,
           }),
         },
       );
 
       const payload = (await response.json()) as SubtitleResponse;
-      if (!response.ok || !payload.subtitles) {
+      if (!response.ok || (!payload.subtitles && !payload.job)) {
         throw new Error(payload.error || "No se pudieron generar los subtítulos.");
       }
 
-      setTrack(payload.subtitles);
-      setStyle(payload.subtitles.style);
-      setEnabled(payload.subtitles.enabled);
+      if (payload.subtitles) {
+        setTrack(payload.subtitles);
+        setStyle(payload.subtitles.style);
+        setEnabled(payload.subtitles.enabled);
+      }
       await onRenderNeeded();
     } catch (actionError) {
       setError(
@@ -151,6 +158,7 @@ export function ClipSubtitleEditor({
             </select>
           </div>
 
+          {modeControls}
           <button
             type="button"
             onClick={() => void generate()}
@@ -159,7 +167,7 @@ export function ClipSubtitleEditor({
           >
             {busy === "generate"
               ? "Generando…"
-              : "Generar subtítulos y volver a renderizar"}
+              : "Aplicar idioma y renderizar"}
           </button>
 
           {error && (
@@ -179,6 +187,11 @@ export function ClipSubtitleEditor({
   return (
     <>
       <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+        {modeControls}
+        <button type="button" disabled={busy !== null} className="mt-3 min-h-12 w-full rounded-lg border border-violet-400/40 px-3 py-3 text-sm" onClick={()=>void generate()}>Aplicar idioma y renderizar</button>
+        <a className="mt-3 inline-block min-h-12 py-3 text-sm text-cyan-200" href={`/api/projects/${projectId}/clips/${clip.id}/subtitles?format=srt`} download>Descargar subtítulos SRT</a>
+        {track.translation && <p className="mt-2 text-sm text-amber-200">Traducción local al español · revisión pendiente. Tiempos basados en las frases originales, sin doblaje ni sincronización medida por palabra traducida.</p>}
+        {track.sourceCues && <details className="mt-3 rounded-lg border border-amber-300/30 p-3"><summary className="min-h-12 cursor-pointer py-3 text-sm">Comparar con el texto inglés original</summary><p className="text-sm text-amber-200">Comprueba nombres propios, cifras y negaciones. La transcripción también puede contener errores.</p>{track.sourceCues.map(cue=><p key={cue.id} className="mt-2 text-sm text-zinc-300">{cue.startTime.toFixed(1)}–{cue.endTime.toFixed(1)} s · {cue.text}</p>)}</details>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-medium text-zinc-300">Subtítulos editables</p>
@@ -254,6 +267,7 @@ export function ClipSubtitleEditor({
               </div>
 
               <textarea
+                aria-label={`Texto del subtítulo ${cue.id}`}
                 value={cue.text}
                 onChange={(event) =>
                   updateCue(cue.id, { text: event.target.value })

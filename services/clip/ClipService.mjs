@@ -4,6 +4,8 @@ import { randomUUID, createHash } from "node:crypto";
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { RenderService } from "./RenderService.mjs";
 import {manualOutputOptions} from '../../lib/render-options.mjs';
+import { SUBTITLE_MODES, prepareSubtitleTrack } from '../subtitles/SubtitleService.mjs';
+import { transcribeProject } from '../transcription/TranscriptionService.mjs';
 
 const defaultWidth=Number(process.env.CLIPFORGE_MEDIA_WIDTH||1080),defaultHeight=Number(process.env.CLIPFORGE_MEDIA_HEIGHT||1920);
 
@@ -22,15 +24,17 @@ export async function createManualClip(projectId, input = {}) {
       (project.source.capture?.continuityBreaks || []).some(t => startTime < t && endTime > t)) throw new Error('El intervalo atraviesa una interrupción de la fuente.');
     const framingMode = normalizeFraming(input.framingMode), quality = normalizeQuality(input.quality);
     const output=manualOutputOptions(input);
-    const candidateId = 'manual-' + createHash('sha256').update(JSON.stringify({ startTime, endTime, framingMode, quality,output })).digest('hex').slice(0, 24);
+    const subtitleMode = input.subtitleMode || 'NONE';
+    if (!SUBTITLE_MODES.includes(subtitleMode)) throw new Error('Modo de subtítulos inválido.');
+    const candidateId = 'manual-' + createHash('sha256').update(JSON.stringify({ startTime, endTime, framingMode, quality,output, subtitleMode })).digest('hex').slice(0, 24);
     project.clips ||= [];
     const existing = project.clips.find(c => c.candidateId===candidateId || (c.candidateId.startsWith('manual-')&&
-      c.startTime===startTime&&c.endTime===endTime&&c.edit?.framingMode===framingMode&&c.edit?.quality===quality&&
+      c.startTime===startTime&&c.endTime===endTime&&(c.edit?.subtitleMode||'NONE')===subtitleMode&&c.edit?.framingMode===framingMode&&c.edit?.quality===quality&&
       (c.edit.output?.width??c.render?.width??defaultWidth)===output.width&&(c.edit.output?.height??c.render?.height??defaultHeight)===output.height));
     if (existing) return { clip: existing, reused: true };
     const now = new Date().toISOString(), clip = { id: randomUUID(), projectId, candidateId, startTime, endTime, duration: endTime - startTime,
       title: String(input.title || 'Recorte manual').slice(0, 140), reason: 'Intervalo elegido manualmente sobre el video original.', status: 'DRAFT',
-      edit: { framingMode, quality,output, subtitlesEnabled: false, subtitleStyle: 'CLEAN', autoReframeEnabled: false },
+      edit: { framingMode, quality,output, subtitleMode, subtitlesEnabled: subtitleMode !== 'NONE', subtitleStyle: 'CLEAN', autoReframeEnabled: false },
       editorialReview: { status: 'PENDING', analysisKind: 'MANUAL_SELECTION' }, subtitles: null, autoEdit: null, autoReframe: null, render: null,
       createdAt: now, updatedAt: now, error: null };
     project.clips.push(clip);
@@ -96,7 +100,7 @@ export async function createClipFromCandidate(
 }
 
 export async function renderClip(projectId, clipId, onProgress = () => undefined) {
-  const project = await loadProjectFile(projectId);
+  let project = await loadProjectFile(projectId);
   if (!project) throw new Error("Project not found.");
 
   const clips = Array.isArray(project.clips) ? project.clips : [];
@@ -119,6 +123,19 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
   await saveClipState(projectId, clip);
 
   try {
+    if (clip.edit?.subtitleMode && clip.edit.subtitleMode !== 'NONE') {
+      if (project.transcript?.status !== 'COMPLETED') {
+        await transcribeProject(projectId);
+        project = await loadProjectFile(projectId);
+      }
+      const track = await prepareSubtitleTrack(project, clip);
+      await updateProjectFile(projectId, current => {
+        const target = current.clips?.find(c => c.id === clipId);
+        if (!target || Number(target.editRevision || 0) !== Number(clip.editRevision || 0)) throw new Error('El recorte cambió mientras se preparaban subtítulos.');
+        target.subtitles = track;
+      });
+      clip.subtitles = track;
+    }
     const render = await renderService.renderClip({
       project,
       clip,

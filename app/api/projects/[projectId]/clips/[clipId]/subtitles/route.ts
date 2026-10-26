@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { isProjectId } from "@/lib/project-id.mjs";
 import { readBoundedJson } from "@/lib/bounded-json.mjs";
+import { JobStore } from "@/services/JobStore.mjs";
+import { markClipQueued } from "@/services/clip/ClipService.mjs";
 import { getClip } from "@/services/clip/ClipService.mjs";
 import {
   generateSubtitleTrack,
   getSubtitleTrack,
   updateSubtitleTrack,
   buildSrtDocument,
+  requestSubtitleMode,
 } from "@/services/subtitles/SubtitleService.mjs";
 
 export const runtime = "nodejs";
@@ -55,6 +58,12 @@ export async function POST(
 
   try {
     const body = await safeJson(request);
+    if (body.mode !== undefined) {
+      const clip = await requestSubtitleMode(ids.projectId, ids.clipId, body.mode, typeof body.style === "string" ? body.style : "CLEAN");
+      await markClipQueued(ids.projectId, ids.clipId);
+      const job = await new JobStore().enqueueRender(ids.projectId, ids.clipId, { clipId: ids.clipId }, { restartCompleted: true });
+      return NextResponse.json({ subtitles: clip.subtitles || null, job, renderInvalidated: true }, { status: 202 });
+    }
     const subtitles = await generateSubtitleTrack(
       ids.projectId,
       ids.clipId,

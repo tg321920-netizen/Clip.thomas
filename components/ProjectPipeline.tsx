@@ -60,6 +60,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
   const [desiredClipCount, setDesiredClipCount] = useState(5);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const loadState = useCallback(
     async (silent = false) => {
@@ -109,15 +110,14 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         setAnalysisJob(analysisData.job);
         setAutoEditJob(autoEditData.job ?? null);
         setClips(clipsData.clips ?? []);
+        setRefreshError(null);
         if (!silent) setError(null);
       } catch (loadError) {
-        if (!silent) {
-          setError(
+          setRefreshError(
             loadError instanceof Error
               ? loadError.message
               : "No se pudo consultar el procesamiento.",
           );
-        }
       }
     },
     [projectId],
@@ -704,6 +704,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         )}
       </section>
 
+      {refreshError && <p role="status" className="mt-3 text-sm text-amber-200">{refreshError} El trabajo del servidor se conserva; se volverá a consultar.</p>}
       {error && (
         <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-xs leading-5 text-red-200">
           {error}

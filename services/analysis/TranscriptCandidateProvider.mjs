@@ -1,6 +1,7 @@
 import { scoreCandidate } from "./ViralScoreService.mjs";
 import { windowEnergy, sceneActivity, windowAudibility } from "./AudioEnergyService.mjs";
 import { chatEvidenceForWindow } from "./ChatActivityService.mjs";
+import { spokenTranscriptText } from "../../lib/transcript-normalizer.mjs";
 
 const DEFAULTS = {
   minDuration: 15,
@@ -8,7 +9,7 @@ const DEFAULTS = {
   targetDuration: 30,
   maxCandidates: 10,
 };
-export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v3';
+export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v4';
 
 export class TranscriptCandidateProvider {
   constructor(options = {}) {
@@ -291,7 +292,7 @@ function normalizeSegments(segments) {
     .map((segment) => ({
       startTime: Number(segment?.startTime),
       endTime: Number(segment?.endTime),
-      text: String(segment?.text || "").trim(),
+      text: spokenTranscriptText(segment?.text),
       speaker:typeof (segment?.speakerId??segment?.speaker)==='string' || Number.isSafeInteger(segment?.speakerId??segment?.speaker)
         ?String(segment.speakerId??segment.speaker).slice(0,64):null,
     }))

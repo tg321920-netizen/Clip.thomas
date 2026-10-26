@@ -39,7 +39,7 @@ test("Z.ai editor reuses only Z.ai credentials, pins the selected model and pres
   assert.equal(provider.model, "glm-4.6v-flash");
   assert.equal(provider.baseUrl, "https://api.z.ai/api/paas/v4");
   assert.equal(provider.visionEnabled, true);
-  assert.equal(createContentAnalysisProvider({ env: {} }).name, "transcript-heuristic-v3");
+  assert.equal(createContentAnalysisProvider({ env: {} }).name, "transcript-heuristic-v4");
   assert.ok(createAgentProvider({ env: { CLIPFORGE_AGENT_PROVIDER: "zai" } }) instanceof ZaiAgentProvider);
 });
 

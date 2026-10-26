@@ -1,6 +1,7 @@
 export type ClipFramingMode = "FILL" | "FIT" | "CONVERSATION";
 export type ClipRenderQuality = "FAST" | "EFFICIENT" | "BALANCED" | "HIGH";
 export type SubtitleStyle = "CLEAN" | "VIRAL" | "KARAOKE";
+export type SubtitleMode = "NONE" | "ORIGINAL_ES" | "ORIGINAL_EN" | "TRANSLATE_ES";
 
 export type SubtitleWord = {
   startTime: number;
@@ -17,6 +18,14 @@ export type SubtitleCue = {
 };
 
 export type SubtitleTrack = {
+  mode?: SubtitleMode;
+  language?: string;
+  sourceLanguage?: string;
+  sourceCues?: SubtitleCue[];
+  machineCues?: SubtitleCue[];
+  timingBasis?: string;
+  reviewStatus?: "PENDING";
+  translation?: { provider: string; modelSha256: string; audioReplaced: false; reviewRequired: true; manuallyEdited?: boolean };
   enabled: boolean;
   style: SubtitleStyle;
   sourceTranscriptId: string;
@@ -89,6 +98,7 @@ export type ClipRecord = {
     framingMode: ClipFramingMode;
     subtitlesEnabled: boolean;
     subtitleStyle: SubtitleStyle;
+    subtitleMode?: SubtitleMode;
     quality: ClipRenderQuality;
     autoReframeEnabled?: boolean;
   };
