@@ -221,7 +221,17 @@ export class ClipLibraryService {
   async cleanup({ dryRun = false } = {}) {
     return this.#withWriter(async signal => {
       const entries = await this.#all(signal);
-      const expired = entries.filter(e => e.record.status === 'READY' && !e.record.keep && Date.parse(e.record.expiresAt) <= this.now());
+      // Completed MP4 may also be the only result referenced by a project
+      // recovery checkpoint. Never expire a file still needed by that backup.
+      const references=new Set();
+      const recoveryKeys=(await this.store.list('clipforge-managed/v1/project-recovery/',{signal}))
+        .filter(row=>/^clipforge-managed\/v1\/project-recovery\/[a-f0-9-]{36}\.json$/.test(row.key));
+      for(const row of recoveryKeys){
+        const manifest=(await this.store.getJson(row.key,{signal}))?.value;
+        if(manifest?.version!==1||!isProjectId(manifest.id)||row.key!=='clipforge-managed/v1/project-recovery/'+manifest.id+'.json'||!Array.isArray(manifest.outputs))throw storageError('STORAGE_INVALID','El respaldo de proyectos no pudo comprobarse. Se detuvo la limpieza.');
+        for(const file of manifest.outputs)references.add(file.key);
+      }
+      const expired = entries.filter(e => e.record.status === 'READY' && !e.record.keep && !references.has(e.record.objectKey) && Date.parse(e.record.expiresAt) <= this.now());
       const removed = [];
       for (const entry of expired) {
         signal.throwIfAborted();

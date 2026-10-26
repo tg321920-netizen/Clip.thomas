@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { UploadedVideo } from "@/types/video";
+import {ProjectRecoveryPanel} from './ProjectRecoveryPanel';
 
 type ProjectRecord = {
   id: string;
@@ -100,10 +101,11 @@ export function RecentProjects() {
     }
   }
 
-  if (!loaded || projects.length === 0) return null;
+  if (!loaded || projects.length === 0) return <ProjectRecoveryPanel projects={projects}/>;
 
   return (
     <section className="border-t border-white/10 py-8">
+      <ProjectRecoveryPanel projects={projects}/>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">

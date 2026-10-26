@@ -48,6 +48,7 @@ if (process.argv.includes("--check")) {
 let shuttingDown = false;
 let webChild = null;
 let ingestChild = null;
+let projectBackupChild = null;
 let smokeChild = null;
 let activeWorker = null;
 
@@ -58,6 +59,9 @@ webChild = spawnNode(
   "web",
 );
 ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
+if(process.env.CLIPFORGE_PROJECT_BACKUP_ENABLED==="true"&&process.env.CLIPFORGE_MEDIA_STORAGE_PROVIDER==="r2"){
+  projectBackupChild=spawnNode(["scripts/project-backup-worker.mjs"],"project-backup");
+}
 await saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel});
 const runtimeHeartbeat=setInterval(()=>void saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel}).catch(()=>{}),5000);runtimeHeartbeat.unref();
 
@@ -258,19 +262,19 @@ function shutdown(signal, exitCode = 0) {
   void saveRuntimeStatus({status:'STOPPED',profile:releasePolicy().channel}).catch(()=>{});
   console.log("[free-runtime] shutting down...");
 
-  for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
+  for (const child of [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]) {
     if (child && !child.killed) child.kill(signal);
   }
 
   const timer = setTimeout(() => {
-    for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {
+    for (const child of [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]) {
       if (child && !child.killed) child.kill("SIGKILL");
     }
     process.exit(exitCode);
   }, 10_000);
   timer.unref();
 
-  const pending = [activeWorker, smokeChild, ingestChild, webChild]
+  const pending = [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]
     .filter(Boolean)
     .map(
       (child) =>

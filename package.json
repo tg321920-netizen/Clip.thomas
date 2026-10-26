@@ -57,7 +57,11 @@
     "live:continuity:e2e": "node scripts/live-continuity-e2e.mjs",
     "live:pipeline:e2e": "node scripts/live-pipeline-e2e.mjs",
     "mobile:stability:e2e": "node scripts/mobile-stability-e2e.mjs",
-    "stable:android:e2e": "node scripts/stable-android-e2e.mjs"
+    "stable:android:e2e": "node scripts/stable-android-e2e.mjs",
+    "worker:project-backup": "node scripts/project-backup-worker.mjs",
+    "worker:project-backup:once": "node scripts/project-backup-worker.mjs --once",
+    "project:restore": "node scripts/project-restore.mjs",
+    "project:recovery:e2e": "node scripts/project-recovery-e2e.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",

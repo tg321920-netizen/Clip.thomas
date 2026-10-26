@@ -41,6 +41,16 @@ test('archive is idempotent and a fresh instance can list, range-stream and down
   await assert.rejects(restored.source(saved.id, 'bytes=999999-'), error => error.code === 'STORAGE_RANGE');
 });
 
+test('cleanup preserves MP4 referenced by a private project checkpoint even after ordinary retention expires',async t=>{
+  const f=await fixture(t),saved=await f.service.archive(f.project,f.clip);
+  await f.store.putJson('clipforge-managed/v1/project-recovery/'+f.project.id+'.json',
+    {version:1,id:f.project.id,outputs:[{key:'clipforge-managed/v1/media/'+saved.id+'.mp4'}]});
+  f.advance(31*86400000);
+  assert.deepEqual((await f.service.cleanup()).removed,[]);
+  assert.equal(f.store.deletes.length,0);
+  assert.equal((await f.service.identity(saved.id)).status,'READY');
+});
+
 test('new story renders are archived only at the exact managed story path', async t => {
   const f = await fixture(t);
   f.project.story = { title: 'Reflexión propia' };
