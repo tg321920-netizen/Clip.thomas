@@ -1,6 +1,6 @@
 import path from "node:path";
 import { stat } from "node:fs/promises";
-import { captureSegmentedStream } from "../ingest/UrlIngestService.mjs";
+import { captureSegmentedStream, sanitizeIngestDiagnostic } from "../ingest/UrlIngestService.mjs";
 import { hashFile } from "../ingest/ResumableUploadStore.mjs";
 import { LiveSessionStore } from "./LiveSessionStore.mjs";
 import { LiveObservationStore, sameLiveSource } from "./LiveObservationStore.mjs";
@@ -45,7 +45,7 @@ export class LiveCaptureService {
           } else await this.sessions.update(job.id, s => { s.chat = { status: saved.bins.length ? "SAVED_OBSERVATIONS" : "UNAVAILABLE", acceptedMessages: 0, connectionAttempts: chatAttempts }; });
         } finally { snapshotting = false; }
       };
-      const state = await this.sessions.update(job.id, s => { s.capture = { ...s.capture, status: "CAPTURING", attempts: s.capture.attempts+1, startedAt: s.capture.startedAt || new Date().toISOString() }; });
+      const state = await this.sessions.update(job.id, s => { s.capture = { ...s.capture, lastFailure:s.capture.errorCode?{code:s.capture.errorCode,diagnostic:s.capture.diagnostic||null,at:s.capture.stoppedAt||null}:s.capture.lastFailure||null, errorCode:null, diagnostic:null, status: "CAPTURING", attempts: s.capture.attempts+1, startedAt: s.capture.startedAt || new Date().toISOString() }; });
       await publishChat();
       const timer = setInterval(() => { void publishChat().catch(() => {}); }, 5000); timer.unref();
       let failed = false;
@@ -60,7 +60,18 @@ export class LiveCaptureService {
           maxCaptureBytes: 2 * 1024 ** 3,
           startNumberFloor: state.segments.length ? Math.max(...state.segments.map(s=>s.index))+1 : 0,
           onSourceResolved: source => { if (!sameLiveSource(source, expected)) throw Object.assign(new Error("La señal corresponde a otra transmisión."), { code: "LIVE_SOURCE_CHANGED" }); },
-          onCaptureMetadata: async metadata => { captureMetadata = metadata; },
+          onDiagnostic: async event => {
+            if(event.type!=="HLS_ERROR")return;
+            await this.sessions.update(job.id,s=>{const errors=s.capture.recoverableErrors||[];errors.push({stage:event.stage,status:event.status,code:event.code,at:new Date().toISOString()});s.capture.recoverableErrors=errors.slice(-50);});
+          },
+          onCaptureMetadata: async metadata => {
+            captureMetadata = metadata;
+            const requested=Date.parse(metadata.windowStartUtc || metadata.playlistStartUtc),received=Date.parse(metadata.firstServedProgramUtc);
+            if(!metadata.resumedSeconds && Number.isFinite(requested)&&Number.isFinite(received)&&received-requested>1000){
+              const fromUtc=new Date(requested).toISOString(),toUtc=new Date(received).toISOString();
+              await this.sessions.update(job.id,s=>{if(!s.gaps.some(g=>g.reason==="INITIAL_HLS_SEGMENTS_UNAVAILABLE"&&g.fromUtc===fromUtc&&g.toUtc===toUtc))s.gaps.push({fromUtc,toUtc,reason:"INITIAL_HLS_SEGMENTS_UNAVAILABLE",durationSeconds:(received-requested)/1000});});
+            }
+          },
           checkCapacity: async () => {
             if (Date.now()-checkedAt < 5000) return;
             lastCapacity = await this.capacity(); checkedAt = Date.now();
@@ -81,7 +92,7 @@ export class LiveCaptureService {
       } catch(error) {
         failed = true;
         const code = signal?.aborted ? "LIVE_INTERRUPTED" : error.code || "LIVE_CAPTURE_FAILED";
-        await this.sessions.update(job.id,s=>{s.capture={...s.capture,status:code === "LIVE_STORAGE_LIMIT" ? "STORAGE_LIMIT" : "INTERRUPTED",errorCode:code,stoppedAt:new Date().toISOString(),capacity:lastCapacity};});
+        await this.sessions.update(job.id,s=>{s.capture={...s.capture,status:code === "LIVE_STORAGE_LIMIT" ? "STORAGE_LIMIT" : "INTERRUPTED",errorCode:code,diagnostic:sanitizeIngestDiagnostic(error.message,1500),stoppedAt:new Date().toISOString(),capacity:lastCapacity};});
         const latest = (await this.sessions.get(job.id)).segments.at(-1);
         await this.sessions.gap(job.id,code,latest?.sourceStartUtc ? new Date(Date.parse(latest.sourceStartUtc)+latest.durationSeconds*1000).toISOString() : null);
         throw Object.assign(new Error("La captura no completó la sesión. Los segmentos y su diagnóstico están guardados."),{code,retryable:!["LIVE_STORAGE_LIMIT","LIVE_SOURCE_CHANGED"].includes(code)});

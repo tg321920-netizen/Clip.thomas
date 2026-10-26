@@ -422,6 +422,7 @@ export async function captureSegmentedStream({
       signal?.throwIfAborted();
       const failure = input?.snapshot().lastError;
       if (failure) throw new HlsInputError(failure.stage, failure.status, failure.code);
+      error.code ||= "FFMPEG_CAPTURE_FAILED"; error.stage ||= "MEDIA_READ";
       throw error;
     } finally { await input?.close(); }
   }

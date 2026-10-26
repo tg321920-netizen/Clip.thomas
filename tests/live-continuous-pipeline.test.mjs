@@ -39,6 +39,9 @@ test("capture journals closed originals without waiting for any render or R2 ope
   service.capture=async options=>{await options.checkCapacity();};service.capacity=async()=>({allowed:false});
   await assert.rejects(service.run({id:f.id,source:{url:"https://example.com/live.m3u8",expectedSource:source}}),e=>e.code==="LIVE_STORAGE_LIMIT");
   assert.equal((await f.sessions.get(f.id)).gaps.at(-1).reason,"LIVE_STORAGE_LIMIT");
+  service.capacity=async()=>({allowed:true});service.capture=async()=>({capture:{continuityBreaks:[]}});
+  await service.run({id:f.id,source:{url:"https://example.com/live.m3u8",expectedSource:source}});
+  const recovered=await f.sessions.get(f.id);assert.equal(recovered.capture.errorCode,null);assert.equal(recovered.capture.lastFailure.code,"LIVE_STORAGE_LIMIT");
   service.resolveSource=async()=>({metadata:{...source,sourceId:"different",startedAt:"2026-10-26T12:00:00Z"}});
   await assert.rejects(service.run({id:f.id,source:{url:"https://example.com/live.m3u8",expectedSource:source}}),e=>e.code==="LIVE_SOURCE_CHANGED");
 }finally{await f.clean();}});
@@ -65,4 +68,22 @@ test('similar images alone do not suppress a different conversation but corrobor
     assert.equal(await events.reserve(source,{...a,id:'b',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez trece catorce.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-b'),false);
     assert.equal(await events.reserve(source,{...a,id:'c',text:'Esta discusión explica otras causas y ofrece una conclusión completamente distinta con suficiente contexto.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-c'),true);
   }finally{await f.clean();}
+});
+
+test('a recovered initial HTTP failure keeps its safe diagnostic and unavailable opening interval',async()=>{
+ const f=await setup();try{
+  const service=new LiveCaptureService({sessions:f.sessions,observations,resolveSource:async()=>({metadata:source}),capacity:async()=>({allowed:true}),enqueue:async()=>{},capture:async options=>{
+   await options.onDiagnostic({type:'HLS_ERROR',stage:'SEGMENT_OPEN',status:503,code:'HLS_UPSTREAM_HTTP',url:'https://private.invalid/?token=must-not-persist'});
+   await options.onCaptureMetadata({playlistStartUtc:source.startedAt,firstServedProgramUtc:'2026-10-25T12:00:04Z',resumedSeconds:0,sourceRanges:[]});return{capture:{continuityBreaks:[]}};
+  }});await service.run({id:f.id,source:{url:'https://example.com/live.m3u8',expectedSource:source,captureSeconds:60}});
+  const state=await f.sessions.get(f.id);assert.equal(state.gaps[0].durationSeconds,4);assert.equal(state.capture.recoverableErrors[0].status,503);assert.doesNotMatch(JSON.stringify(state),/private.invalid|must-not-persist/);
+ }finally{await f.clean();}
+});
+
+test('capacity tolerates a listed temporary file disappearing, but other filesystem errors still fail closed',async()=>{
+ const f=await setup();try{
+  const {liveMediaSize}=await import('../services/live/LiveSessionStore.mjs');const file=path.join(f.root,'session.mutation-lock');await writeFile(file,'transient lock');
+  const size=await liveMediaSize(f.root,{statFile:async current=>{if(current===file){await rm(file);throw Object.assign(new Error('gone after readdir'),{code:'ENOENT'});}return{size:0};}});assert.equal(size,0);
+  await writeFile(file,'permission failure fixture');await assert.rejects(liveMediaSize(f.root,{statFile:async()=>{throw Object.assign(new Error('blocked'),{code:'EACCES'});}}),e=>e.code==='EACCES');
+ }finally{await f.clean();}
 });

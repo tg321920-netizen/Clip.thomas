@@ -10,12 +10,13 @@ export function cleanLiveSource(source) {
   if (!source || !/^[a-z0-9-]{1,100}$/iu.test(String(source.sourceId || ""))) throw new Error("Falta la identidad verificable de la transmisión.");
   return Object.fromEntries(["platform", "channel", "channelId", "chatroomId", "sourceId", "sourceKind", "startedAt", "title", "durationSeconds"].filter(k => source[k] !== undefined).map(k => [k, source[k]]));
 }
-async function sizeOf(directory) {
+export async function liveMediaSize(directory, {statFile=stat}={}) {
   let size = 0;
   const entries = await readdir(directory, { withFileTypes: true }).catch(e => { if (e.code === "ENOENT") return []; throw e; });
   for (const entry of entries) {
     const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) size += await sizeOf(file); else if (entry.isFile()) size += (await stat(file)).size;
+    if (entry.isDirectory()) size += await liveMediaSize(file,{statFile});
+    else if (entry.isFile()) { try { size += (await statFile(file)).size; } catch(error) { if(error.code!=="ENOENT")throw error; } }
   }
   return size;
 }
@@ -94,7 +95,7 @@ export class LiveSessionStore {
   }
   async capacity({ maxBytes = 2 * 1024 ** 3, minFreeBytes = 1024 ** 3 } = {}) {
     const disk = await statfs(this.root);
-    const usedBytes = (await Promise.all(["live-sessions", "uploads", "clips"].map(name => sizeOf(path.join(this.root, name))))).reduce((a,b) => a+b, 0);
+    const usedBytes = (await Promise.all(["live-sessions", "uploads", "clips"].map(name => liveMediaSize(path.join(this.root, name))))).reduce((a,b) => a+b, 0);
     const freeBytes = disk.bavail * disk.bsize;
     return { allowed: usedBytes < maxBytes && freeBytes >= minFreeBytes, usedBytes, maxBytes, freeBytes, minFreeBytes };
   }

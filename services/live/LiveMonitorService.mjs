@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, stat, statfs, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { withLocalStateLock } from "../../lib/atomic-local-state.mjs";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { IngestJobStore } from "../ingest/IngestJobStore.mjs";
 import { JobStore } from "../JobStore.mjs";
 import { resolveKickSource, kickViewerRequest } from "./KickPublicSourceService.mjs";
+import { liveMediaSize } from "./LiveSessionStore.mjs";
 import { LiveObservationStore } from "./LiveObservationStore.mjs";
 import { buildChatActivityWindows } from "../analysis/ChatActivityService.mjs";
 
@@ -14,16 +15,6 @@ function jobId(key) {
   const h = createHash("sha256").update(key).digest("hex");
   return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;
 }
-async function treeSize(directory) {
-  let bytes = 0;
-  for (const entry of await readdir(directory, { withFileTypes: true }).catch(e => { if (e.code === "ENOENT") return []; throw e; })) {
-    const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) bytes += await treeSize(file);
-    else if (entry.isFile()) bytes += (await stat(file)).size;
-  }
-  return bytes;
-}
-
 /** Bounded, single-host supervisor of the existing ingest/media queues.
  * It cannot publish, change providers, delete media, or start paid model calls.
  * Its checkpoint AND both job queues need a persistent shared volume.
@@ -36,7 +27,7 @@ export class LiveMonitorService {
     this.directory = path.join(root, "live-monitor"); this.file = path.join(this.directory, "westcol.json");
     this.checkCapacity = checkCapacity || (async () => {
       const capacity = await statfs(root);
-      const used = await treeSize(path.join(root, "uploads")) + await treeSize(path.join(root, "clips")) + await treeSize(path.join(root, "live-sessions"));
+      const used = await liveMediaSize(path.join(root, "uploads")) + await liveMediaSize(path.join(root, "clips")) + await liveMediaSize(path.join(root, "live-sessions"));
       return capacity.bavail * capacity.bsize >= 1024 ** 3 && used < 2 * 1024 ** 3;
     });
   }
