@@ -63,3 +63,8 @@ test("all providers must respect capture gaps, measured durations and reaction-o
   assert.equal(selectIndependentClips([clip('touch-gap', 0, 30)], { ...options, continuityBreaks: [30] }).length, 1);
   assert.deepEqual(selectIndependentClips([clip('past-audio-end', 60, 90)], { ...options, sourceEnd: 89.5 }), []);
 });
+
+test('a candidate wholly inside a measured packet gap cannot become a clip',()=>{
+  const candidate={id:'gap',startTime:20,endTime:40,duration:20};
+  assert.deepEqual(selectIndependentClips([candidate],{count:10,minDuration:15,maxDuration:45,continuityIntervals:[{start:18,end:42}]}),[]);
+});

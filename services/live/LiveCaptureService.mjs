@@ -24,7 +24,10 @@ export class LiveCaptureService {
     await this.sessions.create(job.id, expected);
     return withLocalStateLock(`${this.sessions.file(job.id)}.capture`, async () => {
       const resolved = await this.resolveSource(job.source.url, { signal });
-      if (!sameLiveSource(resolved.metadata, expected)) throw Object.assign(new Error("Cambió la transmisión. Los segmentos anteriores no se mezclan con ella."), { code: "LIVE_SOURCE_CHANGED" });
+      if (!sameLiveSource(resolved.metadata, expected)) {
+        await this.sessions.update(job.id,s=>{s.capture={...s.capture,status:"SOURCE_CHANGED",errorCode:"LIVE_SOURCE_CHANGED"};});
+        throw Object.assign(new Error("Cambió la transmisión. Los segmentos anteriores no se mezclan con ella."), { code: "LIVE_SOURCE_CHANGED" });
+      }
       let chat = null, chatAttempts = 0, captureMetadata = null, snapshotting = false, lastCapacity = null, checkedAt = 0, finishing = false;
       const saved = await this.observations.loadForSource(expected, { includeCloud: expected.sourceKind === "VOD" });
       const publishChat = async () => {
@@ -47,6 +50,8 @@ export class LiveCaptureService {
       const timer = setInterval(() => { void publishChat().catch(() => {}); }, 5000); timer.unref();
       let failed = false;
       try {
+        lastCapacity=await this.capacity();checkedAt=Date.now();
+        if(!lastCapacity.allowed)throw Object.assign(new Error("Falta espacio para iniciar la captura."),{code:"LIVE_STORAGE_LIMIT"});
         const previous = state.segments.filter(s=>s.status==="CAPTURED").at(-1);
         const resumeSourceUtc = previous?.sourceStartUtc ? new Date(Date.parse(previous.sourceStartUtc)+previous.durationSeconds*1000).toISOString() : null;
         const result = await this.capture({ ...captureOptions, url: job.source.url, uploadDir: path.join(this.sessions.root,"live-sessions",job.id,"capture"),

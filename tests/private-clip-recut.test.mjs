@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {requestPrivateRecut} from '../services/clip/PrivateClipReviewService.mjs';
+import {loadProjectFile,replaceProjectFile} from '../lib/project-files.mjs';
+const id='73254446-902d-44a6-afef-c0bb207873bf',clipId='c048b861-cc1b-46cb-86c2-c546c7f93ef1',archiveId='a'.repeat(64);
+test('manual recut requires a recovered original, rejects capture gaps, and reuses one render job while preserving the first clip',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-recut-')),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=root;
+ t.after(async()=>{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await rm(root,{recursive:true,force:true});});
+ const original={id:clipId,status:'READY',startTime:0,endTime:30,duration:30,edit:{framingMode:'CONVERSATION',quality:'BALANCED'}};
+ await replaceProjectFile(id,{id,source:{relativePath:`uploads/${id}/source.mp4`,durationSeconds:90,capture:{continuityBreaks:[60]}},clips:[original]});
+ const library={identity:async()=>({id:archiveId,projectId:id,title:'Owner draft'}),setReview:async(_id,status,recut)=>({id:archiveId,review:{status},recut})};
+ await assert.rejects(requestPrivateRecut(archiveId,{startTime:5,endTime:35},{library}),e=>e.code==='RECUT_INVALID'&&/original/.test(e.message));
+ const directory=path.join(root,'uploads',id);await mkdir(directory,{recursive:true});await writeFile(path.join(directory,'source.mp4'),'Opaque unit storage payload; never represented as a playable video.');
+ await assert.rejects(requestPrivateRecut(archiveId,{startTime:50,endTime:80},{library}),/interrumpido/);
+ await assert.rejects(requestPrivateRecut(archiveId,{startTime:0,endTime:100},{library}),/15 a 90/);
+ const a=await requestPrivateRecut(archiveId,{startTime:5,endTime:35},{library}),b=await requestPrivateRecut(archiveId,{startTime:5,endTime:35},{library});assert.equal(a.recut.jobId,b.recut.jobId);
+ const project=await loadProjectFile(id);assert.equal(project.clips.length,2);assert.deepEqual(project.clips[0],original);assert.equal((await readdir(path.join(root,'jobs'))).filter(n=>n.endsWith('.json')).length,1);assert.match(await readFile(path.join(directory,'source.mp4'),'utf8'),/Opaque unit/);
+});

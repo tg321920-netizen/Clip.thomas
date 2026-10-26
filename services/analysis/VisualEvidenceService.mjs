@@ -32,3 +32,17 @@ export async function sampleCandidateFrames(project, candidates) {
     return frames;
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
+
+/** One 64-bit perceptual dHash of the midpoint. Only supports conservative
+ * duplicate checks alongside transcript/time evidence; it is not scene or
+ * person recognition. A static podcast frame alone never rejects a moment. */
+export async function sampleCandidateFingerprint(project,candidate){
+  const temporary=await mkdtemp(path.join(os.tmpdir(),'clipforge-dhash-'));
+  try{
+    const time=(candidate.startTime+candidate.endTime)/2,target=path.join(temporary,'gray.bin');
+    await runMedia(process.env.FFMPEG_PATH||'ffmpeg',['-v','error','-y','-ss',String(time),'-i',resolveStoragePath(project.source.relativePath),'-an','-frames:v','1','-vf','scale=9:8,format=gray','-threads','1','-f','rawvideo',target],{timeoutMs:12000});
+    const pixels=await readFile(target);if(pixels.length!==72)throw new Error('Huella visual inválida.');
+    let hash=0n;for(let y=0;y<8;y++)for(let x=0;x<8;x++)hash=(hash<<1n)|BigInt(pixels[y*9+x]>pixels[y*9+x+1]?1:0);
+    return hash.toString(16).padStart(16,'0');
+  }finally{await rm(temporary,{recursive:true,force:true});}
+}

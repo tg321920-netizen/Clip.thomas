@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat, statfs, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, statfs, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { withLocalStateLock } from "../../lib/atomic-local-state.mjs";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { IngestJobStore } from "../ingest/IngestJobStore.mjs";
 import { JobStore } from "../JobStore.mjs";
@@ -58,22 +59,15 @@ export class LiveMonitorService {
     await writeFile(temporary, JSON.stringify(state, null, 2), { mode: 0o600 }); await rename(temporary, this.file);
     return state;
   }
+  async pause() {
+    return withLocalStateLock(this.file,async()=>this.save({...await this.read(),pausedByOwner:true,status:"OWNER_PAUSED"}));
+  }
   async tick() {
-    await mkdir(this.directory, { recursive: true });
-    const lockPath = `${this.file}.lock`;
-    // A lease is held for one bounded poll, not for a capture. Its TTL is longer
-    // than the upstream metadata request timeouts; only one host is supported.
-    let lock;
-    try { lock = await open(lockPath, "wx"); await lock.close(); }
-    catch (error) {
-      if (error.code !== "EEXIST") throw error;
-      if (this.now() - (await stat(lockPath)).mtimeMs > 20 * 60 * 1000) await rm(lockPath, { force: true });
-      return { status: "BUSY", publication: "OFF" };
-    }
-    try { return await this.#tick(await this.read()); }
-    finally { await rm(lockPath, { force: true }); }
+    try{return await withLocalStateLock(this.file,async()=>this.#tick(await this.read()),{timeoutMs:1000});}
+    catch(error){if(error.code==="STATE_BUSY")return {status:"BUSY",publication:"OFF"};throw error;}
   }
   async #tick(state) {
+    if(state.pausedByOwner===true)return this.save({...state,status:"OWNER_PAUSED"});
     if (this.env.CLIPFORGE_LIVE_MONITOR_ENABLED !== "true") return this.save({ ...state, status: "DISABLED" });
     if (this.env.CLIPFORGE_LIVE_RIGHTS_CONFIRMED !== "true") return this.save({ ...state, status: "WAITING_RIGHTS_CONFIRMATION" });
     if (this.env.CLIPFORGE_STORAGE_PERSISTENT !== "true") return this.save({ ...state, status: "WAITING_PERSISTENT_STORAGE" });

@@ -167,3 +167,14 @@ test('archive failures reach the UI without exposing receipt details or credenti
   assert.equal(health.pendingCount, 1); assert.match(health.warning, /reintentar/);
   assert.ok(!JSON.stringify(health).includes(env.CLIPFORGE_R2_SECRET_ACCESS_KEY));
 });
+
+test('review remains pending until owner action, rejection keeps bytes, and preservation does not approve',async t=>{
+  const f=await fixture(t),saved=await f.service.archive(f.project,f.clip);
+  assert.equal(saved.review.status,'PENDING');
+  const rejected=await f.service.setReview(saved.id,'REJECTED');assert.equal(rejected.review.status,'REJECTED');
+  assert.equal((await f.service.setKeep(saved.id,true)).review.status,'REJECTED');
+  assert.ok(await f.store.head(`clipforge-managed/v1/media/${saved.id}.mp4`));
+  assert.equal(f.store.deletes.length,0);
+  await assert.rejects(f.service.setReview(saved.id,'APPROVED'));
+  const pending=await f.service.setReview(saved.id,'PENDING');assert.equal(pending.review.status,'PENDING');
+});

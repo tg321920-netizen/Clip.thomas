@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { uploadStoryAssets } from "@/lib/story-asset-client";
 import { UploadPanel } from "@/components/UploadPanel";
 import { UrlImportPanel } from "@/components/UrlImportPanel";
+import { LiveStatusPanel } from "./LiveStatusPanel";
 import { CloudClipLibrary } from "@/components/CloudClipLibrary";
 import type { UploadedVideo } from "@/types/video";
 import Image from "next/image";
@@ -109,7 +110,7 @@ export function MediaTools({ defaultLiveSource = '' }: { defaultLiveSource?: str
     </div></section>
     <section aria-label="Mis videos" className="py-8"><h2 className="text-xl font-semibold">Mis videos</h2><p className="mt-2 text-sm text-zinc-400">Cada resultado incluye vista previa y descarga. La comprobación técnica del archivo y la revisión editorial son pasos separados.</p>{historyError&&<p role="alert" className="mt-3 text-sm text-red-300">{historyError}</p>}
       {historyIssues.length>0&&<div role="status" className="mt-4 rounded-xl border border-amber-400/40 p-4 text-sm text-amber-200"><p>Hay {historyIssues.length} {historyIssues.length===1?"trabajo":"trabajos"} con metadatos dañados. Los demás siguen disponibles. Se conservaron los archivos para recuperación.</p><details className="mt-2"><summary className="min-h-12 cursor-pointer py-3">Ver trabajos que necesitan recuperación</summary>{historyIssues.map(issue=><p key={issue.id} className="mt-2 break-all">{issue.id}: {issue.message}</p>)}</details></div>}
-      <CloudClipLibrary />
+      <LiveStatusPanel /><CloudClipLibrary />
       {uploads.filter(upload=>upload.status!=="COMPLETED").map(upload=><div key={upload.id} className="mt-4 rounded-xl border border-white/15 p-4"><p>{upload.name} · {upload.status==="CANCELLED"?"Importación cancelada":upload.status==="FAILED"?"Error · Importación detenida":upload.stage==="RETRY_WAIT"?"En espera de otro intento":upload.status==="COMPLETED"?"Completado":`${upload.status} · ${upload.stage}`}</p>{upload.error&&<p className="mt-2 text-sm text-red-300">{upload.error}</p>}{(upload.status==="CANCELLED"||(upload.status==="FAILED"&&upload.retryable!==false))&&<button type="button" className={`${button} mt-3`} onClick={()=>void request(upload.type==="INGEST_URL"?`/api/ingest/url/${upload.id}`:`/api/videos/jobs/${upload.id}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"RETRY"})}).then(()=>window.dispatchEvent(new Event("clipforge:project-created"))).catch(failure=>setHistoryError(failure.message))}>{upload.status==="CANCELLED"?"Reanudar":"Reintentar"} {upload.type==="INGEST_URL"?"importación":"análisis de la subida"}</button>}</div>)}
       <div className="mt-5 grid gap-4 md:grid-cols-2">{jobs.map(job=><article key={job.id} className="min-w-0 rounded-2xl border border-white/15 p-4"><h3 className="font-semibold">{job.result?.title||TOOLS.find(t=>t[0]===job.type)?.[1]}</h3><p className="mt-1 text-xs text-zinc-400">{new Date(job.createdAt).toLocaleString("es")}</p>
         <p role="status" className="mt-3 break-words text-sm">{job.cancellationPending?"Deteniendo el procesador…":STATUS[job.status]||job.status} · {STAGES[job.stage]||job.stage||job.status}{["PROCESSING","VALIDATING"].includes(job.status)?` · ${job.progress}% de etapas completadas`:""}</p>

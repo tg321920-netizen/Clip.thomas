@@ -3,6 +3,7 @@ import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isProjectId } from '../../lib/project-id.mjs';
 import { getStorageRoot, resolveStoragePath } from '../../lib/storage-paths.mjs';
+import { signPrivateClip } from './SignedMediaAccess.mjs';
 import { parseByteRange } from '../../lib/http-range.mjs';
 import { R2ObjectStore, readR2Config, storageError } from './R2ObjectStore.mjs';
 
@@ -56,6 +57,10 @@ export class ClipLibraryService {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > 8_000_000_000) throw new Error('El cupo de la biblioteca debe ser como máximo 8 GB.');
     this.store = store || new R2ObjectStore(); this.now = now; this.maxBytes = maxBytes;
   }
+  // Server-only shared CAS lease/quota for original-source archival. Capture
+  // never enters this lease; it is held solely by the archive worker.
+  async withStorageWriter(action) { return this.#withWriter(action); }
+  async assertStorageQuota(extra, signal) { return this.#assertQuota(extra, signal); }
   async #read(id, signal) {
     if (!validId(id)) throw storageError('STORAGE_NOT_FOUND', 'Clip no encontrado.');
     const result = await this.store.getJson(recordKey(id), { signal });
@@ -124,7 +129,10 @@ export class ClipLibraryService {
         if (existing?.record.status === 'DELETED') return this.publicEntry(existing.record);
         if (existing && !existing.record.keep && Date.parse(existing.record.expiresAt) <= this.now()) return this.publicEntry({ ...existing.record, status: 'DELETED' });
         const remote = await this.store.head(mediaKey(id), { signal });
-        if (existing && remote?.size === info.size && remote.metadata?.sha256 === sha256 && remote.etag === existing.record.objectEtag) return this.publicEntry(existing.record);
+        if (existing && remote?.size === info.size && remote.metadata?.sha256 === sha256 && remote.etag === existing.record.objectEtag) {
+          if(!existing.record.context){const updated={...existing.record,context:clipContext(project,clip)};await this.store.putJson(recordKey(id),updated,{ifMatch:existing.etag,signal});return this.publicEntry(updated);}
+          return this.publicEntry(existing.record);
+        }
         if (!remote) {
           await this.#assertQuota(info.size + 8192, signal);
           const stream = file.createReadStream({ autoClose: false, start: 0 });
@@ -148,6 +156,7 @@ export class ClipLibraryService {
         const now = new Date(this.now()).toISOString();
         const record = existing ? { ...existing.record, objectEtag: verified.etag } : { id, managedBy: 'clipforge-v1', projectId: project.id, clipId: clip.id, objectKey: mediaKey(id), sha256,
           sizeBytes: info.size, objectEtag: verified.etag, createdAt: now, expiresAt: new Date(this.now() + 30 * DAY).toISOString(), keep: false, status: 'READY',
+          review: {status:'PENDING'}, context:clipContext(project,clip),
           title: String(clip.title || project.source?.originalName || 'Clip').slice(0, 300), reason: String(clip.reason || '').slice(0, 2000), duration: Number(clip.duration) || 0 };
         await this.store.putJson(recordKey(id), record, existing ? { ifMatch: existing.etag, signal } : { ifAbsent: true, signal });
         return this.publicEntry(record);
@@ -157,7 +166,7 @@ export class ClipLibraryService {
   publicEntry(record) {
     return { id: record.id, projectId: record.projectId, clipId: record.clipId, title: record.title, reason: record.reason,
       duration: record.duration, sizeBytes: record.sizeBytes, createdAt: record.createdAt, expiresAt: record.keep ? null : record.expiresAt,
-      keep: record.keep, status: record.status, sourceUrl: `/api/media/library/${record.id}/source`, downloadUrl: `/api/media/library/${record.id}/source?download=1` };
+      keep: record.keep, status: record.status, review:record.review || {status:'PENDING'}, context:record.context || null, recut:record.recut || null, sourceUrl: `/api/media/library/${record.id}/source`, downloadUrl: `/api/media/library/${record.id}/source?download=1` };
   }
   async list() {
     const entries = await this.#all();
@@ -176,6 +185,25 @@ export class ClipLibraryService {
       await this.store.putJson(recordKey(id), updated, { ifMatch: entry.etag, signal });
       return this.publicEntry(updated);
     });
+  }
+  async identity(id) {
+    const entry=await this.#read(id);
+    if(!entry || entry.record.status!== 'READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');
+    return this.publicEntry(entry.record);
+  }
+  async setReview(id,status,recut=null) {
+    if(!['PENDING','REJECTED','RECUT_REQUESTED'].includes(status))throw storageError('STORAGE_INVALID','Revisión no válida.');
+    return this.#withWriter(async signal=>{
+      const entry=await this.#read(id,signal);if(!entry || entry.record.status!=='READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');
+      const updated={...entry.record,review:{status,reviewedAt:new Date(this.now()).toISOString()},...(recut?{recut}:{})};
+      await this.store.putJson(recordKey(id),updated,{ifMatch:entry.etag,signal});return this.publicEntry(updated);
+    });
+  }
+  async temporaryAccess(id,options={}) {
+    const entry=await this.#read(id);if(!entry || entry.record.status!=='READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');
+    const object=await this.store.head(mediaKey(id));
+    if(object?.etag!==entry.record.objectEtag || object?.metadata?.sha256!==entry.record.sha256 || object?.size!==entry.record.sizeBytes)throw storageError('STORAGE_INTEGRITY','La copia privada no pudo verificarse.');
+    return signPrivateClip(id,options);
   }
   async source(id, range) {
     const entry = await this.#read(id);
@@ -211,4 +239,13 @@ export class ClipLibraryService {
       return { dryRun, removed };
     });
   }
+}
+
+function clipContext(project,clip){
+  const start=Number(clip.startTime),end=Number(clip.endTime),segments=project.transcript?.segments || [];
+  const text=(a,b)=>segments.filter(s=>s.endTime>a&&s.startTime<b).map(s=>s.text).join(' ').slice(0,2500);
+  return {startTime:start,endTime:end,sourceDuration:project.source?.durationSeconds,sourceId:project.liveObservation?.source?.sourceId || null,
+    analysisKind:clip.editorialReview?.analysisKind || (clip.aiAssessment?'MODEL_SELECTION':'MANUAL_OR_UNVERIFIED'),
+    before:text(Math.max(0,start-15),start),transcript:text(start,end),after:text(end,end+15),transcriptWarning:'Transcripción automática: puede contener errores.',
+    subtitlesEnabled:clip.edit?.subtitlesEnabled===true};
 }

@@ -93,3 +93,11 @@ test("slow/failed editor and archive do not block the next capture; corrupt chec
     await assert.rejects(monitor.tick(), /checkpoint/); assert.equal(f.calls.length, 2);
   } finally { await f.cleanup(); }
 });
+
+test('owner pause survives an in-flight poll and prevents a replacement capture after cancellation',async()=>{
+  const f=await setup();try{
+    f.options.resolveSource=async()=>{await new Promise(r=>setTimeout(r,80));return{metadata:source};};
+    const monitor=new LiveMonitorService(f.options),poll=monitor.tick();await new Promise(r=>setTimeout(r,20));const pause=monitor.pause();await Promise.all([poll,pause]);
+    assert.equal((await monitor.tick()).status,'OWNER_PAUSED');assert.equal((await monitor.read()).pausedByOwner,true);assert.equal(f.calls.length,1);
+  }finally{await f.cleanup();}
+});

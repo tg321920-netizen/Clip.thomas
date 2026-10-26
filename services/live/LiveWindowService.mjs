@@ -62,14 +62,14 @@ export async function materializeLiveWindow(job, { signal, onProgress = async ()
   const segments = job.source.segmentIndices.map(i => session.segments.find(s => s.index === i));
   if (segments.some(s => !s || s.status !== "CAPTURED")) throw new Error("La ventana contiene un segmento inválido o ausente.");
   const directory = path.join(getStorageRoot(), "uploads", job.projectId); await mkdir(directory, { recursive: true });
-  const ranges = [], continuityBreaks = []; let offset = 0, previousEnd = null;
+  const ranges = [], continuityBreaks = [], continuityIntervals = []; let offset = 0, previousEnd = null;
   for (const segment of segments) {
     signal?.throwIfAborted();
     const file = resolveStoragePath(segment.relativePath);
     if ((await stat(file)).size !== segment.sizeBytes || await hashFile(file) !== segment.sha256) throw new Error("El original no coincide con su SHA-256; se conserva sin usarlo.");
     const validation = segment.validation?.valid ? segment.validation : await inspectLiveSegment(file, { signal });
     await sessions.validateSegment(session.id,segment.index,validation);
-    for (const gap of validation.packetGaps) { continuityBreaks.push(offset+gap.start,offset+gap.end); }
+    for (const gap of validation.packetGaps) { continuityBreaks.push(offset+gap.start,offset+gap.end); continuityIntervals.push({start:offset+gap.start,end:offset+gap.end}); }
     if (previousEnd !== null && (!segment.sourceStartUtc || Math.abs(Date.parse(segment.sourceStartUtc)-previousEnd)>1000)) continuityBreaks.push(offset);
     if (segment.sourceStartUtc) ranges.push({ offsetSeconds: offset, sourceStartUtc: segment.sourceStartUtc });
     previousEnd = segment.sourceStartUtc ? Date.parse(segment.sourceStartUtc)+segment.durationSeconds*1000 : null;
@@ -82,7 +82,7 @@ export async function materializeLiveWindow(job, { signal, onProgress = async ()
   const upload = { ...job, source: { mode: "UPLOAD", relativePath: path.posix.join("uploads",job.projectId,"source.mp4"), filename: `${session.source.channel || "owned"}-contexto.mp4`, size: (await stat(media)).size, sha256: await hashFile(media) } };
   const result = await ingestUrlJob(upload, { signal, onProgress });
   const project = await loadProjectFile(job.projectId), saved = await observations.loadForSource(session.source, { includeCloud: false });
-  project.source.capture = { sessionId: session.id, sourceRanges: ranges, continuityBreaks, ownershipStartUtc: job.source.ownershipStartUtc, ownershipEndUtc: job.source.ownershipEndUtc };
+  project.source.capture = { sessionId: session.id, sourceRanges: ranges, continuityBreaks, continuityIntervals, ownershipStartUtc: job.source.ownershipStartUtc, ownershipEndUtc: job.source.ownershipEndUtc };
   project.source.captureValidation = { valid: true, fullDecode: true, rawSegmentCount: segments.length };
   project.liveObservation = { source: session.source, channel: session.source.channel, chatStatus: session.chat.status,
     chatActivityWindows: alignChatToCapture(saved.bins, { sourceRanges: ranges }, project.source.durationSeconds), clockUncertaintySeconds: 10 };

@@ -57,3 +57,12 @@ test("cross-batch event claims are atomic and never merge different transmission
   assert.equal(await events.reserve({...source,sourceId:"another-stream"},candidate,"output-c"),true);
   assert.doesNotMatch(await readFile(events.file(source),"utf8"),/conversación|palabras/u);
 }finally{await f.clean();}});
+
+test('similar images alone do not suppress a different conversation but corroborate similar text nearby',async()=>{
+  const f=await setup();try{
+    const events=new EditorialEventStore({root:f.root}),a={id:'a',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez once doce.',visualFingerprint:'0123456789abcdef',chatEvidence:{peakUtc:'2026-10-25T12:00:00Z'}};
+    assert.equal(await events.reserve(source,a,'owner-a'),true);await events.confirm(source,a.id,'owner-a');
+    assert.equal(await events.reserve(source,{...a,id:'b',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez trece catorce.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-b'),false);
+    assert.equal(await events.reserve(source,{...a,id:'c',text:'Esta discusión explica otras causas y ofrece una conclusión completamente distinta con suficiente contexto.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-c'),true);
+  }finally{await f.clean();}
+});

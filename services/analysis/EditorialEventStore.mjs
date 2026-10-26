@@ -25,10 +25,13 @@ export class EditorialEventStore {
         if(r.status==="RESERVED" && !ownerIsAlive(r.lease) && this.now()-r.at>120000)return false;
         const close=Number.isFinite(peak)&&Number.isFinite(r.peak)&&Math.abs(peak-r.peak)<30000;
         const sameText=hashes.length>=8 && r.tokens.length>=8 && similarity(hashes,r.tokens)>=0.8 && (!Number.isFinite(peak)||!Number.isFinite(r.peak)||Math.abs(peak-r.peak)<120000);
-        return close||sameText;
+        const visualMatch=/^[a-f0-9]{16}$/.test(candidate.visualFingerprint||'')&&/^[a-f0-9]{16}$/.test(r.visualFingerprint||'')&&
+          (BigInt('0x'+candidate.visualFingerprint)^BigInt('0x'+r.visualFingerprint)).toString(2).replaceAll('0','').length<=4;
+        const sameVisualContext=visualMatch&&hashes.length>=8&&similarity(hashes,r.tokens)>=0.55&&Number.isFinite(peak)&&Number.isFinite(r.peak)&&Math.abs(peak-r.peak)<120000;
+        return close||sameText||sameVisualContext;
       });
       if(duplicate)return false;
-      rows.push({owner,candidateId:candidate.id,peak:Number.isFinite(peak)?peak:null,tokens:hashes,status:"RESERVED",lease:leaseOwner(),at:this.now()});return true;
+      rows.push({owner,candidateId:candidate.id,peak:Number.isFinite(peak)?peak:null,tokens:hashes,visualFingerprint:candidate.visualFingerprint||null,status:"RESERVED",lease:leaseOwner(),at:this.now()});return true;
     });
   }
   async confirm(source,candidateId,owner) { return this.mutate(source,rows=>{const row=rows.find(r=>r.owner===owner&&r.candidateId===candidateId);if(row)row.status="RENDERED";}); }

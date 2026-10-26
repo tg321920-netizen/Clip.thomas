@@ -11,6 +11,7 @@ import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
 import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
+import { sampleCandidateFingerprint } from "./VisualEvidenceService.mjs";
 import { EditorialEventStore } from "./EditorialEventStore.mjs";
 
 export class BestClipsService {
@@ -56,15 +57,18 @@ export class BestClipsService {
       onlyChatReactions: input.onlyChatReactions === true, excludedReactionPeaks: input.excludedReactionPeaks || [],
       sourceEnd: Math.min(original.source.durationSeconds, original.source.audioDurationSeconds || Infinity, original.source.videoDurationSeconds || Infinity),
       ownershipStartUtc: original.source.capture?.ownershipStartUtc, ownershipEndUtc: original.source.capture?.ownershipEndUtc,
-      continuityBreaks: original.source.capture?.continuityBreaks || [] });
+      continuityBreaks: original.source.capture?.continuityBreaks || [], continuityIntervals:original.source.capture?.continuityIntervals || [] });
     const eventStore=new EditorialEventStore(), eventSource=original.liveObservation?.source, selected=[];
-    for(const candidate of independent){if(await eventStore.reserve(eventSource,candidate,outputProjectId))selected.push(candidate);if(selected.length>=count)break;}
+    for(const candidate of independent){
+      if(eventSource && selected.length<count){try{candidate.visualFingerprint=await sampleCandidateFingerprint(original,candidate);}catch{candidate.visualFingerprint=null;}}
+      if(await eventStore.reserve(eventSource,candidate,outputProjectId))selected.push(candidate);if(selected.length>=count)break;
+    }
     if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
     const selectionWarning = selected.length < count
       ? `Se prepararon ${selected.length} de ${count} clips solicitados: no se encontraron más momentos completos y diferentes dentro de esos límites.` : null;
     const reusable = matching ? previous.clips || [] : [];
     const now = new Date().toISOString();
-    const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
+    const project = { id: outputProjectId, createdAt: previous?.createdAt || now, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, liveObservation:original.liveObservation || null, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
     // Persist the editorial decision before encoding so a restart does not call the model again.
     await replaceProjectFile(outputProjectId, project);
     const results = [];
@@ -99,7 +103,7 @@ export class BestClipsService {
 }
 
 /** Preserve the rescue branch's finite, non-overlapping candidate validation. */
-export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, excludedReactionPeaks = [], continuityBreaks = [] }) {
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, excludedReactionPeaks = [], continuityBreaks = [], continuityIntervals = [] }) {
   const selected = [];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
@@ -107,7 +111,8 @@ export function selectIndependentClips(candidates, { count, minDuration, maxDura
         candidate.duration < minDuration || candidate.duration > maxDuration ||
         Math.abs(candidate.duration - (candidate.endTime - candidate.startTime)) > 0.05 ||
         candidate.startTime < 0 || candidate.endTime > sourceEnd ||
-        continuityBreaks.some(t => Number.isFinite(t) && candidate.startTime < t && candidate.endTime > t)) continue;
+        continuityBreaks.some(t => Number.isFinite(t) && candidate.startTime < t && candidate.endTime > t) ||
+        continuityIntervals.some(g=>candidate.startTime<g.end&&candidate.endTime>g.start)) continue;
     if (selected.some(existing => Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime))) continue;
     const reaction = candidate.chatEvidence;
     if (ownershipStartUtc && (!Number.isFinite(Date.parse(reaction?.peakUtc)) || Date.parse(reaction.peakUtc)<Date.parse(ownershipStartUtc) || Date.parse(reaction.peakUtc)>=Date.parse(ownershipEndUtc))) continue;

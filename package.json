@@ -48,11 +48,20 @@
     "worker:media:once": "node scripts/media-worker.mjs --once",
     "worker:live-monitor": "node scripts/live-monitor-worker.mjs",
     "worker:live-monitor:once": "node scripts/live-monitor-worker.mjs --once",
-    "kick:capture:e2e": "node scripts/kick-capture-e2e.mjs"
+    "kick:capture:e2e": "node scripts/kick-capture-e2e.mjs",
+    "worker:live-capture": "node scripts/live-capture-worker.mjs",
+    "worker:live-capture:once": "node scripts/live-capture-worker.mjs --once",
+    "worker:live-archive": "node scripts/live-archive-worker.mjs",
+    "worker:live-archive:once": "node scripts/live-archive-worker.mjs --once",
+    "live:restore": "node scripts/live-restore.mjs",
+    "live:continuity:e2e": "node scripts/live-continuity-e2e.mjs",
+    "live:pipeline:e2e": "node scripts/live-pipeline-e2e.mjs",
+    "mobile:stability:e2e": "node scripts/mobile-stability-e2e.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",
     "@smithy/fetch-http-handler": "5.8.0",
+    "@smithy/signature-v4": "5.7.4",
     "archiver": "7.0.1",
     "geist": "1.8.2",
     "next": "16.3.8",

@@ -1,0 +1,24 @@
+# Review and adapt paths/user on your own persistent server. NOT auto-installed.
+[Unit]
+Description=ClipForge %i worker
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/clipforge/storage
+StartLimitIntervalSec=300
+StartLimitBurst=5
+[Service]
+Type=simple
+User=clipforge
+WorkingDirectory=/opt/clipforge
+EnvironmentFile=/etc/clipforge/worker.env
+ExecStart=/usr/bin/node /opt/clipforge/scripts/%i-worker.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=90
+KillSignal=SIGTERM
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
