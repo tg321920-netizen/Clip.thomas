@@ -14,6 +14,7 @@ import { isProjectId } from "../lib/project-id.mjs";
 import { getStorageRoot, resolveStoragePath } from "../lib/storage-paths.mjs";
 import { validateMp4 } from "./media-processing/MediaValidationService.mjs";
 import { leaseOwner,ownerIsAlive } from "../lib/process-lease.mjs";
+import {withLocalStateLock} from '../lib/atomic-local-state.mjs';
 
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
@@ -102,11 +103,12 @@ export class JobStore {
   }
 
   async enqueueRender(projectId, clipId, payload = {}, options = {}) {
-    return this.enqueue("RENDER_CLIP", projectId, {
+    const id=jobId('RENDER_CLIP',projectId,clipId);
+    return withLocalStateLock(path.join(this.#jobsDir(),id+'.enqueue'),()=>this.enqueue("RENDER_CLIP", projectId, {
       entityId: clipId,
       payload: { ...sanitizePayload(payload), clipId },
       restartCompleted: options.restartCompleted ?? false,
-    });
+    }));
   }
 
   async enqueueNewsRender(projectId, payload = {}, options = {}) {
@@ -308,7 +310,7 @@ export class JobStore {
     const lockPath = this.#lockPath(id);
     try {
       await stat(lockPath);
-      if (job.type.startsWith("MEDIA_")) await writeFile(lockPath, JSON.stringify(leaseOwner()), { encoding: "utf8" });
+      if (job.type.startsWith("MEDIA_") || job.type==="RENDER_CLIP") await writeFile(lockPath, JSON.stringify(leaseOwner()), { encoding: "utf8" });
       else await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
       return true;
     } catch (error) {
@@ -376,7 +378,7 @@ export class JobStore {
   async #tryLock(id) {
     try {
       const handle = await open(this.#lockPath(id), "wx");
-      await handle.writeFile(id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify(leaseOwner()) : new Date().toISOString(), "utf8");
+      await handle.writeFile(id.startsWith("render-") || id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify(leaseOwner()) : new Date().toISOString(), "utf8");
       await handle.close();
       return true;
     } catch (error) {
@@ -409,9 +411,9 @@ export class JobStore {
         const job = await this.#readRecoverable(id);
         if (!job) continue;
         let confirmedDead = false;
-        if (job?.type.startsWith("MEDIA_")) {
+        if (job?.type.startsWith("MEDIA_") || job?.type==="RENDER_CLIP") {
           try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (ownerIsAlive(owner)) continue;confirmedDead=Boolean(owner.pid); }
-          catch (error) { if (getErrorCode(error) === "ENOENT" || Date.now()-info.mtimeMs<5*60*1000) continue; }
+          catch (error) { if (getErrorCode(error) === "ENOENT" || Date.now()-info.mtimeMs<(job.type==="RENDER_CLIP"?5000:5*60*1000)) continue; }
         }
         const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
         if (!confirmedDead && Date.now() - info.mtimeMs < staleAfterMs) continue;

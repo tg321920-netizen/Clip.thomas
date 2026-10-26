@@ -6,6 +6,15 @@ import path from 'node:path';
 import {createManualClip,markClipQueued} from '../services/clip/ClipService.mjs';
 import {replaceProjectFile,loadProjectFile,updateProjectFile} from '../lib/project-files.mjs';
 const id='8e56073f-ae3a-4c2c-a73d-b11085dbd1b6';
+test('horizontal 720p is a separate editing choice while a legacy vertical clip is reused',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-manual-formats-')),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=root;
+ t.after(async()=>{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await rm(root,{recursive:true,force:true});});
+ await replaceProjectFile(id,{id,source:{durationSeconds:60,hasAudio:true},clips:[{id:'legacy',candidateId:'manual-legacy',startTime:0,endTime:30,edit:{framingMode:'FIT',quality:'BALANCED'},render:{width:1080,height:1920}}]});
+ const existing=await createManualClip(id,{startTime:0,endTime:30,framingMode:'FIT',rightsConfirmed:true});assert.equal(existing.clip.id,'legacy');assert.equal(existing.reused,true);
+ const horizontal=await createManualClip(id,{startTime:0,endTime:30,framingMode:'FIT',quality:'EFFICIENT',aspectRatio:'16:9',resolution:'720p',rightsConfirmed:true});
+ assert.equal(horizontal.clip.edit.output.width,1280);assert.equal(horizontal.clip.edit.output.height,720);assert.equal(horizontal.clip.edit.quality,'EFFICIENT');
+ assert.notEqual(horizontal.clip.id,'legacy');
+});
 test('manual cuts require permission and valid source bounds, deduplicate simultaneous requests and never require a transcript',async t=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-manual-')),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=root;
  t.after(async()=>{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await rm(root,{recursive:true,force:true});});

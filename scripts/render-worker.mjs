@@ -78,7 +78,9 @@ while (!stopping) {
       reused: result.reused,
     });
   } catch (error) {
-    const failed = await store.fail(job, error);
+    // Resource contention is backpressure, not a failed encoding attempt.
+    const waiting=error.code==="RENDER_CAPACITY_BUSY"||error.code==="STATE_BUSY";
+    const failed = await store.fail(waiting?{...job,attempts:Math.max(0,job.attempts-1)}:job, error);
 
     console.error("Clip render failed", {
       projectId: job.projectId,

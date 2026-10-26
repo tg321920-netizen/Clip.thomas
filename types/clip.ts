@@ -1,5 +1,5 @@
 export type ClipFramingMode = "FILL" | "FIT" | "CONVERSATION";
-export type ClipRenderQuality = "FAST" | "BALANCED" | "HIGH";
+export type ClipRenderQuality = "FAST" | "EFFICIENT" | "BALANCED" | "HIGH";
 export type SubtitleStyle = "CLEAN" | "VIRAL" | "KARAOKE";
 
 export type SubtitleWord = {
@@ -85,6 +85,7 @@ export type ClipRecord = {
     | "READY"
     | "FAILED";
   edit: {
+    output?:{width:number;height:number;aspectRatio:'9:16'|'16:9';resolution:'720p'|'1080p'};
     framingMode: ClipFramingMode;
     subtitlesEnabled: boolean;
     subtitleStyle: SubtitleStyle;

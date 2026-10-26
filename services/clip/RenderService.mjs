@@ -1,20 +1,26 @@
-import { mkdir, stat, writeFile, rename } from "node:fs/promises";
+import { mkdir, stat, writeFile, rename, readFile } from "node:fs/promises";
+import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
 import path from "node:path";
 import { spawnMediaProcess as spawn } from "../../lib/media-execution.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { buildSpeechZoomFilter } from "../reframe/AutoReframeService.mjs";
 import { validateMp4, probeMediaFile } from "../media-processing/MediaValidationService.mjs";
 import { buildAssDocument } from "../subtitles/SubtitleService.mjs";
+import {ENCODER_QUALITY,renderThreads} from '../../lib/render-options.mjs';
+import {withRenderCapacity} from '../../lib/render-capacity.mjs';
+import {withLocalStateLock,writeAtomicJson} from '../../lib/atomic-local-state.mjs';
 
-const QUALITY = {
-  FAST: { preset: "ultrafast", crf: "28" },
-  BALANCED: { preset: "medium", crf: "23" },
-  HIGH: { preset: "slow", crf: "20" },
-};
+const QUALITY=ENCODER_QUALITY;
+async function sha256(file){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 
 export class RenderService {
-  constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; }
-  async renderClip({
+  constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; assertResolution(this.width,this.height); }
+  async renderClip(input){
+    const guard=path.join(getStorageRoot(),'clips',input.project.id,input.clip.id,'render-state');
+    return withLocalStateLock(guard,()=>withRenderCapacity(()=>this.renderUnlocked(input)),{timeoutMs:1000,staleMs:0});
+  }
+  async renderUnlocked({
     project,
     clip,
     onProgress = () => undefined,
@@ -28,6 +34,7 @@ export class RenderService {
     );
     const outputPath = path.join(outputDir, "render.mp4");
     const temporaryPath = path.join(outputDir, "render.partial.mp4");
+    const proofPath=path.join(outputDir,'render-proof.json');
 
     await mkdir(outputDir, { recursive: true });
 
@@ -42,6 +49,26 @@ export class RenderService {
     }
 
     const quality = QUALITY[clip?.edit?.quality] || QUALITY.BALANCED;
+    const sourceInfo=await stat(sourcePath);
+    const inputFingerprint=createHash('sha256').update(JSON.stringify({
+      version:1,sourceSha256:await sha256(sourcePath),startTime,duration,width:this.width,height:this.height,
+      edit:clip.edit,subtitles:clip.subtitles,autoReframe:clip.autoReframe,quality,
+    })).digest('hex');
+    const requireAudio = project.source.hasAudio ?? Boolean((await probeMediaFile(sourcePath)).audio);
+    // A process may die after the MP4 was validated but before project state
+    // became READY. Bind reuse to actual source bytes and all editing settings.
+    let savedProof;try{savedProof=JSON.parse(await readFile(proofPath,'utf8'));}catch{}
+    if(savedProof?.inputFingerprint===inputFingerprint&&/^[a-f0-9]{64}$/.test(savedProof.sha256)){
+      for(const file of [outputPath,temporaryPath]){
+        try{
+          if(await sha256(file)!==savedProof.sha256)continue;
+          const validation=await validateMp4(file,{requireAudio,duration,width:this.width,height:this.height,allowDarkVideo:project.allowDarkVideo});
+          if(file!==outputPath)await rename(file,outputPath);
+          onProgress(100);
+          return this.renderRecord(project,clip,validation,savedProof,true);
+        }catch(error){if(error.code==='ABORT_ERR')throw error;}
+      }
+    }
     const postFilters = ["fps=30", "setpts=PTS-STARTPTS"];
     if (clip?.edit?.motionIntensity) {
       postFilters.push(buildSafeMotionFilter(clip.edit.motionIntensity, this.width, this.height));
@@ -91,7 +118,7 @@ export class RenderService {
       "-y",
       "-filter_threads", "1",
       "-filter_complex_threads", "1",
-      "-threads", "2",
+      "-threads", String(renderThreads()),
       "-ss",
       startTime.toFixed(3),
       "-i",
@@ -105,7 +132,7 @@ export class RenderService {
       quality.preset,
       "-crf",
       quality.crf,
-      "-threads", "2",
+      "-threads", String(renderThreads()),
       "-r", "30",
       "-pix_fmt",
       "yuv420p",
@@ -128,21 +155,23 @@ export class RenderService {
       onProgress,
     );
 
-    const requireAudio = project.source.hasAudio ?? Boolean((await probeMediaFile(sourcePath)).audio);
     const validation = await validateMp4(temporaryPath, { requireAudio, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
+    const sourceAfter=await stat(sourcePath);
+    if(sourceInfo.size!==sourceAfter.size||sourceInfo.mtimeMs!==sourceAfter.mtimeMs||sourceInfo.ino!==sourceAfter.ino)throw new Error('La fuente cambió durante el render. No se confirmó el resultado.');
+    const proof={inputFingerprint,sha256:await sha256(temporaryPath),subtitlesBurned,autoReframeApplied};
+    await writeAtomicJson(proofPath,proof);
     await rename(temporaryPath, outputPath);
-    const probe = await probeVideo(outputPath);
-    if (probe.width !== this.width || probe.height !== this.height) {
-      throw new Error(
-        `Rendered clip has unexpected resolution ${probe.width}x${probe.height}.`,
-      );
-    }
-
-    const outputStat = await stat(outputPath);
-
+    return this.renderRecord(project,clip,validation,proof,false);
+  }
+  async renderRecord(project,clip,validation,proof,reused){
+    const outputPath=resolveStoragePath(path.posix.join('clips',project.id,clip.id,'render.mp4'));
+    const outputStat=await stat(outputPath);
     return {
       archiveEligible: true,
       validation,
+      sha256:proof.sha256,
+      inputFingerprint:proof.inputFingerprint,
+      recoveredWithoutEncoding:reused,
       relativePath: path.posix.join(
         "clips",
         project.id,
@@ -150,13 +179,13 @@ export class RenderService {
         "render.mp4",
       ),
       sourceUrl: `/api/projects/${project.id}/clips/${clip.id}/source`,
-      width: probe.width,
-      height: probe.height,
-      codec: probe.codec,
-      container: probe.container,
+      width: this.width,
+      height: this.height,
+      codec: 'h264',
+      container: 'mp4',
       sizeBytes: outputStat.size,
-      subtitlesBurned,
-      autoReframeApplied,
+      subtitlesBurned:proof.subtitlesBurned,
+      autoReframeApplied:proof.autoReframeApplied,
     };
   }
 }
@@ -258,7 +287,9 @@ function runFfmpeg(command, args, duration, onProgress) {
     let stdoutBuffer = "";
     let stderr = "";
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 15 * 60 * 1000);
+    const requested=Number(process.env.CLIPFORGE_RENDER_TIMEOUT_SECONDS||900);
+    const timeoutSeconds=Number.isFinite(requested)?Math.max(30,Math.min(3600,requested)):900;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutSeconds*1000);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -316,7 +347,7 @@ function runFfmpeg(command, args, duration, onProgress) {
 
       reject(
         new Error(
-          timedOut ? "El render superó el límite de 15 minutos. Se conservan los recursos y el archivo parcial para diagnóstico." : stderr.trim() || `FFmpeg render failed with code ${code ?? "?"}.`,
+          timedOut ? "El render superó su tiempo máximo. Se conservan los recursos y el archivo parcial para diagnóstico." : stderr.trim() || `FFmpeg render failed with code ${code ?? "?"}.`,
         ),
       );
     });
@@ -328,69 +359,6 @@ function parseFfmpegTime(value) {
   if (!match) return Number.NaN;
 
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
-}
-
-async function probeVideo(filePath) {
-  const stdout = await runProcess(
-    process.env.FFPROBE_PATH?.trim() || "ffprobe",
-    [
-      "-v",
-      "error",
-      "-print_format",
-      "json",
-      "-show_format",
-      "-show_streams",
-      filePath,
-    ],
-  );
-
-  const parsed = JSON.parse(stdout);
-  const video = parsed.streams?.find((stream) => stream.codec_type === "video");
-
-  if (!video?.width || !video?.height) {
-    throw new Error("Rendered clip has no valid video stream.");
-  }
-
-  return {
-    width: Number(video.width),
-    height: Number(video.height),
-    codec: video.codec_name || "unknown",
-    container: parsed.format?.format_name?.split(",")[0] || "unknown",
-  };
-}
-
-function runProcess(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else {
-        reject(
-          new Error(
-            stderr.trim() || `Process failed with code ${code ?? "?"}.`,
-          ),
-        );
-      }
-    });
-  });
 }
 
 function escapeFilterPath(filePath) {

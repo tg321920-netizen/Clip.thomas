@@ -3,8 +3,9 @@ import { resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { RenderService } from "./RenderService.mjs";
+import {manualOutputOptions} from '../../lib/render-options.mjs';
 
-const renderService = new RenderService({width:Number(process.env.CLIPFORGE_MEDIA_WIDTH||1080),height:Number(process.env.CLIPFORGE_MEDIA_HEIGHT||1920)});
+const defaultWidth=Number(process.env.CLIPFORGE_MEDIA_WIDTH||1080),defaultHeight=Number(process.env.CLIPFORGE_MEDIA_HEIGHT||1920);
 
 /** Manual cuts reuse the render queue and require neither ASR nor a model. */
 export async function createManualClip(projectId, input = {}) {
@@ -20,13 +21,16 @@ export async function createManualClip(projectId, input = {}) {
     if ((project.source.capture?.continuityIntervals || []).some(g => startTime < g.end && endTime > g.start) ||
       (project.source.capture?.continuityBreaks || []).some(t => startTime < t && endTime > t)) throw new Error('El intervalo atraviesa una interrupción de la fuente.');
     const framingMode = normalizeFraming(input.framingMode), quality = normalizeQuality(input.quality);
-    const candidateId = 'manual-' + createHash('sha256').update(JSON.stringify({ startTime, endTime, framingMode, quality })).digest('hex').slice(0, 24);
+    const output=manualOutputOptions(input);
+    const candidateId = 'manual-' + createHash('sha256').update(JSON.stringify({ startTime, endTime, framingMode, quality,output })).digest('hex').slice(0, 24);
     project.clips ||= [];
-    const existing = project.clips.find(c => c.candidateId === candidateId);
+    const existing = project.clips.find(c => c.candidateId===candidateId || (c.candidateId.startsWith('manual-')&&
+      c.startTime===startTime&&c.endTime===endTime&&c.edit?.framingMode===framingMode&&c.edit?.quality===quality&&
+      (c.edit.output?.width??c.render?.width??defaultWidth)===output.width&&(c.edit.output?.height??c.render?.height??defaultHeight)===output.height));
     if (existing) return { clip: existing, reused: true };
     const now = new Date().toISOString(), clip = { id: randomUUID(), projectId, candidateId, startTime, endTime, duration: endTime - startTime,
       title: String(input.title || 'Recorte manual').slice(0, 140), reason: 'Intervalo elegido manualmente sobre el video original.', status: 'DRAFT',
-      edit: { framingMode, quality, subtitlesEnabled: false, subtitleStyle: 'CLEAN', autoReframeEnabled: false },
+      edit: { framingMode, quality,output, subtitlesEnabled: false, subtitleStyle: 'CLEAN', autoReframeEnabled: false },
       editorialReview: { status: 'PENDING', analysisKind: 'MANUAL_SELECTION' }, subtitles: null, autoEdit: null, autoReframe: null, render: null,
       createdAt: now, updatedAt: now, error: null };
     project.clips.push(clip);
@@ -98,10 +102,12 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
   const clips = Array.isArray(project.clips) ? project.clips : [];
   const clip = clips.find((entry) => entry.id === clipId);
   if (!clip) throw new Error("Clip not found.");
+  const width=clip.edit?.output?.width||defaultWidth,height=clip.edit?.output?.height||defaultHeight;
+  const renderService=new RenderService({width,height});
 
   if (clip.status === "READY" && clip.render?.relativePath) {
     try {
-      clip.render.validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: project.source.hasAudio !== false, duration: clip.duration, allowDarkVideo: project.allowDarkVideo });
+      clip.render.validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: project.source.hasAudio !== false, duration: clip.duration,width,height, allowDarkVideo: project.allowDarkVideo });
       await saveClipState(projectId, clip);
       return { clip, reused: true };
     } catch { clip.render = null; }
@@ -126,7 +132,7 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
 
     await saveClipState(projectId, clip);
 
-    return { clip, reused: false };
+    return { clip, reused: render.recoveredWithoutEncoding===true };
   } catch (error) {
     clip.status = "FAILED";
     clip.updatedAt = new Date().toISOString();
@@ -177,7 +183,7 @@ function normalizeFraming(value) {
 }
 
 function normalizeQuality(value) {
-  if (value === "FAST" || value === "HIGH") return value;
+  if (value === "FAST" || value === "HIGH" || value === "EFFICIENT") return value;
   return "BALANCED";
 }
 
