@@ -11,6 +11,7 @@ import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
 import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
+import { EditorialEventStore } from "./EditorialEventStore.mjs";
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -51,10 +52,13 @@ export class BestClipsService {
         throw error;
       }
     }
-    const selected = selectIndependentClips(candidates, { count, minDuration, maxDuration,
+    const independent = selectIndependentClips(candidates, { count: 50, minDuration, maxDuration,
       onlyChatReactions: input.onlyChatReactions === true, excludedReactionPeaks: input.excludedReactionPeaks || [],
       sourceEnd: Math.min(original.source.durationSeconds, original.source.audioDurationSeconds || Infinity, original.source.videoDurationSeconds || Infinity),
+      ownershipStartUtc: original.source.capture?.ownershipStartUtc, ownershipEndUtc: original.source.capture?.ownershipEndUtc,
       continuityBreaks: original.source.capture?.continuityBreaks || [] });
+    const eventStore=new EditorialEventStore(), eventSource=original.liveObservation?.source, selected=[];
+    for(const candidate of independent){if(await eventStore.reserve(eventSource,candidate,outputProjectId))selected.push(candidate);if(selected.length>=count)break;}
     if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
     const selectionWarning = selected.length < count
       ? `Se prepararon ${selected.length} de ${count} clips solicitados: no se encontraron más momentos completos y diferentes dentro de esos límites.` : null;
@@ -73,12 +77,14 @@ export class BestClipsService {
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
       if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
-      if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";
+      try{if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
+      catch(error){await eventStore.release(eventSource,outputProjectId);throw error;}
       project.clips = project.clips.filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
       project.clips.push(clip);
       await replaceProjectFile(outputProjectId, project);
+      await eventStore.confirm(eventSource,candidate.id,outputProjectId);
       results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
     }
@@ -93,7 +99,7 @@ export class BestClipsService {
 }
 
 /** Preserve the rescue branch's finite, non-overlapping candidate validation. */
-export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, excludedReactionPeaks = [], continuityBreaks = [] }) {
+export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, excludedReactionPeaks = [], continuityBreaks = [] }) {
   const selected = [];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
@@ -104,6 +110,7 @@ export function selectIndependentClips(candidates, { count, minDuration, maxDura
         continuityBreaks.some(t => Number.isFinite(t) && candidate.startTime < t && candidate.endTime > t)) continue;
     if (selected.some(existing => Math.min(existing.endTime, candidate.endTime) > Math.max(existing.startTime, candidate.startTime))) continue;
     const reaction = candidate.chatEvidence;
+    if (ownershipStartUtc && (!Number.isFinite(Date.parse(reaction?.peakUtc)) || Date.parse(reaction.peakUtc)<Date.parse(ownershipStartUtc) || Date.parse(reaction.peakUtc)>=Date.parse(ownershipEndUtc))) continue;
     if (onlyChatReactions && (!(reaction?.isCollectiveReaction || reaction?.isPeak) || !Number.isFinite(reaction?.score) || reaction.score < 25)) continue;
     if (excludedReactionPeaks.some(time => Number.isFinite(Date.parse(time)) && Math.abs(Date.parse(time) - Date.parse(reaction?.peakUtc)) < 30000)) continue;
     if ((reaction?.isCollectiveReaction || reaction?.isPeak) && selected.some(existing => {

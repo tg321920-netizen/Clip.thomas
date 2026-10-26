@@ -2,10 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, statfs, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
-import { loadProjectFile } from "../../lib/project-files.mjs";
 import { IngestJobStore } from "../ingest/IngestJobStore.mjs";
 import { JobStore } from "../JobStore.mjs";
-import { ClipLibraryService } from "../storage/ClipLibraryService.mjs";
 import { resolveKickSource, kickViewerRequest } from "./KickPublicSourceService.mjs";
 import { LiveObservationStore } from "./LiveObservationStore.mjs";
 import { buildChatActivityWindows } from "../analysis/ChatActivityService.mjs";
@@ -32,13 +30,12 @@ async function treeSize(directory) {
 export class LiveMonitorService {
   constructor({ root = getStorageRoot(), env = process.env, resolveSource = resolveKickSource,
     ingestStore = new IngestJobStore(), mediaStore = new JobStore(), observations = new LiveObservationStore({ root, env }),
-    loadProject = loadProjectFile, archive, now = Date.now, checkCapacity } = {}) {
-    Object.assign(this, { root, env, resolveSource, ingestStore, mediaStore, observations, loadProject, now });
-    this.archive = archive || ((project, clip) => new ClipLibraryService().archive(project, clip));
+    now = Date.now, checkCapacity } = {}) {
+    Object.assign(this, { root, env, resolveSource, ingestStore, mediaStore, observations, now });
     this.directory = path.join(root, "live-monitor"); this.file = path.join(this.directory, "westcol.json");
     this.checkCapacity = checkCapacity || (async () => {
       const capacity = await statfs(root);
-      const used = await treeSize(path.join(root, "uploads")) + await treeSize(path.join(root, "clips"));
+      const used = await treeSize(path.join(root, "uploads")) + await treeSize(path.join(root, "clips")) + await treeSize(path.join(root, "live-sessions"));
       return capacity.bavail * capacity.bsize >= 1024 ** 3 && used < 2 * 1024 ** 3;
     });
   }
@@ -80,70 +77,59 @@ export class LiveMonitorService {
     if (this.env.CLIPFORGE_LIVE_MONITOR_ENABLED !== "true") return this.save({ ...state, status: "DISABLED" });
     if (this.env.CLIPFORGE_LIVE_RIGHTS_CONFIRMED !== "true") return this.save({ ...state, status: "WAITING_RIGHTS_CONFIRMATION" });
     if (this.env.CLIPFORGE_STORAGE_PERSISTENT !== "true") return this.save({ ...state, status: "WAITING_PERSISTENT_STORAGE" });
-    // A local/free selection path must be explicitly installed before starting
-    // supervision. No fallback to a paid configured API is permitted here.
     if (this.env.CLIPFORGE_ANALYSIS_PROVIDER !== "heuristic") return this.save({ ...state, status: "WAITING_LOCAL_ANALYSIS_PROVIDER" });
-    if (state.activeJobId) {
-      const job = await this.ingestStore.get(state.activeJobId);
-      if (!job) return this.save({ ...state, status: "JOB_STATE_MISSING" });
-      if (!["COMPLETED", "FAILED", "CANCELLED"].includes(job.status)) return this.save({ ...state, status: "CAPTURE_QUEUED_OR_RUNNING", captureStatus: job.status, chat: job.details || null });
-      if (job.status === "COMPLETED" && job.result?.clipsJobId) {
-        const media = await this.mediaStore.get(job.result.clipsJobId);
-        if (!media) return this.save({ ...state, status: "MEDIA_JOB_STATE_MISSING" });
-        if (!["READY", "WAITING_RESOURCE", "FAILED", "CANCELLED"].includes(media.status)) return this.save({ ...state, status: "WAITING_EDITOR", captureStatus: "COMPLETED" });
-        if (media.status === "READY") {
-          const project = await this.loadProject(media.projectId);
-          if (!project || media.validation?.valid !== true) return this.save({ ...state, status: "MEDIA_VALIDATION_MISSING" });
-          try {
-            for (const clip of project.clips || []) {
-              const archive = await this.archive(project, clip);
-              if (archive?.status !== "READY") return this.save({ ...state, status: "WAITING_PRIVATE_STORAGE" });
-            }
-          } catch { return this.save({ ...state, status: "WAITING_PRIVATE_STORAGE" }); }
-          for (const candidate of project.analysis?.candidates || []) {
-            if (Number.isFinite(Date.parse(candidate.chatEvidence?.peakUtc))) state.handledReactions.push(candidate.chatEvidence.peakUtc);
-          }
-        }
-        state.lastEditorStatus = media.status;
-      }
-      state.history.push({ jobId: job.id, captureStatus: job.status, editorStatus: state.lastEditorStatus || null });
+    state.downstream ||= []; state.captureFailures ||= 0;
+    let active = state.activeJobId ? await this.ingestStore.get(state.activeJobId) : null;
+    if (state.activeJobId && !active) return this.save({ ...state, status: "JOB_STATE_MISSING" });
+    if (active && ["COMPLETED", "FAILED", "CANCELLED"].includes(active.status)) {
+      // Enqueueing/encoding/archival are now independent of capture. Preserve
+      // legacy jobs as downstream work; never await their editor or R2 here.
+      if (active.result?.clipsJobId) state.downstream.push({ ingestJobId: active.id, mediaJobId: active.result.clipsJobId });
+      state.history.push({ jobId: active.id, captureStatus: active.status, sessionId: active.result?.sessionId || null });
       if (state.recoveryPeak) state.handledReactions.push(state.recoveryPeak);
-      state.activeJobId = null; state.recoveryPeak = null; state.sequence++;
-      await this.save(state);
+      state.captureFailures = active.status === "FAILED" ? state.captureFailures + 1 : 0;
+      state.activeJobId = null; state.recoveryPeak = null; state.sequence++; active = null;
+      state.downstream = state.downstream.slice(-256); await this.save(state);
     }
-    if (!await this.checkCapacity()) return this.save({ ...state, status: "LOCAL_STORAGE_LIMIT" });
     let resolved;
-    try { resolved = await this.resolveSource(SOURCE); }
+    try { resolved = await this.resolveSource(SOURCE); state.sourceState = "LIVE"; }
     catch (error) {
+      state.sourceState = error.code === "SOURCE_OFFLINE" ? "OFFLINE" : "UNKNOWN";
+      if (active) return this.save({ ...state, status: "CAPTURE_QUEUED_OR_RUNNING", captureStatus: active.status, errorCode: error.code });
       if (error.code !== "SOURCE_OFFLINE") return this.save({ ...state, status: "SOURCE_ERROR", errorCode: error.code || "SOURCE_UNAVAILABLE" });
-      state.status = "OFFLINE";
-      if (!state.source) return this.save(state);
-      // Recover only the same transmission, never an arbitrary latest VOD.
-      let vod;
+      if (!state.source) return this.save({ ...state, status: "OFFLINE" });
+      let id = state.source.sourceId;
       try {
-        let id = state.source.sourceId;
         if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/iu.test(id)) {
           const list = await kickViewerRequest(`https://web.kick.com/api/v1/channels/${state.source.channelId}/videos`, { stage: "MONITOR_VOD_LOOKUP" });
-          id = list.data?.find(v => v.status === "public" && Math.abs(Date.parse(v.start_time) - Date.parse(state.source.startedAt)) <= 5000)?.id;
+          id = list.data?.find(v => v.status === "public" && Math.abs(Date.parse(v.start_time)-Date.parse(state.source.startedAt)) <= 5000)?.id;
           if (!id) return this.save({ ...state, status: "WAITING_MATCHING_VOD" });
         }
-        vod = await this.resolveSource(`${SOURCE}/videos/${id}`);
+        const vod = await this.resolveSource(`${SOURCE}/videos/${id}`);
+        const observed = await this.observations.loadForSource(vod.metadata);
+        const peaks = buildChatActivityWindows(observed.bins,{sourceStartUtc:vod.metadata.startedAt});
+        const peak = peaks.find(w => (w.isCollectiveReaction || w.isPeak) && w.score >= 25 && !state.handledReactions.some(t => Math.abs(Date.parse(t)-Date.parse(w.utc)) < 30000));
+        if (!peak) return this.save({ ...state, status: observed.cloudError ? "OBSERVATION_RECOVERY_ERROR" : "OFFLINE" });
+        state.recoveryPeak=peak.utc;
+        resolved={...vod,canonicalUrl:`${SOURCE}/videos/${id}`,startTimeSeconds:Math.max(0,peak.start-25),captureSeconds:90};
       } catch { return this.save({ ...state, status: "WAITING_MATCHING_VOD" }); }
-      const observations = await this.observations.loadForSource(vod.metadata);
-      const peaks = buildChatActivityWindows(observations.bins, { sourceStartUtc: vod.metadata.startedAt });
-      const peak = peaks.find(w => (w.isCollectiveReaction || w.isPeak) && w.score >= 25 &&
-        !state.handledReactions.some(t => Math.abs(Date.parse(t) - Date.parse(w.utc)) < 30000));
-      if (!peak) return this.save({ ...state, status: observations.cloudError ? "OBSERVATION_RECOVERY_ERROR" : "OFFLINE", error: observations.cloudError || null });
-      state.recoveryPeak = peak.utc;
-      resolved = { ...vod, canonicalUrl: `${SOURCE}/videos/${vod.metadata.sourceId}`, startTimeSeconds: Math.max(0, peak.start - 25), captureSeconds: 90 };
     }
-    state.source = resolved.metadata;
-    const id = jobId(`westcol:${state.source.sourceId}:${state.recoveryPeak || state.sequence}`);
-    const job = await this.ingestStore.create({ id, url: resolved.canonicalUrl || SOURCE, mode: "STREAM", captureSeconds: resolved.captureSeconds || 300,
-      startTimeSeconds: resolved.startTimeSeconds || 0, segmentSeconds: 60, autoClip: true, clipMode: "CAPTURE", clipCount: 10, clipDuration: 30,
-      subtitles: false, contentProfile: "ENTERTAINMENT", onlyChatReactions: true, analysisProvider: "heuristic", excludedReactionPeaks: state.handledReactions });
-    state.activeJobId = job.id; state.status = state.recoveryPeak ? "VOD_RECOVERY_QUEUED" : "CAPTURE_QUEUED";
-    state.errorCode = null;
+    if (active) {
+      if (state.source?.sourceId !== resolved.metadata.sourceId) {
+        await this.ingestStore.cancel(active.id);
+        return this.save({ ...state, status: "STOPPING_CHANGED_TRANSMISSION", nextSourceId: resolved.metadata.sourceId });
+      }
+      return this.save({ ...state, status: "CAPTURE_QUEUED_OR_RUNNING", captureStatus: active.status, chat: active.details || null });
+    }
+    if (!await this.checkCapacity()) return this.save({ ...state, status: "LOCAL_STORAGE_LIMIT" });
+    if (state.captureFailures >= 3 && state.source?.sourceId === resolved.metadata.sourceId) return this.save({ ...state, status: "CAPTURE_RECOVERY_REQUIRED" });
+    if (state.source?.sourceId !== resolved.metadata.sourceId) state.captureFailures=0;
+    state.source=resolved.metadata;
+    const id=jobId(`westcol:${state.source.sourceId}:${state.recoveryPeak || state.sequence}`);
+    const job=await this.ingestStore.create({ id, url:resolved.canonicalUrl || SOURCE, mode:"STREAM", captureSession:true, expectedSource:state.source,
+      captureSeconds:resolved.captureSeconds || 21600, startTimeSeconds:resolved.startTimeSeconds || 0, segmentSeconds:60,
+      autoClip:true,clipMode:"SEGMENTS",clipCount:10,clipDuration:30,subtitles:false,contentProfile:"ENTERTAINMENT",onlyChatReactions:true,analysisProvider:"heuristic" });
+    state.activeJobId=job.id;state.status=state.recoveryPeak ? "VOD_RECOVERY_QUEUED" : "CAPTURE_QUEUED";state.errorCode=null;
     return this.save(state);
   }
 }

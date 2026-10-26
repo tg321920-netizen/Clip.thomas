@@ -98,7 +98,8 @@ export async function openHlsInput(sourceUrl, options = {}) {
     return `${origin}/${prefix}/${name}`;
   }
   function windowVod(text, role) {
-    if (!text.includes("#EXT-X-ENDLIST") || !/^#EXTINF:/mu.test(text) || !windowSeconds) return text;
+    const isVod = text.includes("#EXT-X-ENDLIST"), resumeTime = Date.parse(options.resumeSourceUtc);
+    if ((!isVod && !Number.isFinite(resumeTime)) || !/^#EXTINF:/mu.test(text) || !windowSeconds) return text;
     const header = [], segments = []; let tags = [], start = 0, duration = null, sequence = 0, time = null, initTag = null;
     let discontinuitySequence = 0, discontinuities = 0, previousByteEnd = null, previousByteUri = null;
     const segmentTag = /^#EXT(?:INF|-X-(?:PROGRAM-DATE-TIME|BYTERANGE|DISCONTINUITY|GAP|DATERANGE))(?::|$)/u;
@@ -125,9 +126,10 @@ export async function openHlsInput(sourceUrl, options = {}) {
       start += duration; if (time !== null) time += duration * 1000; duration = null; tags = [];
     }
     if (role !== "audio") stats.mediaDurationSeconds = start;
-    if (vodStartSeconds >= start) throw failure("SOURCE_WINDOW", null, "HLS_OFFSET_OUT_OF_RANGE");
-    const chosen = segments.filter(s => (options.resumeAtNextSegment ? s.start + 0.001 >= vodStartSeconds : s.end > vodStartSeconds) && s.start < vodStartSeconds + windowSeconds + 30);
-    if (!chosen.length) throw failure("SOURCE_WINDOW", null, "HLS_OFFSET_OUT_OF_RANGE");
+    if (!isVod && segments.some(s => s.time === null)) throw failure("SOURCE_WINDOW", null, "HLS_CLOCK_REQUIRED");
+    if (isVod && vodStartSeconds >= start) throw failure("SOURCE_WINDOW", null, "HLS_OFFSET_OUT_OF_RANGE");
+    const chosen = segments.filter(s => Number.isFinite(resumeTime) ? s.time !== null && s.time + 1 >= resumeTime : (options.resumeAtNextSegment ? s.start + 0.001 >= vodStartSeconds : s.end > vodStartSeconds) && s.start < vodStartSeconds + windowSeconds + 30);
+    if (!chosen.length) throw failure("SOURCE_WINDOW", null, isVod ? "HLS_OFFSET_OUT_OF_RANGE" : "HLS_WAITING_NEW_SEGMENTS");
     const first = chosen[0];
     if (role !== "audio" && stats.windowStartSeconds === null) {
       stats.windowStartSeconds = first.start; stats.windowStartUtc = first.time === null ? null : new Date(first.time).toISOString();
@@ -140,7 +142,7 @@ export async function openHlsInput(sourceUrl, options = {}) {
       ...chosen.flatMap(s => {
         const map = s.initTag && s.initTag !== previousInit ? [s.initTag] : []; previousInit = s.initTag;
         return [...map, ...s.tags, ...(s.time !== null && !s.tags.some(t => t.startsWith("#EXT-X-PROGRAM-DATE-TIME:")) ? [`#EXT-X-PROGRAM-DATE-TIME:${new Date(s.time).toISOString()}`] : []), s.uri];
-      }), "#EXT-X-ENDLIST", ""].join("\n");
+      }), ...(isVod ? ["#EXT-X-ENDLIST"] : []), ""].join("\n");
   }
   function rewrite(text, baseUrl, role = "video") {
     text = windowVod(text, role);

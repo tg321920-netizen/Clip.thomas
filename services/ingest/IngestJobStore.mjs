@@ -51,7 +51,8 @@ export class IngestJobStore {
     const job = {
       id,
       projectId: id,
-      type: "INGEST_URL",
+      type: input.captureSession === true ? "LIVE_CAPTURE" : "INGEST_URL",
+      priority: 50,
       source: {
         autoClip: mode === "STREAM" && input.autoClip === true,
         ...(input.analysisProvider === "heuristic" ? { analysisProvider: "heuristic" } : {}),
@@ -64,6 +65,7 @@ export class IngestJobStore {
         captureChat: input.captureChat !== false,
         startTimeSeconds: mode === "STREAM" ? normalizeStartTime(input.startTimeSeconds) : 0,
         kind: mode === "STREAM" ? "STREAM_URL" : "URL",
+        ...(input.captureSession === true ? { expectedSource: input.expectedSource, captureSession: true } : {}),
         url: String(input.url || ""),
         mode,
         captureSeconds:
@@ -87,6 +89,20 @@ export class IngestJobStore {
 
     await this.#write(job);
     return job;
+  }
+
+  async enqueueLiveWindow({ id, sessionId, coreIndex, segmentIndices, priority = 0, ownershipStartUtc, ownershipEndUtc, onlyChatReactions = true }) {
+    assertId(id); assertId(sessionId);
+    if (!Number.isSafeInteger(coreIndex) || coreIndex < 0 || !Array.isArray(segmentIndices) || segmentIndices.length > 3 ||
+      !segmentIndices.every(i => Number.isSafeInteger(i) && i >= 0)) throw new Error("Ventana de captura no válida.");
+    const existing = await this.get(id); if (existing) return existing;
+    const now = new Date().toISOString();
+    const job = { id, projectId: id, type: "INGEST_LIVE_WINDOW", priority: Math.max(0, Math.min(100, Number(priority) || 0)),
+      source: { mode: "WINDOW", sessionId, coreIndex, segmentIndices, ownershipStartUtc, ownershipEndUtc, onlyChatReactions,
+        clipCount: 10, clipDuration: 30, contentProfile: "ENTERTAINMENT", subtitles: false, analysisProvider: "heuristic", autoClip: true, clipMode: "CAPTURE" },
+      status: "QUEUED", stage: "QUEUED", progress: 0, attempts: 0, maxAttempts: this.maxAttempts, error: null, result: null,
+      createdAt: now, updatedAt: now, startedAt: null, completedAt: null, nextAttemptAt: now };
+    await this.#write(job); return job;
   }
 
   async get(id) {
@@ -118,7 +134,7 @@ export class IngestJobStore {
       .slice(0, Math.max(1, Math.min(Number(limit) || 50, 500)));
   }
 
-  async claimNext() {
+  async claimNext(allowedTypes = null) {
     await this.#recoverStale();
     await this.#ensureDirectory();
     const names = (await readdir(this.#jobsDir()))
@@ -126,11 +142,14 @@ export class IngestJobStore {
       .sort();
     const now = Date.now();
 
-    for (const name of names) {
-      const id = name.slice(0, -5);
-      const job = await this.get(id);
+    const available = (await Promise.all(names.map(name => this.get(name.slice(0,-5))))).filter(Boolean);
+    const priority = job => Number(job.priority || 0) + Math.min(100, Math.floor((now - Date.parse(job.createdAt)) / 60000));
+    available.sort((a,b) => priority(b) - priority(a) || a.createdAt.localeCompare(b.createdAt));
+    for (const job of available) {
+      const id = job.id;
       if (
         !job ||
+        (allowedTypes && !allowedTypes.includes(job.type)) ||
         job.status !== "QUEUED" ||
         Date.parse(job.nextAttemptAt || job.createdAt) > now
       ) continue;

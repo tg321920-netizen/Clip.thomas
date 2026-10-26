@@ -77,7 +77,7 @@ test("monitor recovers observed reactions only from the matching VOD and avoids 
     assert.equal((await monitor.tick()).status, "OFFLINE"); assert.equal(f.calls.length, 1);
   } finally { await f.cleanup(); }
 });
-test("failed private archive blocks new work; corrupt monitor checkpoints fail closed", async () => {
+test("slow/failed editor and archive do not block the next capture; corrupt checkpoints fail closed", async () => {
   const f = await setup();
   try {
     const monitor = new LiveMonitorService({ ...f.options,
@@ -85,8 +85,11 @@ test("failed private archive blocks new work; corrupt monitor checkpoints fail c
       loadProject: async () => ({ clips: [{ id: "clip" }] }), archive: async () => { throw new Error("private error"); } });
     const queued = await monitor.tick();
     f.jobs.get(queued.activeJobId).status = "COMPLETED"; f.jobs.get(queued.activeJobId).result = { clipsJobId: "media" };
-    assert.equal((await monitor.tick()).status, "WAITING_PRIVATE_STORAGE"); assert.equal(f.calls.length, 1);
+    const continued=await monitor.tick();
+    assert.equal(continued.status, "CAPTURE_QUEUED"); assert.equal(f.calls.length, 2);
+    assert.deepEqual(continued.downstream,[{ingestJobId:queued.activeJobId,mediaJobId:"media"}]);
+    assert.equal(f.calls[1].captureSession,true);
     await writeFile(monitor.file, "{corrupt");
-    await assert.rejects(monitor.tick(), /checkpoint/); assert.equal(f.calls.length, 1);
+    await assert.rejects(monitor.tick(), /checkpoint/); assert.equal(f.calls.length, 2);
   } finally { await f.cleanup(); }
 });

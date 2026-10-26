@@ -159,7 +159,7 @@ export async function ingestUrlJob(job, options = {}) {
     options.signal?.throwIfAborted();
     clipsJob = await queueCapturedBatch({ projectId, job });
   }
-  await cleanupIngestArtifacts(uploadDir, storedName);
+  await cleanupIngestArtifacts(uploadDir, storedName, { preserveSegments: mode === "STREAM" });
   await onProgress(100, "COMPLETED");
   return { projectId, video, ...(clipsJob ? { clipsJobId: clipsJob.id, requestedClipCount: clipsJob.payload.count } : {}) };
 }
@@ -273,6 +273,12 @@ export async function captureSegmentedStream({
   hlsInputFactory = openHlsInput,
   isVodSource = false,
   onSourceResolved = async () => {},
+  finalize = true,
+  deliverOnInterruption = false,
+  maxCaptureBytes = MAX_UPLOAD_BYTES,
+  checkCapacity = async () => {},
+  resumeSourceUtc = null,
+  startNumberFloor = 0,
 }) {
   if (!Number.isFinite(startTimeSeconds) || startTimeSeconds < 0 || startTimeSeconds > 86400) throw new Error("El comienzo de la captura no es válido.");
   const totalSeconds = Math.max(5, Math.min(24 * 60 * 60, Math.round(Number(captureSeconds) || 30)));
@@ -340,7 +346,7 @@ export async function captureSegmentedStream({
 
   const delivered = new Set();
   let delivery = Promise.resolve();
-  function deliverParts(final = false) {
+  function deliverParts(final = false, interrupted = false) {
     if (!onSegment) return Promise.resolve();
     delivery = delivery.then(async () => {
     const parts = await listStreamParts(partsDir);
@@ -349,7 +355,7 @@ export async function captureSegmentedStream({
       const technical = await probeMedia(path.join(partsDir, name));
       const partOffset = offsetSeconds; offsetSeconds += technical.durationSeconds;
       if (delivered.has(name)) continue;
-      signal?.throwIfAborted();
+      if (!interrupted) signal?.throwIfAborted();
       const range = [...clock.ranges].reverse().find(r => r.offsetSeconds <= partOffset);
       await onSegment(path.join(partsDir, name), Number(name.match(/(\d+)\.ts$/)[1]), {
         offsetSeconds: partOffset, durationSeconds: technical.durationSeconds,
@@ -373,7 +379,7 @@ export async function captureSegmentedStream({
     // Preserve its verified bytes and resume at the next source segment rather
     // than download/append the already captured opening again. The UTC journal
     // records the resulting gap; candidates may not cross it.
-    const input = hls ? await hlsInputFactory(resolvedUrl, { signal, onDiagnostic, vodStartSeconds: vodOffset, windowSeconds: remaining, resumeAtNextSegment: capturedSeconds > 0 }) : null;
+    const input = hls ? await hlsInputFactory(resolvedUrl, { signal, onDiagnostic, vodStartSeconds: vodOffset, windowSeconds: remaining, resumeAtNextSegment: capturedSeconds > 0, resumeSourceUtc }) : null;
     activeInput = input;
     const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
     const outputPattern = path.join(partsDir, "part-%06d.ts");
@@ -381,7 +387,7 @@ export async function captureSegmentedStream({
       resolvedUrl: input?.inputUrl || resolvedUrl,
       remaining,
       chunkSeconds,
-      startNumber: existing.length ? Number(existing.at(-1).match(/(\d+)\.ts$/)[1]) + 1 : 0,
+      startNumber: Math.max(startNumberFloor, existing.length ? Number(existing.at(-1).match(/(\d+)\.ts$/)[1]) + 1 : 0),
       seekSeconds: input ? 0 : startTimeSeconds + (isSeekableCaptureInput(url) ? capturedSeconds : 0),
       outputPattern,
     });
@@ -389,11 +395,12 @@ export async function captureSegmentedStream({
     try { await runProcess(ffmpeg, args, {
       signal,
       async checkResources() {
+        await checkCapacity();
         await ensureClock();
         await deliverParts();
         const names = await readdir(partsDir);
         const sizes = await Promise.all(names.map(async name => (await stat(path.join(partsDir, name))).size));
-        if (sizes.reduce((sum, size) => sum + size, 0) >= MAX_UPLOAD_BYTES) throw new Error("La captura alcanzó el límite de almacenamiento de 1 GB. Conserva los segmentos y reduce la duración.");
+        if (sizes.reduce((sum, size) => sum + size, 0) >= maxCaptureBytes) throw Object.assign(new Error("La captura alcanzó el límite de almacenamiento. Los originales se conservan."), { code: "LIVE_STORAGE_LIMIT" });
         const space = await statfs(uploadDir);
         if (space.bavail * space.bsize < 128 * 1024 * 1024) throw new Error("Espacio libre insuficiente para continuar la captura y finalizar el MP4.");
       },
@@ -410,6 +417,7 @@ export async function captureSegmentedStream({
     });
       if (input) { await ensureClock(); await onCaptureMetadata(clockSnapshot()); await persistClock(); }
     } catch (error) {
+      if (deliverOnInterruption) { await ensureClock(); await onCaptureMetadata(clockSnapshot()); await persistClock(); await deliverParts(true, true); }
       signal?.throwIfAborted();
       const failure = input?.snapshot().lastError;
       if (failure) throw new HlsInputError(failure.stage, failure.status, failure.code);
@@ -424,6 +432,8 @@ export async function captureSegmentedStream({
   if (parts.length === 0) {
     throw new Error("FFmpeg no pudo obtener ningún segmento del stream.");
   }
+
+  if (!finalize) return { partsDir, parts, capture: clockSnapshot() };
 
   await onProgress(90, "MERGING_SEGMENTS");
   const concatPath = path.join(partsDir, "concat.txt");
@@ -754,12 +764,12 @@ async function removeLegacyMp4StreamParts(partsDir) {
   );
 }
 
-async function cleanupIngestArtifacts(uploadDir, storedName) {
+async function cleanupIngestArtifacts(uploadDir, storedName, { preserveSegments = false } = {}) {
   const entries = await readdir(uploadDir).catch(() => []);
   await Promise.all(
     entries
       .filter((name) => name !== storedName && name !== "poster.jpg")
-      .filter((name) => name.endsWith(".part") || name === ".stream-parts")
+      .filter((name) => name.endsWith(".part") || (!preserveSegments && name === ".stream-parts"))
       .map((name) => rm(path.join(uploadDir, name), { recursive: true, force: true })),
   );
 }
@@ -817,6 +827,8 @@ function runProcess(command, args, options = {}) {
 
     child.on("error", (error) => {
       if (settled) return;
+      // Wait for the recorder to exit before recovering its last TS fragment.
+      if (error.name === "AbortError" && child.pid) { resourceFailure = error; return; }
       settled = true;
       if (timer) clearTimeout(timer);
       if (resourceTimer) clearInterval(resourceTimer);

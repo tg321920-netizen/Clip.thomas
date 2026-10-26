@@ -189,3 +189,13 @@ test("VOD windows retain implicit byte offsets, media-sequence, discontinuities 
     assert.equal((window.match(/^#EXT-X-DISCONTINUITY$/gmu) || []).length, 1);
   } finally { await input.close(); }
 });
+
+test('resuming a live source that became VOD retains the UTC boundary instead of replaying its opening', async () => {
+  const f=await fixture({bodies:[Buffer.alloc(20,1),Buffer.alloc(20,2),Buffer.alloc(20,3)]});let input;
+  try {
+    input=await openHlsInput(f.source,{validateUrl:f.validateUrl,request:f.request,resumeSourceUtc:'2026-10-25T17:00:12Z',windowSeconds:20});
+    const media=await childUrl(input.inputUrl),segment=await childUrl(media);
+    assert.deepEqual(Buffer.from(await(await fetch(segment)).arrayBuffer()),Buffer.alloc(20,2));
+    assert.equal(input.snapshot().windowStartUtc,'2026-10-25T17:00:12.000Z');
+  } finally { await input?.close();await f.close(); }
+});
