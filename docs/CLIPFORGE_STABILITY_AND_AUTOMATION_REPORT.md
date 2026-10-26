@@ -2,7 +2,9 @@
 
 Fecha: 26 de octubre de 2026, UTC. Aplicación de la raíz de `tg321920-netizen/Clip.thomas`. No se creó otra aplicación ni se modificaron StoryMotion, producción o publicaciones sociales.
 
-**Resultado:** mejoró la captura recuperable y quedó probado un flujo técnico completo con Whisper, render y R2 reales. No está certificado el funcionamiento permanente ni una nueva captura LIVE de Westcol. Los dos borradores reales anteriores siguen siendo borradores; el único clip nuevo entregable es una prueba técnica propia, no un acontecimiento nuevo de Westcol.
+**Actualización del 26 de octubre, 04:38 UTC:** se produjo **un clip auténtico adicional de Westcol de 29 segundos**, procedente del VOD autorizado, con audio original y archivado en R2 privado. Se comprobó reproducción y descarga desde Chromium móvil emulado con APIs reales. Z.ai respondió HTTP 429; la selección local permanece pendiente de revisión, sin chat observado para ese intervalo. No se acreditó una nueva captura LIVE ni se activó el monitor permanente. El fixture sintético anterior es exclusivamente QA y se excluye de la biblioteca del propietario.
+
+El estado para continuar, identificadores privados, hashes, reparaciones y resultados de esta fase están en [CODEX_RESUME_REAL_WESTCOL.md](CODEX_RESUME_REAL_WESTCOL.md). Las secciones siguientes documentan la fase anterior; sus pruebas técnicas no cuentan como clips de Westcol ni como automatización activa.
 
 ## 1. Referencias verificadas e historial conservado
 

@@ -6,6 +6,12 @@ Estas reglas aplican a todo el repositorio. La misión autorizada de reparación
 
 No crear otro proyecto, no cambiar de rama y no reconstruir ClipForge desde cero.
 
+Para retomar la misión de clips auténticos de Westcol, leer primero
+`docs/CODEX_RESUME_REAL_WESTCOL.md`. Esa misión usa vídeo y audio reales; sus
+entregables no pueden sustituirse por historias, voces o imágenes sintéticas.
+La duración objetivo actual es aproximadamente 30 segundos con contexto; las
+funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
+
 ## Objetivo actual
 
 ClipForge Studio mantiene cuatro entradas visibles: importar URL autorizada, subir y editar, extraer clips y crear historias de 6–12 escenas. Durante este rescate, `PUBLISHING = OFF`. Se conservan los conectores y el agente, pero no se activan publicaciones ni demostraciones audiovisuales al arrancar.
