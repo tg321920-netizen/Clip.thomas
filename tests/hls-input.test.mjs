@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { openHlsInput } from "../services/ingest/HlsInputService.mjs";
@@ -124,9 +124,12 @@ test("real FFmpeg truncates a long request at 4095; the HLS transport captures a
     await assert.rejects(runMedia(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-i", f.source]), /400/u);
     assert.equal(f.requests[0].length, 4095); assert.equal(f.requests[0].complete, false);
     let metadata;
+    const legacyDir=path.join(root,"capture",".stream-parts");await mkdir(legacyDir,{recursive:true});
+    const legacy=Buffer.from("Opaque incomplete legacy data: preserve, never represent as verified video.");await writeFile(path.join(legacyDir,"part-000000.mp4"),legacy);
     const output = await captureSegmentedStream({ url: f.source, uploadDir: path.join(root, "capture"), captureSeconds: 5,
       hlsInputFactory: (url, options) => openHlsInput(url, { ...options, validateUrl: f.validateUrl, request: f.request }),
       onCaptureMetadata: async value => { metadata = value; } });
+    const preserved=(await readdir(legacyDir)).find(name=>name.startsWith("part-000000.mp4.legacy-preserved-"));assert.ok(preserved);assert.deepEqual(await readFile(path.join(legacyDir,preserved)),legacy);
     const result = await validateMp4(output, { requireAudio: true });
     assert.ok(Math.abs(result.duration - 5) < 1, "stream-copy capture stays within one GOP; final render duration is checked separately");
     assert.equal(result.fullDecode, true); assert.equal(result.audioCodec, "aac");

@@ -191,7 +191,7 @@ export async function openHlsInput(sourceUrl, options = {}) {
       const { response } = await upstream(entry.url, { stage: "SEGMENT_OPEN", range, method: req.method });
       const length = Number(response.headers.get("content-length"));
       if (length > RESOURCE_LIMIT) { await response.body?.cancel(); throw failure("SEGMENT_READ", null, "HLS_RESOURCE_LIMIT"); }
-      if (entry.programUtc && entry.role !== "audio" && !stats.firstServedProgramUtc) stats.firstServedProgramUtc = entry.programUtc;
+      if (req.method !== "HEAD" && entry.programUtc && entry.role !== "audio" && !stats.firstServedProgramUtc) stats.firstServedProgramUtc = entry.programUtc;
       const headers = {};
       for (const name of ["content-type", "content-range", "accept-ranges"]) { const value = response.headers.get(name); if (value) headers[name] = value; }
       if (!response.headers.get("content-encoding") && response.headers.get("content-length")) headers["content-length"] = response.headers.get("content-length");

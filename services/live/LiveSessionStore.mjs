@@ -62,7 +62,7 @@ export class LiveSessionStore {
       const previous = state.segments.at(-1), start = Date.parse(segment.sourceStartUtc);
       if (previous && Number.isFinite(start) && Number.isFinite(Date.parse(previous.sourceStartUtc))) {
         const end = Date.parse(previous.sourceStartUtc) + previous.durationSeconds * 1000;
-        if (start - end > 1000) state.gaps.push({ fromUtc: new Date(end).toISOString(), toUtc: segment.sourceStartUtc, reason: "SOURCE_OR_RESTART_GAP", durationSeconds: (start - end) / 1000 });
+        if (start - end > 1000 && !state.gaps.some(g=>Date.parse(g.fromUtc)===end&&(g.toUtc===null||g.toUtc===segment.sourceStartUtc))) state.gaps.push({ fromUtc: new Date(end).toISOString(), toUtc: segment.sourceStartUtc, reason: "SOURCE_OR_RESTART_GAP", durationSeconds: (start - end) / 1000 });
         if (start < end - 1000) segment.continuityWarning = "SOURCE_TIME_OVERLAP";
       }
       const open = state.gaps.find(g => g.toUtc === null);

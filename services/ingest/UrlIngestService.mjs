@@ -303,10 +303,10 @@ export async function captureSegmentedStream({
   }
   async function ensureClock() {
     const snapshot = activeInput?.snapshot();
-    const sourceStartUtc = snapshot?.windowStartUtc || snapshot?.firstServedProgramUtc;
+    const sourceStartUtc = snapshot?.firstServedProgramUtc;
     if (sourceStartUtc && !activeRange) {
       activeRange = { offsetSeconds: approximateCaptured, sourceStartUtc };
-      if (approximateCaptured === 0 && Number.isFinite(snapshot.windowStartSeconds)) clock.vodBaseSeconds = snapshot.windowStartSeconds;
+      if (approximateCaptured === 0 && Number.isFinite(snapshot.windowStartSeconds)) clock.vodBaseSeconds = snapshot.windowStartSeconds + (Number.isFinite(Date.parse(snapshot.firstServedProgramUtc)) && Number.isFinite(Date.parse(snapshot.windowStartUtc)) ? Math.max(0,(Date.parse(snapshot.firstServedProgramUtc)-Date.parse(snapshot.windowStartUtc))/1000) : 0);
       const previous = clock.ranges.at(-1);
       if (approximateCaptured > 0 && (!previous || Math.abs(Date.parse(previous.sourceStartUtc) + (approximateCaptured - previous.offsetSeconds) * 1000 - Date.parse(sourceStartUtc)) > 2000)) {
         clock.continuityBreaks = [...new Set([...clock.continuityBreaks, approximateCaptured])];
@@ -321,7 +321,7 @@ export async function captureSegmentedStream({
   // transcoding on a small instance, those files had no final moov atom and a
   // retry would keep selecting the corrupt fragment forever. MPEG-TS is both
   // cheap to stream-copy and remains readable when a capture is interrupted.
-  await removeLegacyMp4StreamParts(partsDir);
+  await preserveLegacyMp4StreamParts(partsDir);
 
 
   const existing = await listStreamParts(partsDir);
@@ -385,6 +385,7 @@ export async function captureSegmentedStream({
     const outputPattern = path.join(partsDir, "part-%06d.ts");
     const args = buildStreamCaptureArgs({
       resolvedUrl: input?.inputUrl || resolvedUrl,
+      liveStartAtFirstSegment: Boolean(input),
       remaining,
       chunkSeconds,
       startNumber: Math.max(startNumberFloor, existing.length ? Number(existing.at(-1).match(/(\d+)\.ts$/)[1]) + 1 : 0),
@@ -532,7 +533,7 @@ export async function queueCapturedSegment({ file, index, job, signal, liveObser
   return { projectId, job: mediaJob, reused: false };
 }
 
-export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern, seekSeconds = 0 }) {
+export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, startNumber, outputPattern, seekSeconds = 0, liveStartAtFirstSegment = false }) {
   return [
     "-hide_banner",
     "-loglevel",
@@ -541,6 +542,9 @@ export function buildStreamCaptureArgs({ resolvedUrl, remaining, chunkSeconds, s
     "-protocol_whitelist",
     "file,http,https,tcp,tls,crypto,rtmp,rtmps",
     ...(seekSeconds > 0 ? ["-ss", String(seekSeconds)] : []),
+    // The relay already chose the recovery window. FFmpeg's default live
+    // start (-3) would silently skip its older buffered segments again.
+    ...(liveStartAtFirstSegment ? ["-live_start_index", "0"] : []),
     "-i",
     resolvedUrl,
     "-t",
@@ -755,12 +759,12 @@ async function listStreamParts(partsDir) {
   return names.filter((name) => /^part-\d{6}\.ts$/.test(name)).sort();
 }
 
-async function removeLegacyMp4StreamParts(partsDir) {
+async function preserveLegacyMp4StreamParts(partsDir) {
   const names = await readdir(partsDir).catch(() => []);
   await Promise.all(
     names
       .filter((name) => /^part-\d{6}\.mp4$/.test(name))
-      .map((name) => rm(path.join(partsDir, name), { force: true })),
+      .map((name) => rename(path.join(partsDir, name), path.join(partsDir, `${name}.legacy-preserved-${randomUUID()}`))),
   );
 }
 
