@@ -57,6 +57,30 @@ recuperar la cuenta del servicio antiguo. El primer diagnóstico debe identifica
 la cuenta/workspace mediante GET autorizado. Que el servicio antiguo no sea
 accesible en otra cuenta no demuestra que la clave sea inválida.
 
+Actualización de acceso, 26 de octubre a las 21:16 UTC: ambos sitios respondieron
+200 en salud y login, y 401 en proyectos sin sesión. El principal sigue en
+e1045dfae859e773ac65f4b12b1ef1ed10e20a3a; el secundario no informa SHA.
+No informan el heartbeat nuevo: no se deduce que sus workers estén detenidos.
+Hubo 503 iniciales en login/proyectos durante la primera consulta concurrente;
+tras esperar la respuesta de salud se obtuvo 200/401. Eso es compatible con un
+arranque inicial, pero no demuestra su causa sin acceso administrativo.
+
+Se corrigió scripts/deployed-runtime-check.mjs: antes aceptaba cualquier versión
+no vacía con publicación OFF como reparación desplegada. Ahora exige SHA completo
+exacto, medios disponibles, heartbeat observado, login y API protegida. Usa solo
+GET públicos mediante el proxy existente y guarda evidencia sin secretos ni
+sobrescribir la anterior. Aun si pasa, el editor queda NOT_VERIFIED hasta la prueba
+autenticada de subida/render/descarga. Uso por el operador:
+
+    node scripts/deployed-runtime-check.mjs --url=https://HOST --expected-commit=SHA_COMPLETO
+
+Diez regresiones específicas cubren versión antigua, worker no observado,
+arranque inicial, acceso sin sesión, respuestas inválidas y redacción de datos.
+Las evidencias públicas actuales están en artifacts/android-activation/
+{studio,runtime}-warmed-preflight-20261026.json. La candidata b6936e6 y la etiqueta
+anterior 761e291 se conservan sin cambios. RENDER_API_KEY sigue sin vincularse:
+cero consultas administrativas, despliegues o nuevos renders en esta comprobación.
+
 El plan gratuito ofrece recursos limitados y filesystem efímero. Se propone
 720×1280 por defecto, un codificador/hilo y respaldo separado. Un perfil local equivalente completó un recorte 720p de 30 s en 304,908 s desde encolar hasta READY
 y 274,406 MiB, sin el worker R2. El propietario puede elegir 1080p; su viabilidad requiere medir memoria y CPU del servidor
