@@ -25,7 +25,7 @@ do {
   try {
     if (once && Date.now() - Number(receipts.sweptAt || 0) < 60000) break;
     // The server-side library remains readable even when local projects vanish.
-    if (Date.now() - Number(receipts.cleanedAt || 0) >= 3600000) {
+    if (process.env.CLIPFORGE_STORAGE_RETENTION_ENABLED !== 'false' && Date.now() - Number(receipts.cleanedAt || 0) >= 3600000) {
       await service.cleanup(); receipts.cleanedAt = Date.now();
     }
     const projects = await listProjectFiles(1000);

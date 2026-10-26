@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createManualClip,markClipQueued} from '../services/clip/ClipService.mjs';
+import {replaceProjectFile,loadProjectFile,updateProjectFile} from '../lib/project-files.mjs';
+const id='8e56073f-ae3a-4c2c-a73d-b11085dbd1b6';
+test('manual cuts require permission and valid source bounds, deduplicate simultaneous requests and never require a transcript',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-manual-')),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=root;
+ t.after(async()=>{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await rm(root,{recursive:true,force:true});});
+ await replaceProjectFile(id,{id,source:{durationSeconds:300,hasAudio:true,audioDurationSeconds:299.9,relativePath:`uploads/${id}/source.mp4`},clips:[]});
+ await assert.rejects(createManualClip(id,{startTime:10,endTime:40}),/autorización/);
+ for(const [startTime,endTime] of [[-1,20],[20,20],[0,181],[280,300],[NaN,30],['0',30]])await assert.rejects(createManualClip(id,{startTime,endTime,rightsConfirmed:true}),/intervalo/);
+ const requests=await Promise.all([0,1].map(()=>createManualClip(id,{startTime:50,endTime:80,framingMode:'FIT',rightsConfirmed:true})));
+ assert.equal(new Set(requests.map(r=>r.clip.id)).size,1);assert.equal((await loadProjectFile(id)).clips.length,1);
+ const clip=requests[0].clip;assert.equal(clip.duration,30);assert.equal(clip.edit.subtitlesEnabled,false);assert.equal(clip.editorialReview.analysisKind,'MANUAL_SELECTION');assert.equal(clip.editorialReview.status,'PENDING');assert.equal((await loadProjectFile(id)).transcript,undefined);
+ await Promise.all([createManualClip(id,{startTime:120,endTime:150,rightsConfirmed:true}),markClipQueued(id,clip.id),updateProjectFile(id,p=>{p.transcript={status:'COMPLETED',text:'Real transcript state preserved independently of clips.'};})]);
+ const concurrent=await loadProjectFile(id);assert.equal(concurrent.clips.length,2);assert.equal(concurrent.clips.find(c=>c.id===clip.id).status,'QUEUED');assert.equal(concurrent.transcript.status,'COMPLETED');
+ const project=await loadProjectFile(id);project.source.capture={continuityIntervals:[{start:90,end:95}]};await replaceProjectFile(id,project);
+ await assert.rejects(createManualClip(id,{startTime:80,endTime:110,rightsConfirmed:true}),/interrupción/);
+});

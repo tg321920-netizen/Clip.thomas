@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
   loadProjectFile,
-  replaceProjectFile,
+  updateProjectFile,
 } from "../../lib/project-files.mjs";
 import { normalizeAnalysisOptions } from "./TranscriptCandidateProvider.mjs";
 import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
+import { releasePolicy } from "../../lib/release-policy.mjs";
+import { resolveStoragePath } from "../../lib/storage-paths.mjs";
+import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./AudioEnergyService.mjs";
 
 export async function analyzeProject(projectId, options = {}) {
   const project = await loadProjectFile(projectId);
@@ -29,7 +32,7 @@ export async function analyzeProject(projectId, options = {}) {
     options.provider ||
     createContentAnalysisProvider({
       ...config,
-      providerName: options.providerName,
+      providerName: releasePolicy().experimental ? options.providerName : 'heuristic',
       model: options.model,
     });
   if (isAnalysisCurrent(project, sourceKey, config) && project.analysis.provider === provider.name &&
@@ -54,13 +57,16 @@ export async function analyzeProject(projectId, options = {}) {
     error: null,
   };
 
-  await replaceProjectFile(projectId, project);
+  await updateProjectFile(projectId, current => { current.analysis = project.analysis; });
 
   try {
+    const [audioEnergyWindows, sceneChanges] = config.measureMediaEvidence
+      ? await Promise.all([measureAudioEnergy(resolveStoragePath(project.source.relativePath)),measureSceneChanges(resolveStoragePath(project.source.relativePath))]) : [[],null];
     const candidates = await provider.analyze({
       project,
-      transcript,
+      transcript: config.requireCompleteSentences ? {...transcript,segments:sentenceSegments(transcript.segments)} : transcript,
       options: config,
+      audioEnergyWindows, sceneChanges, chatActivityWindows:project.liveObservation?.chatActivityWindows || [],
     });
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -76,7 +82,7 @@ export async function analyzeProject(projectId, options = {}) {
       error: null,
     };
 
-    await replaceProjectFile(projectId, project);
+    await updateProjectFile(projectId, current => { current.analysis = project.analysis; });
 
     return { analysis: project.analysis, reused: false };
   } catch (error) {
@@ -87,7 +93,7 @@ export async function analyzeProject(projectId, options = {}) {
       error: error instanceof Error ? error.message : "Content analysis failed.",
     };
 
-    await replaceProjectFile(projectId, project);
+    await updateProjectFile(projectId, current => { current.analysis = project.analysis; });
     throw error;
   }
 }
@@ -116,15 +122,7 @@ export function isAnalysisCurrent(
 
 function analysisConfigsEqual(existing, expected) {
   if (!existing || !expected) return false;
-
-  return (
-    Number(existing.minDuration) === Number(expected.minDuration) &&
-    Number(existing.maxDuration) === Number(expected.maxDuration) &&
-    Number(existing.targetDuration) === Number(expected.targetDuration) &&
-    Number(existing.maxCandidates) === Number(expected.maxCandidates) &&
-    (existing.contentProfile || "PODCAST") === (expected.contentProfile || "PODCAST") &&
-    Boolean(existing.requireCompleteSentences) === Boolean(expected.requireCompleteSentences)
-  );
+  return JSON.stringify(normalizeAnalysisOptions(existing)) === JSON.stringify(normalizeAnalysisOptions(expected));
 }
 
 export function getAnalysisSourceKey(project) {

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getMediaToolStatus } from "@/services/MediaToolService";
 import { getStorageStatus } from "@/services/StorageService";
 import { PUBLISHING_ENABLED } from "@/lib/publishing-policy.mjs";
+import { releasePolicy } from "@/lib/release-policy.mjs";
+import { readRuntimeStatus } from "@/lib/runtime-status.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +24,8 @@ export async function GET() {
       ffprobe: media.ffprobe.available,
       storageWritable: storage.writable,
       publishing: PUBLISHING_ENABLED ? "ON" : "OFF",
+      release: releasePolicy(),
+      processing: await readRuntimeStatus(),
       version: process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || null,
     },
     {

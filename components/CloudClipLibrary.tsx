@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 type SavedClip = { origin?:{kind:string;platform?:string;sourceKind?:string;channel?:string}; review?: {status:string}; context?: {sourceReference?:{sourceUrl?:string;vodStartSeconds?:number|null;vodEndSeconds?:number|null;startUtc?:string|null;endUtc?:string|null};chatEvidence?:{peakMessages:number;peakUniqueSenders?:number|null;isPeak?:boolean;isCollectiveReaction?:boolean;repetitionEvidence?:{dominantTextSenders?:number|null}}|null;startTime:number;endTime:number;sourceDuration:number;analysisKind:string;before:string;transcript:string;after:string;transcriptWarning:string}; id: string; title: string; duration: number; reason: string; keep: boolean; expiresAt: string | null; sourceUrl: string; downloadUrl: string };
 type Library = { configured: boolean; message: string; clips: SavedClip[]; usedBytes?: number; maxBytes?: number; warning?: string };
-export function CloudClipLibrary() {
+export function CloudClipLibrary({initialFilter='WESTCOL'}:{initialFilter?:'WESTCOL'|'ALL'}={}) {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
-  const [sourceFilter,setSourceFilter]=useState<'WESTCOL'|'ALL'>('WESTCOL');
+  const [sourceFilter,setSourceFilter]=useState<'WESTCOL'|'ALL'>(initialFilter);
   const [access, setAccess] = useState<{id:string;url:string;expiresAt:string}|null>(null);
   const [recut, setRecut] = useState<{id:string;start:string;end:string}|null>(null);
   const [busy, setBusy] = useState<string | null>(null);

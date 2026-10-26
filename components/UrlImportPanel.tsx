@@ -5,7 +5,7 @@ import type { UploadedVideo } from "@/types/video";
 
 type ImportJob = { id: string; status: string; stage: string; progress: number; retryable?: boolean; error?: string; details?: { chatStatus: string; acceptedMessages: number }; result?: { video?: UploadedVideo; clipsJobId?: string; requestedClipCount?: number } };
 const field = "mt-2 min-h-12 w-full rounded-xl border border-white/20 bg-zinc-900 px-3 py-3 text-base";
-export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void; defaultLiveSource?: string }) {
+export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '', allowLive = true }: { onReady: (video: UploadedVideo | null) => void; onUpload: () => void; defaultLiveSource?: string; allowLive?:boolean }) {
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<"IMPORT" | "STREAM">("IMPORT");
   const [captureSeconds, setCaptureSeconds] = useState(180);
@@ -105,7 +105,7 @@ export function UrlImportPanel({ onReady, onUpload, defaultLiveSource = '' }: { 
     <p className="text-sm leading-6 text-zinc-300">Importa un video propio o autorizado desde una fuente compatible. Si la plataforma exige acceso o bloquea la descarga, mostraremos la causa y podrás subir el archivo.</p>
     <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/15 p-1">
       <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "IMPORT" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("IMPORT")}>Video grabado</button>
-      <button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "STREAM" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("STREAM")}>Directo activo</button>
+      {allowLive&&<button type="button" className={`min-h-12 rounded-lg px-3 ${mode === "STREAM" ? "bg-violet-500 font-semibold" : "text-zinc-300"}`} disabled={busy} onClick={() => changeMode("STREAM")}>Directo activo</button>}
     </div>
     <label>{mode === "STREAM" ? "Enlace del canal o del directo" : "Enlace del video"}<input type="url" inputMode="url" autoCapitalize="none" spellCheck={false} className={field} placeholder={mode === "STREAM" ? "https://kick.com/canal" : "https://…/videos/…"} value={url} disabled={busy} onChange={event => { setUrl(event.target.value); setRights(false); setJob(null); setError(""); onReady(null); }}/></label>
     {mode === "STREAM" && <><button type="button" disabled={checking || busy || !url.trim()} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 disabled:opacity-40" onClick={() => void checkLive()}>{checking ? "Consultando fuente…" : "Consultar si está en directo"}</button><p role="status" className="text-sm text-zinc-300">{liveStatus || "Kick, Twitch y YouTube tienen consultas independientes. El acceso al medio depende de los permisos y de cada plataforma."}</p></>}

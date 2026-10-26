@@ -15,7 +15,6 @@ import {chatEvidenceForWindow} from '../services/analysis/ChatActivityService.mj
 import {ClipLibraryService} from '../services/storage/ClipLibraryService.mjs';
 import {LiveArchiveService} from '../services/live/LiveArchiveService.mjs';
 import {JobStore} from '../services/JobStore.mjs';
-import {IngestJobStore} from '../services/ingest/IngestJobStore.mjs';
 const sourceUrl='https://kick.com/westcol/videos/01a17413-f760-7067-aa90-2e6d458a1aa6';
 const arg=name=>process.argv.find(a=>a.startsWith(`--${name}=`))?.slice(name.length+3);
 if(!process.argv.includes('--rights-confirmed'))throw new Error('Requiere autorización del material real.');

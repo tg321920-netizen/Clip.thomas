@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type { ClipRecord } from "@/types/clip";
 import { isProjectId } from "@/lib/project-id.mjs";
+import { readBoundedJson } from "@/lib/bounded-json.mjs";
 import { JobStore } from "@/services/JobStore.mjs";
 import {
   createClipFromCandidate,
+  createManualClip,
   listClips,
   markClipQueued,
 } from "@/services/clip/ClipService.mjs";
@@ -60,11 +62,14 @@ export async function POST(
     );
   }
 
-  const body = await safeJson(request);
+  let body: Record<string, unknown>;
+  try { body = await readBoundedJson(request, 4000); }
+  catch { return NextResponse.json({ error: 'Solicitud de recorte inválida.' }, { status: 400 }); }
+  const manual = body.startTime !== undefined || body.endTime !== undefined;
   const candidateId =
     typeof body.candidateId === "string" ? body.candidateId.trim() : "";
 
-  if (!/^candidate-\d{4}$/.test(candidateId)) {
+  if (!manual && !/^candidate-\d{4}$/.test(candidateId)) {
     return NextResponse.json(
       { error: "candidateId inválido." },
       { status: 400 },
@@ -72,7 +77,7 @@ export async function POST(
   }
 
   try {
-    const result = await createClipFromCandidate(projectId, candidateId, {
+    const result = manual ? await createManualClip(projectId, body) : await createClipFromCandidate(projectId, candidateId, {
       framingMode: body.framingMode,
       quality: body.quality,
     });
@@ -108,18 +113,7 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "No se pudo preparar el clip.";
-    const status = /not found/i.test(message) ? 404 : 422;
+    const status = /not found|no encontrado/i.test(message) ? 404 : 422;
     return NextResponse.json({ error: message }, { status });
-  }
-}
-
-async function safeJson(request: Request): Promise<Record<string, unknown>> {
-  try {
-    const value = await request.json();
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
   }
 }

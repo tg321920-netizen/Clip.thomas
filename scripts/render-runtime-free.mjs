@@ -3,6 +3,8 @@ import { access, mkdir } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import path from "node:path";
 import { PUBLISHING_ENABLED } from "../lib/publishing-policy.mjs";
+import { runtimeWorkerScripts, releasePolicy } from "../lib/release-policy.mjs";
+import { saveRuntimeStatus } from "../lib/runtime-status.mjs";
 
 const storageRoot = path.resolve(
   process.env.CLIPFORGE_STORAGE_DIR?.trim() || "/tmp/clipforge",
@@ -49,25 +51,15 @@ let ingestChild = null;
 let smokeChild = null;
 let activeWorker = null;
 
-const workerScripts = [
-  "scripts/autopilot-worker.mjs",
-  "scripts/agent-worker.mjs",
-  "scripts/transcription-worker.mjs",
-  "scripts/media-worker.mjs",
-  ...(process.env.CLIPFORGE_MEDIA_STORAGE_PROVIDER === 'r2' ? ["scripts/storage-worker.mjs"] : []),
-  "scripts/analysis-worker.mjs",
-  "scripts/autoedit-worker.mjs",
-  "scripts/render-worker.mjs",
-  "scripts/news-worker.mjs",
-  "scripts/owned-content-worker.mjs",
-  "scripts/analytics-worker.mjs",
-];
+const workerScripts = runtimeWorkerScripts();
 
 webChild = spawnNode(
   ["node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", port],
   "web",
 );
 ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
+await saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel});
+const runtimeHeartbeat=setInterval(()=>void saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel}).catch(()=>{}),5000);runtimeHeartbeat.unref();
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
@@ -262,6 +254,8 @@ function runWorkerOnce(script) {
 function shutdown(signal, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearInterval(runtimeHeartbeat);
+  void saveRuntimeStatus({status:'STOPPED',profile:releasePolicy().channel}).catch(()=>{});
   console.log("[free-runtime] shutting down...");
 
   for (const child of [activeWorker, smokeChild, ingestChild, webChild]) {

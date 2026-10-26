@@ -1,4 +1,4 @@
-export type ClipFramingMode = "FILL" | "FIT";
+export type ClipFramingMode = "FILL" | "FIT" | "CONVERSATION";
 export type ClipRenderQuality = "FAST" | "BALANCED" | "HIGH";
 export type SubtitleStyle = "CLEAN" | "VIRAL" | "KARAOKE";
 

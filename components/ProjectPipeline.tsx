@@ -562,6 +562,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                     <p className="mt-2 text-xs leading-5 text-zinc-500">
                       {candidate.reasons[0] || candidate.reason}
                     </p>
+                    <button type="button" className="mt-3 min-h-12 rounded-xl border border-violet-400/40 px-4 text-sm" onClick={()=>window.dispatchEvent(new CustomEvent('clipforge:trim-interval',{detail:{projectId,startTime:candidate.startTime,endTime:candidate.endTime}}))}>Ajustar este recorte</button>
 
                     {clip?.status === "READY" && clip.render ? (
                       <div className="mt-3">
@@ -575,7 +576,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                         </video>
                         <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-400">
                           <span>
-                            Clip 1080×1920 listo
+                            Clip {clip.render.width}×{clip.render.height} listo
                             {clip.render.subtitlesBurned ? " · subtítulos incluidos" : ""}
                           </span>
                           <span>{clip.edit.quality}</span>

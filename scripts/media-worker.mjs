@@ -7,6 +7,7 @@ import { recoverMediaResult } from "../services/media-processing/MediaResultReco
 import { ResumableUploadStore } from "../services/ingest/ResumableUploadStore.mjs";
 import { cleanupCompletedMedia } from "../services/media-processing/MediaTempCleanup.mjs";
 import { withMediaExecution } from "../lib/media-execution.mjs";
+import { releasePolicy } from "../lib/release-policy.mjs";
 const store = new JobStore(), once = process.argv.includes("--once"); let stopping = false;
 let activeController = null;
 const stop = () => { stopping = true; activeController?.abort(Object.assign(new Error("El procesador se está reiniciando."), { code: "MEDIA_INTERRUPTED" })); };
@@ -14,7 +15,7 @@ process.on("SIGTERM", stop); process.on("SIGINT", stop);
 while (!stopping) {
   await new ResumableUploadStore().cleanup();
   for(const completed of await store.listMedia())await cleanupCompletedMedia(completed).catch(error=>console.error("Media temporary cleanup:",error.message));
-  const job = await store.claimNext(["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"]);
+  const job = await store.claimNext(releasePolicy().features.stories ? ["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"] : ["MEDIA_EDIT", "MEDIA_CLIPS"]);
   if (!job) { if (once) break; await new Promise(r => setTimeout(r, 2500)); continue; }
   const startedAt = Date.now();
   const controller = new AbortController(); activeController = controller;

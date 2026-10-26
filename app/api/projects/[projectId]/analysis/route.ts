@@ -76,7 +76,7 @@ export async function POST(
   }
 
   const body = await safeJson(request);
-  const config = normalizeAnalysisOptions(body);
+  const config = normalizeAnalysisOptions({...body,measureMediaEvidence:true,requireCompleteSentences:true});
   const sourceKey = getAnalysisSourceKey(project);
 
   if (isAnalysisCurrent(project, sourceKey, config)) {

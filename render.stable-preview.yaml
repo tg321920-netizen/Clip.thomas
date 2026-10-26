@@ -1,0 +1,72 @@
+# Private trial proposal only; not created or deployed by committing this file.
+# Deploy a reviewed immutable commit manually. Do not link automatic production.
+services:
+  - type: web
+    name: clipforge-stable-preview
+    runtime: node
+    plan: free
+    region: virginia
+    repo: https://github.com/tg321920-netizen/Clip.thomas
+    branch: work/clipforge-functional-review-20261025-5d025fe
+    autoDeployTrigger: "off"
+    buildCommand: bash scripts/render-native-free-build.sh
+    startCommand: node scripts/render-runtime-free.mjs
+    healthCheckPath: /api/health
+    numInstances: 1
+    envVars:
+      - key: CLIPFORGE_RELEASE_CHANNEL
+        value: stable
+      - key: CLIPFORGE_EXPERIMENTAL_FEATURES
+        value: "false"
+      - key: CLIPFORGE_REQUIRE_OWNER_AUTH
+        value: "true"
+      - key: CLIPFORGE_OWNER_ACCESS_KEY
+        sync: false
+      - key: CLIPFORGE_SESSION_KEY
+        generateValue: true
+      - key: CLIPFORGE_STORAGE_DIR
+        value: /tmp/clipforge-stable-preview
+      - key: CLIPFORGE_STORAGE_PERSISTENT
+        value: "false"
+      - key: CLIPFORGE_STORAGE_RETENTION_ENABLED
+        value: "false"
+      - key: CLIPFORGE_AGENT_ENABLED
+        value: "false"
+      - key: CLIPFORGE_AGENT_REAL_PUBLISHING
+        value: "false"
+      - key: CLIPFORGE_CONTENT_REAL_PUBLISHING
+        value: "false"
+      - key: CLIPFORGE_SMART_PUBLISH_ON_BOOT
+        value: "false"
+      - key: CLIPFORGE_LIVE_MONITOR_ENABLED
+        value: "false"
+      - key: CLIPFORGE_LIVE_CAPTURE_ENABLED
+        value: "false"
+      - key: CLIPFORGE_ANALYSIS_PROVIDER
+        value: heuristic
+      - key: CLIPFORGE_MEDIA_WIDTH
+        value: "720"
+      - key: CLIPFORGE_MEDIA_HEIGHT
+        value: "1280"
+      - key: FFMPEG_PATH
+        value: /opt/render/project/src/.runtime/bin/ffmpeg
+      - key: FFPROBE_PATH
+        value: /opt/render/project/src/.runtime/bin/ffprobe
+      - key: WHISPER_PROVIDER
+        value: cpp
+      - key: WHISPER_CPP_COMMAND
+        value: /opt/render/project/src/.runtime/bin/whisper-cli
+      - key: WHISPER_CPP_MODEL_PATH
+        value: /opt/render/project/src/.runtime/models/ggml-tiny.bin
+      - key: WHISPER_CPP_THREADS
+        value: "1"
+      - key: CLIPFORGE_MEDIA_STORAGE_PROVIDER
+        value: r2
+      - key: CLIPFORGE_R2_ACCOUNT_ID
+        sync: false
+      - key: CLIPFORGE_R2_BUCKET
+        sync: false
+      - key: CLIPFORGE_R2_ACCESS_KEY_ID
+        sync: false
+      - key: CLIPFORGE_R2_SECRET_ACCESS_KEY
+        sync: false

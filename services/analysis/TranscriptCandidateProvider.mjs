@@ -88,6 +88,7 @@ export function normalizeAnalysisOptions(options = {}) {
     requireChatReaction: options.requireChatReaction === true,
     preferChatReactions: options.preferChatReactions === true,
     requireAvEvidence: options.requireAvEvidence === true,
+    measureMediaEvidence: options.measureMediaEvidence === true,
     chatReactionLagSeconds: boundedNumber(options.chatReactionLagSeconds, 0, 30, 0),
     continuityBreaks: (Array.isArray(options.continuityBreaks) ? options.continuityBreaks : []).filter(t => Number.isFinite(t) && t >= 0),
   };

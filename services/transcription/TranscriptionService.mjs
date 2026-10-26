@@ -2,7 +2,7 @@ import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { extractWhisperAudio } from "./AudioExtractor.mjs";
 import { WhisperCliProvider } from "./WhisperCliProvider.mjs";
@@ -87,7 +87,7 @@ export async function transcribeProject(projectId, options = {}) {
     };
   }
 
-  await replaceProjectFile(projectId, project);
+  await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
 
   try {
     for (let index = 0; index < project.transcript.chunks.length; index += 1) {
@@ -104,7 +104,7 @@ export async function transcribeProject(projectId, options = {}) {
       chunk.error = null;
       project.transcript.status = "PROCESSING";
       project.transcript.error = null;
-      await replaceProjectFile(projectId, project);
+      await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
 
       try {
         await audioExtractor(sourcePath, audioPath, {
@@ -138,7 +138,7 @@ export async function transcribeProject(projectId, options = {}) {
         chunk.completedAt = new Date().toISOString();
         project.transcript.progress = calculateProgress(project.transcript.chunks);
 
-        await replaceProjectFile(projectId, project);
+        await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
         await rm(audioPath, { force: true }).catch(() => undefined);
 
         if (typeof options.onProgress === "function") {
@@ -157,7 +157,7 @@ export async function transcribeProject(projectId, options = {}) {
         project.transcript.error = chunk.error;
         project.transcript.progress = calculateProgress(project.transcript.chunks);
         project.transcript.completedAt = new Date().toISOString();
-        await replaceProjectFile(projectId, project);
+        await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
         throw error;
       }
     }
@@ -175,7 +175,7 @@ export async function transcribeProject(projectId, options = {}) {
     project.transcript.completedAt = new Date().toISOString();
     project.transcript.error = null;
 
-    await replaceProjectFile(projectId, project);
+    await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
     return { transcript: project.transcript, reused: false };
   } catch (error) {
     // The failing chunk and partial progress were already persisted above. This
@@ -188,7 +188,7 @@ export async function transcribeProject(projectId, options = {}) {
         error: error instanceof Error ? error.message : "Transcription failed.",
         completedAt: new Date().toISOString(),
       };
-      await replaceProjectFile(projectId, project);
+      await updateProjectFile(projectId, current => { current.transcript = project.transcript; });
     }
     throw error;
   }

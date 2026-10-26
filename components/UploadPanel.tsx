@@ -10,6 +10,7 @@ import type { UploadedVideo } from "@/types/video";
 import { uploadResumable } from "@/lib/resumable-upload-client";
 import { ProjectPipeline } from "@/components/ProjectPipeline";
 import { NewsModePanel } from "@/components/NewsModePanel";
+import { ManualClipEditor } from "@/components/ManualClipEditor";
 
 type UploadState = "idle" | "checking" | "uploading" | "done" | "error";
 
@@ -17,6 +18,7 @@ const PROJECT_OPEN_EVENT = "clipforge:project-open";
 
 export function UploadPanel({ onReady, compact = false }: { onReady?: (video: UploadedVideo | null) => void; compact?: boolean } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [stage, setStage] = useState("Subiendo");
@@ -278,7 +280,9 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
         <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07]">
           <div className="aspect-video w-full bg-black">
             <video
+              ref={videoRef}
               controls
+              playsInline
               preload="metadata"
               poster={result.posterUrl}
               src={result.sourceUrl}
@@ -321,6 +325,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
                 enabled
               />
             </div></details>}
+            <ManualClipEditor key={result.projectId} video={result} videoRef={videoRef}/>
           </div>
         </div>
       )}
