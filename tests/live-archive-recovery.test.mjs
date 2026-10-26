@@ -27,3 +27,9 @@ test('restore rejects path traversal, checksum changes and pre-existing conflict
   const bad={...checkpoint,files:[{...entry,relativePath:'../outside.json',sha256:createHash('sha256').update('x').digest('hex')}]};await f.cloud.putJson(`clipforge-managed/v1/checkpoints/${f.id}/latest.json`,bad);
   await assert.rejects(f.service.restore(f.id,{targetRoot:path.join(f.root,'traversal'),workersPaused:true}),/ruta o huella/);
 });
+
+test('reusing a source decode proof requires the actual current hash and never uploads mismatched bytes',async t=>{
+ const f=await fixture(t),relativePath=`uploads/${f.id}/source.mp4`,file=path.join(f.root,relativePath);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,'Opaque unit payload, not a real video.');
+ await assert.rejects(f.service.archiveOriginalProject({id:f.id,source:{relativePath}},source,{validatedSource:{sha256:'0'.repeat(64),validation:{valid:true,fullDecode:true,sizeBytes:37,videoCodec:'h264',audioCodec:'aac',duration:30,checkedAt:new Date().toISOString()}}}),e=>e.code==='SOURCE_PROOF_MISMATCH');
+ assert.equal(f.cloud.uploads,0);assert.equal(f.cloud.deletes.length,0);
+});

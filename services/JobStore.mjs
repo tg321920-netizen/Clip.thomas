@@ -254,7 +254,8 @@ export class JobStore {
   async getPublishJob(projectId, publicationId) { return this.get(jobId("PUBLISH_POST", projectId, publicationId)); }
   async getAnalyticsJob(projectId, publicationId) { return this.get(jobId("FETCH_ANALYTICS", projectId, publicationId)); }
 
-  async claimNext(allowedTypes = null) {
+  async claimNext(allowedTypes = null, targetId = null) {
+    if(targetId!==null)safeJobId(targetId);
     await this.#recoverStaleJobs();
     await this.#ensureDirectory();
     const allowed = Array.isArray(allowedTypes) && allowedTypes.length > 0 ? new Set(allowedTypes) : null;
@@ -263,6 +264,7 @@ export class JobStore {
 
     for (const name of names.filter((value) => value.endsWith(".json")).sort()) {
       const id = name.slice(0, -5);
+      if(targetId!==null&&id!==targetId)continue;
       const job = await this.#readRecoverable(id);
       if (!job || job.status !== "QUEUED" || (allowed && !allowed.has(job.type)) || Date.parse(job.nextAttemptAt || job.createdAt) > now) continue;
       const claim = async () => {

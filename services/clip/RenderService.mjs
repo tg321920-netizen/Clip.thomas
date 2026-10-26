@@ -82,6 +82,7 @@ export class RenderService {
       postFilters,
       this.width,
       this.height,
+      {focusX:clip.edit?.focusX},
     );
 
     const args = [
@@ -168,7 +169,7 @@ export function buildSafeMotionFilter(intensity,width,height) {
   return `scale=w='trunc(iw*(${factor})/2)*2':h='trunc(ih*(${factor})/2)*2':eval=frame,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:eval=frame,setsar=1`;
 }
 
-export function buildRenderVideoPlan(mode = "FILL", postFilters = [], width = 1080, height = 1920) {
+export function buildRenderVideoPlan(mode = "FILL", postFilters = [], width = 1080, height = 1920, options = {}) {
   assertResolution(width, height);
   const normalizedPostFilters = Array.isArray(postFilters)
     ? postFilters.filter((value) => typeof value === "string" && value.trim())
@@ -197,7 +198,7 @@ export function buildRenderVideoPlan(mode = "FILL", postFilters = [], width = 10
     };
   }
 
-  const base = buildVideoFilter(mode, width, height);
+  const base = buildVideoFilter(mode, width, height, options);
   const filter = [base, ...normalizedPostFilters].join(",");
   return {
     mode: "simple",
@@ -213,7 +214,7 @@ export function buildRenderVideoPlan(mode = "FILL", postFilters = [], width = 10
   };
 }
 
-export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {
+export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920, options = {}) {
   assertResolution(width, height);
   if (mode === "CONVERSATION") {
     throw new Error(
@@ -235,7 +236,7 @@ export function buildVideoFilter(mode = "FILL", width = 1080, height = 1920) {
 
   return [
     `scale=${width}:${height}:force_original_aspect_ratio=increase`,
-    `crop=${width}:${height}`,
+    options.focusX===undefined ? `crop=${width}:${height}` : buildFocusedCrop(width,height,options.focusX),
     "setsar=1",
   ].join(",");
 }
@@ -402,3 +403,5 @@ function escapeFilterPath(filePath) {
     .replaceAll("]", "\\]");
 }
 
+
+function buildFocusedCrop(width,height,value){const focus=Number(value);if(!Number.isFinite(focus)||focus<0||focus>1)throw new Error("El punto de encuadre debe estar entre 0 y 1.");return `crop=${width}:${height}:x='max(0,min(iw-ow,iw*${focus.toFixed(6)}-ow/2))':y='(ih-oh)/2'`;}

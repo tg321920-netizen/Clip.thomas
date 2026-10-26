@@ -127,7 +127,7 @@ export async function ingestUrlJob(job, options = {}) {
     ingestMode: mode,
     ...technical,
     ...(mode === "STREAM" ? { captureValidation: { valid: true, fullDecode: true }, capture: { requestedDurationSeconds: job.source.captureSeconds,
-      actualDurationSeconds: technical.durationSeconds, sourceRanges: captureInfo?.sourceRanges || [], continuityBreaks: captureInfo?.continuityBreaks || [] } } : {}),
+      actualDurationSeconds: technical.durationSeconds, requestedStartSeconds:job.source.startTimeSeconds, vodStartSeconds:captureInfo?.vodStartSeconds ?? null, sourceRanges: captureInfo?.sourceRanges || [], continuityBreaks: captureInfo?.continuityBreaks || [] } } : {}),
   };
 
   await onProgress(98, "FINALIZING");
@@ -297,7 +297,7 @@ export async function captureSegmentedStream({
   } catch { /* Missing/damaged clock is unknown, never invented. */ }
   let activeInput = null, activeRange = null, metadataNotified = false;
   const clockSnapshot = () => ({ ...(activeInput?.snapshot() || {}), source: clock.source, sourceRanges: clock.ranges,
-    continuityBreaks: clock.continuityBreaks, startTimeSeconds, resumedSeconds: approximateCaptured });
+    continuityBreaks: clock.continuityBreaks, vodStartSeconds: Number.isFinite(clock.vodBaseSeconds)?clock.vodBaseSeconds:null, startTimeSeconds, resumedSeconds: approximateCaptured });
   async function persistClock() {
     const temp = `${clockFile}.tmp`; await writeFile(temp, JSON.stringify(clock)); await rename(temp, clockFile);
   }

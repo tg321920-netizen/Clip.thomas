@@ -134,7 +134,8 @@ export class IngestJobStore {
       .slice(0, Math.max(1, Math.min(Number(limit) || 50, 500)));
   }
 
-  async claimNext(allowedTypes = null) {
+  async claimNext(allowedTypes = null, targetId = null) {
+    if(targetId!==null)assertId(targetId);
     await this.#recoverStale();
     await this.#ensureDirectory();
     const names = (await readdir(this.#jobsDir()))
@@ -150,6 +151,7 @@ export class IngestJobStore {
       if (
         !job ||
         (allowedTypes && !allowedTypes.includes(job.type)) ||
+        (targetId !== null && id !== targetId) ||
         job.status !== "QUEUED" ||
         Date.parse(job.nextAttemptAt || job.createdAt) > now
       ) continue;

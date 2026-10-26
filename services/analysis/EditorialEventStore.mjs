@@ -19,7 +19,7 @@ export class EditorialEventStore {
   }
   async reserve(source, candidate, owner) {
     return this.mutate(source, rows=>{
-      const peak=Date.parse(candidate.chatEvidence?.peakUtc), hashes=tokens(candidate.text);
+      const reaction=candidate.chatEvidence, peak=reaction?.isPeak||reaction?.isCollectiveReaction ? Date.parse(reaction.peakUtc) : NaN, hashes=tokens(candidate.text);
       const existing=rows.find(r=>r.owner===owner && r.candidateId===candidate.id);if(existing)return true;
       const duplicate=rows.some(r=>{
         if(r.status==="RESERVED" && !ownerIsAlive(r.lease) && this.now()-r.at>120000)return false;

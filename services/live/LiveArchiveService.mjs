@@ -28,10 +28,16 @@ export class LiveArchiveService {
   constructor({root=getStorageRoot(),sessions=new LiveSessionStore({root}),cloud,library,mediaJobs=new JobStore(),ingestJobs=new IngestJobStore()}={}) {
     Object.assign(this,{root,sessions,mediaJobs,ingestJobs});this.cloud=cloud || new R2ObjectStore();this.library=library || new ClipLibraryService({store:this.cloud});
   }
-  async archiveOriginalProject(project,source) {
+  async archiveOriginalProject(project,source,{validatedSource=null}={}) {
     const id=project?.id;if(!isProjectId(id)||project.source?.relativePath!==`uploads/${id}/source.mp4`)throw new Error("El original no corresponde a su proyecto.");
     await this.sessions.create(id,source);
-    const file=destination(this.root,project.source.relativePath),validation=await validateMp4(file,{requireAudio:true}),sha256=await hashFile(file),sizeBytes=(await stat(file)).size;
+    const file=destination(this.root,project.source.relativePath),sha256=await hashFile(file),sizeBytes=(await stat(file)).size;
+    let validation;
+    if(validatedSource){
+      const proof=validatedSource.validation;
+      if(validatedSource.sha256!==sha256||proof?.sizeBytes!==sizeBytes||proof?.valid!==true||proof?.fullDecode!==true||proof?.videoCodec!=="h264"||proof?.audioCodec!=="aac"||!(proof.duration>0)||!Number.isFinite(Date.parse(proof.checkedAt)))throw Object.assign(new Error("La verificación previa no corresponde a los bytes actuales del original."),{code:"SOURCE_PROOF_MISMATCH"});
+      validation=proof;
+    }else validation=await validateMp4(file,{requireAudio:true});
     const key=`${PREFIX}sources/${id}/original-${sha256}.mp4`,md5=createHash("md5");for await(const chunk of createReadStream(file))md5.update(chunk);
     await this.library.withStorageWriter(async signal=>{
       let remote=await this.cloud.head(key,{signal});if(!remote){await this.library.assertStorageQuota(sizeBytes+8192,signal);await this.cloud.put(key,createReadStream(file),{length:sizeBytes,type:"video/mp4",md5:md5.digest("base64"),metadata:{sha256,managed:"clipforge-source-v1"},ifAbsent:true,signal});remote=await this.cloud.head(key,{signal});}

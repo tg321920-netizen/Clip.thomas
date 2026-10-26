@@ -48,3 +48,7 @@ test("conversation preserves configured output resolution and rejects invalid di
   assert.match(plan.filter, /fps=30,setpts=PTS-STARTPTS\[vout\]$/);
   assert.throws(() => buildRenderVideoPlan("CONVERSATION", [], 721, 1280), /resolution/);
 });
+
+test('a reviewed horizontal focus crops the original image with bounded numeric coordinates',()=>{
+ const focused=buildVideoFilter('FILL',1080,1920,{focusX:0.59});assert.match(focused,/iw\*0\.590000-ow\/2/);assert.throws(()=>buildVideoFilter('FILL',1080,1920,{focusX:'movie=private'}));assert.throws(()=>buildVideoFilter('FILL',1080,1920,{focusX:2}));
+});

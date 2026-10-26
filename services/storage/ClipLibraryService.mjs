@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { chatEvidenceForWindow } from '../analysis/ChatActivityService.mjs';
+import { clipMediaOrigin } from '../../lib/clip-media-origin.mjs';
 import { isProjectId } from '../../lib/project-id.mjs';
 import { getStorageRoot, resolveStoragePath } from '../../lib/storage-paths.mjs';
 import { signPrivateClip } from './SignedMediaAccess.mjs';
@@ -129,8 +131,9 @@ export class ClipLibraryService {
         if (existing?.record.status === 'DELETED') return this.publicEntry(existing.record);
         if (existing && !existing.record.keep && Date.parse(existing.record.expiresAt) <= this.now()) return this.publicEntry({ ...existing.record, status: 'DELETED' });
         const remote = await this.store.head(mediaKey(id), { signal });
+        const origin = existing?.record.origin?.kind === 'TECHNICAL_TEST' ? existing.record.origin : clipMediaOrigin(project);
         if (existing && remote?.size === info.size && remote.metadata?.sha256 === sha256 && remote.etag === existing.record.objectEtag) {
-          if(!existing.record.context){const updated={...existing.record,context:clipContext(project,clip)};await this.store.putJson(recordKey(id),updated,{ifMatch:existing.etag,signal});return this.publicEntry(updated);}
+          if(!existing.record.context || JSON.stringify(existing.record.origin)!==JSON.stringify(origin)){const updated={...existing.record,origin,context:clipContext(project,clip)};await this.store.putJson(recordKey(id),updated,{ifMatch:existing.etag,signal});return this.publicEntry(updated);}
           return this.publicEntry(existing.record);
         }
         if (!remote) {
@@ -154,9 +157,9 @@ export class ClipLibraryService {
         const verified = await this.store.head(mediaKey(id), { signal });
         if (verified?.size !== info.size || verified.metadata?.sha256 !== sha256) throw storageError('STORAGE_INTEGRITY', 'No se confirmó la integridad de la copia. El archivo local se conserva.');
         const now = new Date(this.now()).toISOString();
-        const record = existing ? { ...existing.record, objectEtag: verified.etag } : { id, managedBy: 'clipforge-v1', projectId: project.id, clipId: clip.id, objectKey: mediaKey(id), sha256,
+        const record = existing ? { ...existing.record, origin, objectEtag: verified.etag } : { id, managedBy: 'clipforge-v1', projectId: project.id, clipId: clip.id, objectKey: mediaKey(id), sha256,
           sizeBytes: info.size, objectEtag: verified.etag, createdAt: now, expiresAt: new Date(this.now() + 30 * DAY).toISOString(), keep: false, status: 'READY',
-          review: {status:'PENDING'}, context:clipContext(project,clip),
+          origin, review: {status:'PENDING'}, context:clipContext(project,clip),
           title: String(clip.title || project.source?.originalName || 'Clip').slice(0, 300), reason: String(clip.reason || '').slice(0, 2000), duration: Number(clip.duration) || 0 };
         await this.store.putJson(recordKey(id), record, existing ? { ifMatch: existing.etag, signal } : { ifAbsent: true, signal });
         return this.publicEntry(record);
@@ -165,13 +168,13 @@ export class ClipLibraryService {
   }
   publicEntry(record) {
     return { id: record.id, projectId: record.projectId, clipId: record.clipId, title: record.title, reason: record.reason,
-      duration: record.duration, sizeBytes: record.sizeBytes, createdAt: record.createdAt, expiresAt: record.keep ? null : record.expiresAt,
-      keep: record.keep, status: record.status, review:record.review || {status:'PENDING'}, context:record.context || null, recut:record.recut || null, sourceUrl: `/api/media/library/${record.id}/source`, downloadUrl: `/api/media/library/${record.id}/source?download=1` };
+      duration: record.duration, sha256:record.sha256, sizeBytes: record.sizeBytes, createdAt: record.createdAt, expiresAt: record.keep ? null : record.expiresAt,
+      keep: record.keep, status: record.status, origin:record.origin || {kind:'VIDEO',sourceKind:'UNKNOWN'}, review:record.review || {status:'PENDING'}, context:record.context || null, recut:record.recut || null, sourceUrl: `/api/media/library/${record.id}/source`, downloadUrl: `/api/media/library/${record.id}/source?download=1` };
   }
-  async list() {
+  async list({includeTechnicalTests=false}={}) {
     const entries = await this.#all();
     const used = (await this.store.list('')).reduce((sum, item) => sum + Number(item.size || 0), 0);
-    return { clips: entries.filter(e => e.record.status === 'READY').map(e => this.publicEntry(e.record)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200), usedBytes: used, maxBytes: this.maxBytes };
+    return { clips: entries.filter(e => e.record.status === 'READY' && (includeTechnicalTests || e.record.origin?.kind !== 'TECHNICAL_TEST')).map(e => this.publicEntry(e.record)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200), usedBytes: used, maxBytes: this.maxBytes };
   }
   async setKeep(id, keep) {
     if (typeof keep !== 'boolean') throw storageError('STORAGE_INVALID', 'Indica si deseas conservar el clip.');
@@ -244,7 +247,14 @@ export class ClipLibraryService {
 function clipContext(project,clip){
   const start=Number(clip.startTime),end=Number(clip.endTime),segments=project.transcript?.segments || [];
   const text=(a,b)=>segments.filter(s=>s.endTime>a&&s.startTime<b).map(s=>s.text).join(' ').slice(0,2500);
-  return {startTime:start,endTime:end,sourceDuration:project.source?.durationSeconds,sourceId:project.liveObservation?.source?.sourceId || null,
+  const origin=clipMediaOrigin(project),capture=project.source?.capture || {},observation=project.liveObservation || {};
+  const ranges=capture.sourceRanges || (observation.sourceStartUtc?[{offsetSeconds:0,sourceStartUtc:observation.sourceStartUtc}]:[]);
+  const utcAt=time=>{const range=[...ranges].reverse().find(r=>r.offsetSeconds<=time);return range&&Number.isFinite(Date.parse(range.sourceStartUtc))?new Date(Date.parse(range.sourceStartUtc)+(time-range.offsetSeconds)*1000).toISOString():null;};
+  const base=capture.vodStartSeconds;
+  const reference=clip.sourceReference || {sourceUrl:origin.sourceUrl||null,sourceId:origin.sourceId||null,sourceKind:origin.sourceKind,
+    startUtc:utcAt(start),endUtc:utcAt(end),vodStartSeconds:Number.isFinite(base)?base+start:null,vodEndSeconds:Number.isFinite(base)?base+end:null};
+  const candidate=project.analysis?.candidates?.find(c=>c.id===clip.candidateId);
+  return {sourceReference:reference,chatEvidence:clip.chatEvidence||candidate?.chatEvidence||chatEvidenceForWindow(clip,observation.chatActivityWindows||[]),startTime:start,endTime:end,sourceDuration:project.source?.durationSeconds,sourceId:project.liveObservation?.source?.sourceId || null,
     analysisKind:clip.editorialReview?.analysisKind || (clip.aiAssessment?'MODEL_SELECTION':'MANUAL_OR_UNVERIFIED'),
     before:text(Math.max(0,start-15),start),transcript:text(start,end),after:text(end,end+15),transcriptWarning:'Transcripción automática: puede contener errores.',
     subtitlesEnabled:clip.edit?.subtitlesEnabled===true};

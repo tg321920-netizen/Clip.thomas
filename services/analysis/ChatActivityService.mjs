@@ -118,6 +118,7 @@ export function chatEvidenceForWindow(candidate, windows) {
   const strongest = relevant.reduce((best, row) => row.score > best.score ||
     (row.score === best.score && row.messages > best.messages) ? row : best);
   return { score: strongest.score, peakUtc: strongest.utc, peakMessages: strongest.messages,
+    peakUniqueSenders: Number.isSafeInteger(strongest.uniqueSenders) && strongest.uniqueSenders <= strongest.messages ? strongest.uniqueSenders : null,
     baselineMessages: strongest.baselineMessages, ratio: strongest.ratio, isPeak: strongest.isPeak === true,
     isCollectiveReaction: strongest.isCollectiveReaction === true, repetitionEvidence: strongest.repetitionEvidence,
     observedBuckets: relevant.length, clockUncertaintySeconds: strongest.clockUncertaintySeconds,

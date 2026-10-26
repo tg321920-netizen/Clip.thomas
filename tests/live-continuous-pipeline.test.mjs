@@ -63,10 +63,10 @@ test("cross-batch event claims are atomic and never merge different transmission
 
 test('similar images alone do not suppress a different conversation but corroborate similar text nearby',async()=>{
   const f=await setup();try{
-    const events=new EditorialEventStore({root:f.root}),a={id:'a',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez once doce.',visualFingerprint:'0123456789abcdef',chatEvidence:{peakUtc:'2026-10-25T12:00:00Z'}};
+    const events=new EditorialEventStore({root:f.root}),a={id:'a',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez once doce.',visualFingerprint:'0123456789abcdef',chatEvidence:{peakUtc:'2026-10-25T12:00:00Z',isPeak:true}};
     assert.equal(await events.reserve(source,a,'owner-a'),true);await events.confirm(source,a.id,'owner-a');
-    assert.equal(await events.reserve(source,{...a,id:'b',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez trece catorce.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-b'),false);
-    assert.equal(await events.reserve(source,{...a,id:'c',text:'Esta discusión explica otras causas y ofrece una conclusión completamente distinta con suficiente contexto.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z'}},'owner-c'),true);
+    assert.equal(await events.reserve(source,{...a,id:'b',text:'Uno dos tres cuatro cinco seis siete ocho nueve diez trece catorce.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z',isPeak:true}},'owner-b'),false);
+    assert.equal(await events.reserve(source,{...a,id:'c',text:'Esta discusión explica otras causas y ofrece una conclusión completamente distinta con suficiente contexto.',chatEvidence:{peakUtc:'2026-10-25T12:01:00Z',isPeak:true}},'owner-c'),true);
   }finally{await f.clean();}
 });
 
@@ -86,4 +86,27 @@ test('capacity tolerates a listed temporary file disappearing, but other filesys
   const size=await liveMediaSize(f.root,{statFile:async current=>{if(current===file){await rm(file);throw Object.assign(new Error('gone after readdir'),{code:'ENOENT'});}return{size:0};}});assert.equal(size,0);
   await writeFile(file,'permission failure fixture');await assert.rejects(liveMediaSize(f.root,{statFile:async()=>{throw Object.assign(new Error('blocked'),{code:'EACCES'});}}),e=>e.code==='EACCES');
  }finally{await f.clean();}
+});
+
+test('ordinary chat activity is not a reaction anchor for suppressing a distinct event',async()=>{const f=await setup();try{
+ const events=new EditorialEventStore({root:f.root});
+ const a={id:'old',text:'Un comentario anterior sobre zapatillas y un contrato con una marca.',chatEvidence:{peakUtc:'2026-10-25T12:00:00Z',isCollectiveReaction:true}};
+ assert.equal(await events.reserve(source,a,'one'),true);await events.confirm(source,a.id,'one');
+ const b={id:'new',text:'Otro acontecimiento donde el protagonista se acuerda de una prenda olvidada.',chatEvidence:{peakUtc:'2026-10-25T12:00:10Z',isCollectiveReaction:false,isPeak:false}};
+ assert.equal(await events.reserve(source,b,'two'),true);
+}finally{await f.clean();}});
+
+test('an operator claims a specific queued ingest once instead of writing concurrently with the worker',async()=>{
+ const f=await setup(),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=f.root;try{
+  const jobs=new IngestJobStore(),a=await jobs.create({url:'https://kick.com/westcol',mode:'STREAM'}),b=await jobs.create({url:'https://kick.com/westcol',mode:'STREAM'});
+  const claims=await Promise.all([jobs.claimNext(['INGEST_URL'],b.id),jobs.claimNext(['INGEST_URL'],b.id)]);assert.equal(claims.filter(Boolean).length,1);assert.equal(claims.find(Boolean).id,b.id);assert.equal((await jobs.get(a.id)).status,'QUEUED');
+ }finally{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await f.clean();}
+});
+
+test('targeting a media job preserves other queued work and executes stale-state recovery without leaking a target variable',async()=>{
+ const f=await setup(),previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=f.root;try{
+  const {JobStore}=await import('../services/JobStore.mjs'),jobs=new JobStore();
+  const a=await jobs.enqueueMedia('MEDIA_CLIPS',liveId('media-a'),{}),b=await jobs.enqueueMedia('MEDIA_CLIPS',liveId('media-b'),{});
+  const claimed=await jobs.claimNext(['MEDIA_CLIPS'],b.id);assert.equal(claimed.id,b.id);assert.equal((await jobs.get(a.id)).status,'QUEUED');assert.equal(await jobs.claimNext(['MEDIA_CLIPS'],b.id),null);await jobs.release(b.id);
+ }finally{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await f.clean();}
 });

@@ -178,3 +178,11 @@ test('review remains pending until owner action, rejection keeps bytes, and pres
   await assert.rejects(f.service.setReview(saved.id,'APPROVED'));
   const pending=await f.service.setReview(saved.id,'PENDING');assert.equal(pending.review.status,'PENDING');
 });
+
+test('explicit QA provenance stays out of the owner library without deleting media, and titles cannot hide a real clip',async t=>{
+ const f=await fixture(t);f.clip.title='PRUEBA TÉCNICA es parte de una conversación real';
+ f.project.source.originUrl='https://kick.com/westcol/videos/01a17413-f760-7067-aa90-2e6d458a1aa6?private=must-not-persist';f.project.source.ingestMode='STREAM';f.project.liveObservation={channel:'westcol',sourceKind:'VOD'};
+ const real=await f.service.archive(f.project,f.clip);assert.equal(real.origin.kind,'STREAM');assert.equal(real.origin.sourceKind,'VOD');assert.equal((await f.service.list()).clips.length,1);assert.doesNotMatch(JSON.stringify(real.origin),/private|must-not-persist/);
+ f.project.testOnly=true;const qa=await f.service.archive(f.project,f.clip);assert.equal(qa.origin.kind,'TECHNICAL_TEST');assert.equal((await f.service.list()).clips.length,0);assert.equal((await f.service.list({includeTechnicalTests:true})).clips.length,1);assert.ok(await f.store.head(`clipforge-managed/v1/media/${real.id}.mp4`));assert.equal(f.store.deletes.length,0);
+ delete f.project.testOnly;assert.equal((await f.service.archive(f.project,f.clip)).origin.kind,'TECHNICAL_TEST','a retry must not reintroduce a QA fixture');
+});

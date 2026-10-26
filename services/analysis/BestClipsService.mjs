@@ -33,6 +33,8 @@ export class BestClipsService {
       catch (error) { if (/not installed|ENOENT|MODEL_PATH|required|not found/i.test(error.message)) throw new WaitingResourceError("Whisper no está configurado. Se necesita una transcripción real para elegir momentos y crear subtítulos."); throw error; }
     }
     await onStage("PROCESSING", "SELECTING", 35);
+    const framingMode=String(input.framingMode||"CONVERSATION").toUpperCase();
+    if(!["CONVERSATION","FILL","FIT"].includes(framingMode))throw new Error("Encuadre no válido.");
     const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
     const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
       transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], continuityBreaks: original.source.capture?.continuityBreaks || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
@@ -81,7 +83,7 @@ export class BestClipsService {
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode: "CONVERSATION", motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
       if (!recovered && input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
       try{if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
       catch(error){await eventStore.release(eventSource,outputProjectId);throw error;}
