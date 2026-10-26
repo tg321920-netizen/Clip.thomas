@@ -7,7 +7,8 @@ services:
     plan: free
     region: virginia
     repo: https://github.com/tg321920-netizen/Clip.thomas
-    branch: work/clipforge-functional-review-20261025-5d025fe
+    # Frozen candidate ref. Development pushes cannot change the selected code.
+    branch: preview/clipforge-android-20261026.2
     autoDeployTrigger: "off"
     buildCommand: bash scripts/render-native-free-build.sh
     startCommand: node scripts/render-runtime-free.mjs
