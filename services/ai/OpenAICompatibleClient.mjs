@@ -67,6 +67,7 @@ export async function requestStructuredJson({
   instructions,
   input,
   images = [],
+  outputExample = null,
   fetchImpl = providerFetch,
 }) {
   if (!config?.apiKey) {
@@ -120,7 +121,10 @@ export async function requestStructuredJson({
   }
 
   const jsonMode = config.jsonMode || "schema";
-  const structuredInstructions = `${instructions}\nReturn ONLY one valid JSON object matching this schema, without commentary or markdown: ${JSON.stringify(schema)}`;
+  const shape = jsonMode === "prompt" && outputExample
+    ? `Output shape: ${JSON.stringify(outputExample)}\nReplace placeholders with evidence from the supplied input. Use supplied candidate IDs exactly. An empty selections array is allowed when no cut qualifies. Never copy placeholder IDs.`
+    : `<output_schema>${JSON.stringify(schema)}</output_schema>`;
+  const structuredInstructions = `${instructions}\nProduce a JSON DATA INSTANCE, not a schema. Do not return type/properties/required definitions.\n${shape}\nReturn ONLY one valid JSON data object, without commentary or markdown.`;
   const messages = [
     { role: "system", content: structuredInstructions },
     {
@@ -231,20 +235,23 @@ function parseStructuredResult(body, style) {
     throw error;
   }
 
-  let parsed;
+  let decoded;
   try {
-    parsed = JSON.parse(stripJsonFence(text));
+    decoded = decodeStructuredText(text);
   } catch {
     const error = new Error("The configured AI provider returned invalid JSON.");
     error.code = "AI_PROVIDER_INVALID_JSON";
-    error.retryable = true;
+    error.retryable = false;
+    error.diagnostics = { stage: "JSON_EXTRACTION", finishReason: body?.choices?.[0]?.finish_reason || null,
+      textBytes: Buffer.byteLength(text), truncated: body?.choices?.[0]?.finish_reason === "length" };
     throw error;
   }
 
   return {
     body,
     text,
-    parsed,
+    parsed: decoded.parsed,
+    diagnostics: { stage: "JSON_PARSED", wrapper: decoded.wrapper, finishReason: body?.choices?.[0]?.finish_reason || null, textBytes: Buffer.byteLength(text) },
     style,
     usage: extractCompatibleUsage(body),
   };
@@ -334,10 +341,30 @@ async function requestProvider(fetchImpl, url, init, timeoutMs) {
   }
 }
 
-function stripJsonFence(value) {
-  const text = String(value || "").trim();
-  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
-  return match ? match[1].trim() : text;
+/** Recover only an unambiguous, complete JSON object. Never fix its values,
+ * quotes, commas, identifiers or truncated content. Multiple objects fail. */
+export function decodeStructuredText(value) {
+  let text = String(value || "").trim(), wrapper = "NONE";
+  const think = /^<think>[\s\S]*?<\/think>\s*/iu.exec(text);
+  if (think) { text = text.slice(think[0].length).trim(); wrapper = "THINK_PREFIX"; }
+  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(text);
+  if (fence) { text = fence[1].trim(); wrapper = "JSON_FENCE"; }
+  try { return { parsed: JSON.parse(text), wrapper }; } catch { /* Check a single complete object inside a prose wrapper. */ }
+  const objects = []; let start = -1, depth = 0, quoted = false, escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') quoted = false; continue; }
+    if (c === '"' && depth) { quoted = true; continue; }
+    if (c === "{") { if (!depth) start = i; depth++; }
+    if (c === "}") {
+      if (!depth) throw new Error("Ambiguous JSON wrapper.");
+      depth--; if (!depth) objects.push({ start, end: i + 1 });
+    }
+  }
+  if (depth || quoted || objects.length !== 1) throw new Error("Incomplete or ambiguous JSON.");
+  const object = objects[0], outside = text.slice(0, object.start) + text.slice(object.end);
+  if (/[\[\]{}]/u.test(outside)) throw new Error("Ambiguous JSON wrapper.");
+  return { parsed: JSON.parse(text.slice(object.start, object.end)), wrapper: "SINGLE_OBJECT_WRAPPER" };
 }
 
 function clampNumber(value, min, max, fallback) {

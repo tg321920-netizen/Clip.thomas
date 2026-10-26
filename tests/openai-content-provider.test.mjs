@@ -70,6 +70,7 @@ test("OpenAI provider keeps model selections tied to real candidate IDs", async 
                           hook: "Hook generado",
                           reason: "Este candidato tiene contexto y un inicio fuerte.",
                           relevanceScore: 88,
+                          qualityFlags: [],
                         },
                         {
                           candidateId: "candidate-inventado",
@@ -110,4 +111,14 @@ test("OpenAI provider keeps model selections tied to real candidate IDs", async 
   assert.ok(
     candidates.every((candidate) => candidate.id !== "candidate-inventado"),
   );
+});
+
+test('free GLM schema echo retries once but invalid IDs and editorial rejection never become approval', async () => {
+  const baseline=[{id:'candidate-1',text:'Una frase completa con contexto y una conclusión.',startTime:0,endTime:30,duration:30,viralScore:50}];
+  let calls=0;
+  const provider=new OpenAIContentProvider({apiKey:'test',model:'glm-4.6v-flash',baseUrl:'https://example.invalid/v4',apiStyle:'chat-completions',visionEnabled:false,fetchImpl:async()=>({ok:true,status:200,json:async()=>({choices:[{finish_reason:'stop',message:{content:JSON.stringify(++calls===1?{type:'object',properties:{selections:{type:'array'}}}:{selections:[{candidateId:'candidate-1',title:'Título',hook:'Inicio',reason:'Idea completa',relevanceScore:80,qualityFlags:[]}]})}}]})})});
+  const selected=await provider.rank(baseline,{transcript:{segments},maxCandidates:10});
+  assert.equal(calls,2);assert.equal(selected.length,1);
+  provider.fetchImpl=async()=>({ok:true,status:200,json:async()=>({choices:[{finish_reason:'stop',message:{content:JSON.stringify({selections:[{candidateId:'invented',title:'Título',hook:'Inicio',reason:'Idea',relevanceScore:80,qualityFlags:[]}]})}}]})});
+  await assert.rejects(provider.rank(baseline,{transcript:{segments},maxCandidates:10}),error=>error.code==='AI_SELECTION_INVALID'&&error.diagnostics.unknownIds===1);
 });
