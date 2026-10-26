@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { isProjectId } from "../../lib/project-id.mjs";
@@ -18,7 +18,15 @@ export class UploadError extends Error {
 
 /** Single-host disk storage; uses capabilities in addition to existing owner auth. */
 export class ResumableUploadStore {
-  constructor(options = {}) { this.root = options.root || getStorageRoot(); }
+  constructor(options = {}) {
+    this.root = options.root || getStorageRoot();
+    this.availableBytes = options.availableBytes || (async () => { const space = await statfs(this.root); return space.bavail * space.bsize; });
+  }
+  async ensureCapacity(bytes) {
+    if (await this.availableBytes() < bytes + 128 * 1024 ** 2) {
+      throw new UploadError("No hay espacio suficiente en el servidor. Los fragmentos completos se conservan para reintentar cuando haya espacio.", "UPLOAD_DISK_FULL", 507);
+    }
+  }
   directory(id) {
     if (!isProjectId(id)) throw new UploadError("Identificador de subida inválido.");
     return path.join(this.root, "upload-sessions", id);
@@ -29,6 +37,7 @@ export class ResumableUploadStore {
     if (!validation.ok || !Number.isSafeInteger(input.size)) throw new UploadError(validation.error || "Tamaño inválido.");
     await this.cleanup();
     const root = path.join(this.root, "upload-sessions");
+    await this.ensureCapacity(input.size * 2);
     const active = await Promise.all((await readdir(root)).filter(isProjectId).map(async id => {
       const value = await readFile(path.join(root, id, "session.json"), "utf8").then(JSON.parse).catch(() => null);
       return value && value.status !== "QUEUED";
@@ -87,6 +96,7 @@ export class ResumableUploadStore {
         // A damaged disk chunk can be repaired with the same committed content.
       } catch (error) { if (error.code !== "ENOENT") throw error; }
       const temporary = `${target}.${randomUUID()}.part`;
+      await this.ensureCapacity(expectedSize);
       let handle, bytes = 0; const hash = createHash("sha256");
       try {
         handle = await open(temporary, "wx");
@@ -121,6 +131,7 @@ export class ResumableUploadStore {
         chunkHashes[index] = expectedHash;
       }
       const outputDir = path.join(this.root, "uploads", id); await mkdir(outputDir, { recursive: true });
+      await this.ensureCapacity(session.size);
       const relativePath = path.posix.join("uploads", id, `source.${session.extension}`);
       const target = path.join(this.root, relativePath), temporary = `${target}.part`;
       let handle; const hash = createHash("sha256");

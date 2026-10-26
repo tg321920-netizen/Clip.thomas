@@ -37,6 +37,9 @@ test("owner auth config requires sufficiently strong server secrets", () => {
 test("hosted deployments require owner auth while local dev can opt in", () => {
   assert.equal(shouldRequireOwnerAuth({}), false);
   assert.equal(shouldRequireOwnerAuth({ VERCEL_ENV: "preview" }), true);
+  assert.equal(shouldRequireOwnerAuth({ RENDER: "true" }), true);
+  assert.equal(shouldRequireOwnerAuth({ RENDER_SERVICE_ID: "srv-example" }), true);
+  assert.equal(shouldRequireOwnerAuth({ RENDER: "true", CLIPFORGE_REQUIRE_OWNER_AUTH: "false" }), true);
   assert.equal(
     shouldRequireOwnerAuth({ CLIPFORGE_REQUIRE_OWNER_AUTH: "true" }),
     true,

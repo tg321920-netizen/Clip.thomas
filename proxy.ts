@@ -96,5 +96,6 @@ function redirectTo(request: NextRequest, destination: string) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // API routes must remain protected even if a dynamic segment has a dot.
+  matcher: ["/api/:path*", "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

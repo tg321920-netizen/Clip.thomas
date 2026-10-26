@@ -8,7 +8,10 @@ export function createUploadHandlers(options = {}) {
   const uploads = options.uploads || new ResumableUploadStore();
   const jobs = options.jobs || new IngestJobStore();
   const json = (value, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
-  const failure = error => json({ error: error instanceof Error ? error.message : "La subida falló.", code: error instanceof UploadError ? error.code : "UPLOAD_FAILED" }, error instanceof UploadError ? error.status : 500);
+  const failure = error => {
+    if (["ENOSPC", "EDQUOT"].includes(error?.code)) error = new UploadError("El servidor se quedó sin espacio. Los fragmentos completos se conservan para reintentar.", "UPLOAD_DISK_FULL", 507);
+    return json({ error: error instanceof UploadError ? error.message : "El servidor no pudo guardar la subida. Puedes consultar su estado y reintentar.", code: error instanceof UploadError ? error.code : "UPLOAD_FAILED" }, error instanceof UploadError ? error.status : 500);
+  };
   return {
     async create(request) {
       try { return json({ session: await uploads.create(await readBoundedJson(request, 4096)) }, 201); }
