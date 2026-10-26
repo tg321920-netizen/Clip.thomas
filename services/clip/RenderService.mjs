@@ -12,7 +12,7 @@ import {withRenderCapacity} from '../../lib/render-capacity.mjs';
 import {withLocalStateLock,writeAtomicJson} from '../../lib/atomic-local-state.mjs';
 
 const QUALITY=ENCODER_QUALITY;
-async function sha256(file){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
+async function sha256(file){const hash=createHash('sha256');for await(const chunk of createReadStream(/* turbopackIgnore: true */ file))hash.update(chunk);return hash.digest('hex');}
 
 export class RenderService {
   constructor(options = {}) { this.width = options.width || 1080; this.height = options.height || 1920; assertResolution(this.width,this.height); }
@@ -57,7 +57,7 @@ export class RenderService {
     const requireAudio = project.source.hasAudio ?? Boolean((await probeMediaFile(sourcePath)).audio);
     // A process may die after the MP4 was validated but before project state
     // became READY. Bind reuse to actual source bytes and all editing settings.
-    let savedProof;try{savedProof=JSON.parse(await readFile(proofPath,'utf8'));}catch{}
+    let savedProof;try{savedProof=JSON.parse(await readFile(/* turbopackIgnore: true */ proofPath,'utf8'));}catch{}
     if(savedProof?.inputFingerprint===inputFingerprint&&/^[a-f0-9]{64}$/.test(savedProof.sha256)){
       for(const file of [outputPath,temporaryPath]){
         try{

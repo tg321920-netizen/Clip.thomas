@@ -27,6 +27,8 @@ credenciales, leases, operaciones de publicación, cabeceras y queries firmadas.
 Los originales idénticos se direccionan por SHA-256 y se reutilizan también los
 originales LIVE/VOD existentes. Los MP4 ya archivados se referencian sin copiarlos.
 La limpieza de clips protege resultados referenciados por checkpoints actuales.
+Los MP4 existentes reutilizados se marcan Conservar antes de referenciarlos, para
+protegerlos también frente a workers antiguos que solo entienden ese indicador.
 No se borran originales, checkpoints anteriores ni respaldos.
 
 La recuperación descarga en staging, comprueba todos los hashes y valida los MP4,
@@ -38,6 +40,7 @@ reutiliza; un render interrumpido no se considera terminado.
 El límite es 1 GiB por archivo original, 2 GiB por recuperación y el cupo global
 R2 de 8 GB. La restauración exige espacio para staging y 128 MiB de margen.
 No es un backup de todo el servidor ni de transferencias todavía incompletas.
+No incluye cachés de audio ni miniaturas. Se conserva la reproducción del original.
 Los cambios posteriores al último checkpoint confirmado pueden perderse.
 R2 no evita que Render suspenda sus procesos ni ejecuta workers por sí mismo.
 

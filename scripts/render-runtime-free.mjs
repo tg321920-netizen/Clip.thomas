@@ -60,7 +60,7 @@ webChild = spawnNode(
 );
 ingestChild = spawnNode(["scripts/ingest-worker.mjs"], "ingest");
 if(process.env.CLIPFORGE_PROJECT_BACKUP_ENABLED==="true"&&process.env.CLIPFORGE_MEDIA_STORAGE_PROVIDER==="r2"){
-  projectBackupChild=spawnNode(["scripts/project-backup-worker.mjs"],"project-backup");
+  projectBackupChild=spawnNode(["scripts/project-backup-worker.mjs"],"project-backup",false);
 }
 await saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel});
 const runtimeHeartbeat=setInterval(()=>void saveRuntimeStatus({status:'RUNNING',profile:releasePolicy().channel}).catch(()=>{}),5000);runtimeHeartbeat.unref();
@@ -212,7 +212,7 @@ async function workerLoop() {
   }
 }
 
-function spawnNode(args, label) {
+function spawnNode(args, label, critical = true) {
   const child = spawn(process.execPath, args, {
     env: process.env,
     stdio: "inherit",
@@ -221,14 +221,14 @@ function spawnNode(args, label) {
 
   child.on("error", (error) => {
     console.error(`[free-runtime] ${label} failed to start`, error);
-    if (!shuttingDown) shutdown("SIGTERM", 1);
+    if (!shuttingDown && critical) shutdown("SIGTERM", 1);
   });
   child.on("exit", (code, signal) => {
     if (shuttingDown) return;
     console.error(
       `[free-runtime] ${label} exited unexpectedly (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
     );
-    shutdown("SIGTERM", Number.isInteger(code) && code !== 0 ? code : 1);
+    if(critical)shutdown("SIGTERM", Number.isInteger(code) && code !== 0 ? code : 1);
   });
 
   return child;

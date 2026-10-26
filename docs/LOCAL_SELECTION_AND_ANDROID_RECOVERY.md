@@ -31,7 +31,7 @@ autorizado de 150,08 s, transcripción Whisper.cpp existente y nuevos escaneos
 reales. Cinco sugerencias: 0–25,12; 19,32–53,8; 100,8–131,8; 70,8–104,8;
 117,8–143,8 s. Todas duran 25–34,48 s. Siguen sujetas a revisión editorial:
 la deduplicación temporal no demuestra que cada acontecimiento sea único.
-Sin chat observado, etiquetas de hablante disponibles, modelos ni nuevos renders.
+No hubo chat observado ni etiquetas de hablante disponibles, tampoco llamadas a modelos ni nuevos renders.
 El material probado es una conversación de streaming preservada, no una prueba
 independiente de documentales o películas ni una nueva transcripción de podcast.
 

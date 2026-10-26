@@ -85,3 +85,20 @@ test('queued recovery requests persist, resume after an interrupted worker and e
   request=await processProjectRecoveryRequest(request,f.service);assert.equal(request.status,'COMPLETED');assert.equal(request.result.source,undefined);
   assert.equal((await readProjectRecoveryRequests(f.root))[0].status,'COMPLETED');
 });
+test('reusing a library MP4 protects it for compatibility with older cleanup workers instead of duplicating bytes',async t=>{
+  const f=await fixture(t),bytes=Buffer.from('Completed render unit bytes'),sha256=createHash('sha256').update(bytes).digest('hex');
+  const id=createHash('sha256').update(f.id+'/'+f.clipId+'/'+sha256).digest('hex'),key=prefix+'media/'+id+'.mp4';
+  const stored=await f.cloud.put(key,bytes,{metadata:{sha256}});
+  await f.cloud.putJson(prefix+'records/'+id+'.json',{id,managedBy:'clipforge-v1',projectId:f.id,clipId:f.clipId,objectKey:key,
+    sha256,sizeBytes:bytes.length,objectEtag:stored.etag,createdAt:'2026-10-26T00:00:00Z',expiresAt:'2026-11-26T00:00:00Z',keep:false,status:'READY'});
+  const backup=await f.service.backup(f.id);
+  assert.equal(backup.outputs[0].key,key);
+  assert.equal((await f.cloud.getJson(prefix+'records/'+id+'.json')).value.keep,true);
+  assert.equal((await f.cloud.list(prefix+'sources/sha256/'+sha256)).length,0);
+});
+test('an unchanged snapshot repairs a missing cloud output instead of reporting a successful but incomplete backup',async t=>{
+  const f=await fixture(t),saved=await f.service.backup(f.id),key=saved.outputs[0].key;
+  f.cloud.objects.delete(key); // explicit fixture fault, not production deletion
+  const repaired=await f.service.backup(f.id);assert.equal(repaired.reused,false);
+  assert.ok(await f.cloud.head(key));assert.equal(f.cloud.deletes.length,0);
+});

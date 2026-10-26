@@ -34,7 +34,7 @@ function sanitized(value,key=''){
   }
   return value;
 }
-async function readJson(file){const bytes=await readFile(file);if(bytes.length>LIMIT)fail('RECOVERY_LIMIT','Los metadatos superan el límite seguro.');return JSON.parse(bytes);}
+async function readJson(file){const bytes=await readFile(/* turbopackIgnore: true */ file);if(bytes.length>LIMIT)fail('RECOVERY_LIMIT','Los metadatos superan el límite seguro.');return JSON.parse(bytes);}
 async function optionalJson(file){try{return await readJson(file);}catch(e){if(e.code==='ENOENT')return null;throw e;}}
 function within(root,relative){
   const file=path.resolve(root,relative);
@@ -42,22 +42,22 @@ function within(root,relative){
   return file;
 }
 async function safeParent(root,file){
-  const base=await realpath(root);let ancestor=path.dirname(file);
+  const base=await realpath(/* turbopackIgnore: true */ root);let ancestor=path.dirname(file);
   for(;;){
-    try{const resolved=await realpath(ancestor);if(resolved!==base&&!resolved.startsWith(base+path.sep))fail('RECOVERY_INVALID','Ruta de recuperación inválida.');break;}
+    try{const resolved=await realpath(/* turbopackIgnore: true */ ancestor);if(resolved!==base&&!resolved.startsWith(base+path.sep))fail('RECOVERY_INVALID','Ruta de recuperación inválida.');break;}
     catch(error){if(error.code!=='ENOENT')throw error;const parent=path.dirname(ancestor);if(parent===ancestor)throw error;ancestor=parent;}
   }
   await mkdir(path.dirname(file),{recursive:true});
-  const resolved=await realpath(path.dirname(file));if(!resolved.startsWith(base+path.sep))fail('RECOVERY_INVALID','Ruta de recuperación inválida.');
+  const resolved=await realpath(/* turbopackIgnore: true */ path.dirname(file));if(!resolved.startsWith(base+path.sep))fail('RECOVERY_INVALID','Ruta de recuperación inválida.');
 }
 async function fileProof(root,relative){
-  const file=within(root,relative),resolved=await realpath(file),base=await realpath(root);
+  const file=within(root,relative),resolved=await realpath(/* turbopackIgnore: true */ file),base=await realpath(/* turbopackIgnore: true */ root);
   if(!resolved.startsWith(base+path.sep))fail('RECOVERY_INVALID','El archivo sale del almacenamiento autorizado.');
-  const before=await stat(file);
+  const before=await stat(/* turbopackIgnore: true */ file);
   if(!before.isFile()||before.size<=0||before.size>1024**3)fail('RECOVERY_LIMIT','El archivo supera el límite de respaldo de 1 GiB.');
   const sha=createHash('sha256'),md5=createHash('md5');
-  for await(const bytes of createReadStream(file)){sha.update(bytes);md5.update(bytes);}
-  const after=await stat(file);
+  for await(const bytes of createReadStream(/* turbopackIgnore: true */ file)){sha.update(bytes);md5.update(bytes);}
+  const after=await stat(/* turbopackIgnore: true */ file);
   if(before.size!==after.size||before.mtimeMs!==after.mtimeMs||before.ino!==after.ino)fail('RECOVERY_SOURCE_CHANGED','El archivo cambió durante el respaldo; se conserva para reintentar.');
   return {relativePath:relative,sha256:sha.digest('hex'),md5:md5.digest('base64'),sizeBytes:before.size};
 }
@@ -107,12 +107,19 @@ export class ProjectRecoveryService{
       if(snapshotBytes.length>LIMIT)fail('RECOVERY_LIMIT','El checkpoint supera el límite seguro.');
       const snapshotHash=digest(snapshotBytes),previous=await this.cloud.getJson(INDEX+id+'.json');
       // All project changes, including intervals and render results, contribute.
-      const sourceInfo=await stat(within(this.root,project.source.relativePath));
+      const sourceInfo=await stat(/* turbopackIgnore: true */ within(this.root,project.source.relativePath));
       const fingerprint=[sourceInfo.dev,sourceInfo.ino,sourceInfo.size,sourceInfo.mtimeMs].join('/');
       const receipt=await optionalJson(receiptPath(this.root,id));
       if(previous?.value?.snapshotHash===snapshotHash&&receipt?.sourceFingerprint===fingerprint&&receipt.snapshotHash===snapshotHash){
-        const source=await this.cloud.head(previous.value.source.key);
-        if(source?.size===previous.value.source.sizeBytes&&source.metadata?.sha256===previous.value.source.sha256)return {...previous.value,reused:true};
+        let verified=true;
+        for(const file of [previous.value.source,...(previous.value.outputs||[])]){
+          const remote=await this.cloud.head(file.key);
+          if(remote?.size!==file.sizeBytes||remote.metadata?.sha256!==file.sha256){verified=false;break;}
+        }
+        if(verified){
+          await writeAtomicJson(receiptPath(this.root,id),{status:'BACKED_UP',snapshotHash,sourceFingerprint:fingerprint,savedAt:previous.value.createdAt});
+          return {...previous.value,reused:true};
+        }
       }
       const source=await fileProof(this.root,project.source.relativePath);
       const files=[source];
@@ -134,7 +141,16 @@ export class ProjectRecoveryService{
         const proof=await fileProof(this.root,expected);
         const archiveId=digest(id+'/'+clip.id+'/'+proof.sha256);
         const archiveKey=PREFIX+'media/'+archiveId+'.mp4',archived=await this.cloud.head(archiveKey);
-        proof.key=archived?.size===proof.sizeBytes&&archived.metadata?.sha256===proof.sha256?archiveKey:PREFIX+'sources/sha256/'+proof.sha256;
+        proof.key=PREFIX+'sources/sha256/'+proof.sha256;
+        if(archived?.size===proof.sizeBytes&&archived.metadata?.sha256===proof.sha256){
+          try{
+            const record=await this.library.identity(archiveId);
+            // Older deployed cleaners do not understand project references,
+            // but they already honor Conservar. Protect before reusing media.
+            if(!record.keep)await this.library.setKeep(archiveId,true);
+            proof.key=archiveKey;
+          }catch(error){if(error.code!=='STORAGE_NOT_FOUND')throw error;}
+        }
         proof.clipId=clip.id;files.push(proof);
       }
       const manifest={version:1,id,snapshotHash,snapshotKey:INDEX+'snapshots/'+id+'/'+snapshotHash+'.json',
@@ -145,7 +161,7 @@ export class ProjectRecoveryService{
           let remote=await this.cloud.head(file.key,{signal});
           if(!remote){
             await this.library.assertStorageQuota(file.sizeBytes+snapshotBytes.length+8192,signal);
-            await this.cloud.put(file.key,createReadStream(within(this.root,file.relativePath)),{length:file.sizeBytes,md5:file.md5,
+            await this.cloud.put(file.key,createReadStream(/* turbopackIgnore: true */ within(this.root,file.relativePath)),{length:file.sizeBytes,md5:file.md5,
               metadata:{sha256:file.sha256,managed:'clipforge-project-v1'},ifAbsent:true,signal});
             remote=await this.cloud.head(file.key,{signal});
           }
@@ -223,7 +239,7 @@ export class ProjectRecoveryService{
         // Check every conflict before publishing anything; never overwrite a
         // newer local project. Metadata is last, jobs are restored paused.
         for(const file of publish){
-          const target=within(targetRoot,file.relativePath),present=await stat(target).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
+          const target=within(targetRoot,file.relativePath),present=await stat(/* turbopackIgnore: true */ target).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
           if(present){const expected=await fileProof(stage,file.relativePath),actual=await fileProof(targetRoot,file.relativePath);
             if(actual.sha256!==expected.sha256)fail('RECOVERY_CONFLICT','Hay archivos locales diferentes; no se sobrescriben.');}
         }
@@ -253,8 +269,15 @@ export async function requestProjectRecovery(id,action,{root=getStorageRoot()}={
   });
 }
 export async function readProjectRecoveryRequests(root=getStorageRoot()){
-  const folder=path.join(root,'project-recovery','requests'),names=await readdir(folder).catch(e=>{if(e.code==='ENOENT')return [];throw e;});
+  const folder=path.join(root,'project-recovery','requests'),names=await readdir(/* turbopackIgnore: true */ folder).catch(e=>{if(e.code==='ENOENT')return [];throw e;});
   return Promise.all(names.filter(n=>isProjectId(n.slice(0,-5))&&n.endsWith('.json')).slice(0,200).map(n=>readJson(path.join(folder,n))));
+}
+export async function readProjectRecoveryReceipts(root=getStorageRoot()){
+  const folder=path.join(root,'project-recovery','receipts'),names=await readdir(/* turbopackIgnore: true */ folder).catch(e=>{if(e.code==='ENOENT')return [];throw e;});
+  return Promise.all(names.filter(n=>isProjectId(n.slice(0,-5))&&n.endsWith('.json')).slice(0,200).map(async name=>{
+    const record=await readJson(path.join(folder,name));
+    return {projectId:name.slice(0,-5),status:record.status,savedAt:record.savedAt||null,errorCode:record.errorCode||null,attempts:record.attempts||0};
+  }));
 }
 export async function processProjectRecoveryRequest(request,service){
   const file=path.join(service.root,'project-recovery','requests',request.projectId+'.json');

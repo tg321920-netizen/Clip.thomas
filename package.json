@@ -61,7 +61,9 @@
     "worker:project-backup": "node scripts/project-backup-worker.mjs",
     "worker:project-backup:once": "node scripts/project-backup-worker.mjs --once",
     "project:restore": "node scripts/project-restore.mjs",
-    "project:recovery:e2e": "node scripts/project-recovery-e2e.mjs"
+    "project:recovery:e2e": "node scripts/project-recovery-e2e.mjs",
+    "recovery:mobile:e2e": "node scripts/recovery-mobile-e2e.mjs",
+    "selection:local:review": "node scripts/local-selection-review.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",

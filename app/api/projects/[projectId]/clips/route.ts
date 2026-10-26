@@ -8,6 +8,7 @@ import {
   createManualClip,
   listClips,
   markClipQueued,
+  getClip,
 } from "@/services/clip/ClipService.mjs";
 
 export const runtime = "nodejs";
@@ -65,6 +66,18 @@ export async function POST(
   let body: Record<string, unknown>;
   try { body = await readBoundedJson(request, 4000); }
   catch { return NextResponse.json({ error: 'Solicitud de recorte inválida.' }, { status: 400 }); }
+  if(body.retryClipId!==undefined){
+    try{
+    if(!isProjectId(body.retryClipId))return NextResponse.json({error:'Identificador de recorte inválido.'},{status:400});
+    const clip=await getClip(projectId,body.retryClipId);
+    if(!clip)return NextResponse.json({error:'Recorte no encontrado.'},{status:404});
+    const current=await jobs.getRenderJob(projectId,clip.id);
+    if(current&&['QUEUED','PROCESSING','VALIDATING'].includes(current.status))return NextResponse.json({clip,job:current,reused:true},{status:202});
+    await markClipQueued(projectId,clip.id);
+    const job=await jobs.enqueueRender(projectId,clip.id,{clipId:clip.id},{restartCompleted:true});
+    return NextResponse.json({clip:{...clip,status:'QUEUED'},job,reused:true},{status:202});
+    }catch{return NextResponse.json({error:'No se pudo reanudar el recorte. El trabajo se conserva para revisión.'},{status:503});}
+  }
   const manual = body.startTime !== undefined || body.endTime !== undefined;
   const candidateId =
     typeof body.candidateId === "string" ? body.candidateId.trim() : "";
