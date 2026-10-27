@@ -119,6 +119,11 @@ de pago ni producción para cumplir una expectativa de automatización.
 
 ## Próxima sesión
 
+La auditoría posterior está en `FULL_SYSTEM_AUDIT_20261026.md`. Conserva todos
+los clips Westcol anteriores; la aceptación nueva usa NASA/JFK real para probar
+subtítulos y traducción. No es captura LIVE ni un nuevo acontecimiento Westcol.
+Consultar ese informe para la candidata auditada y los commits posteriores.
+
 1. Leer este checkpoint, `AGENTS.md`, `docs/CLIP_EDITOR_AGENT.md` e informes Westcol. Verificar HEAD, rama remota e historial; no descartar commits ni limpiar originales.
 2. Reutilizar el clip nuevo y renovar sus enlaces con `ClipLibraryService.temporaryAccess(id)`. En la interfaz local: «Clips de Westcol» → reproducir / «Descargar MP4» / «Renovar acceso privado». Los enlaces caducan; no hace falta renderizar de nuevo.
 3. Si se perdió el filesystem, restaurar checkpoints de ambas fuentes a una raíz aislada con `live:restore -- --session=ID --target=RUTA --workers-paused`; comprobar hashes y conflictos antes de usarla. No restaurar sobre archivos distintos ni arrancar workers automáticamente.

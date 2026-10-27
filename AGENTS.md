@@ -14,6 +14,11 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Auditoría posterior: leer `docs/FULL_SYSTEM_AUDIT_20261026.md` antes de retomar.
+Contiene los clips auténticos de prueba, errores de traducción y correcciones,
+recuperación R2, estados VERIFIED_LOCAL/PARTIAL/BLOCKED y la candidata nueva.
+No regenerar esos archivos ni llamar desplegado a un resultado local.
+
 Para los avances posteriores a la candidata 761e291, leer primero
 `docs/CONTINUE_WITHOUT_RENDER_20261026.md`: recuperación R2, controles móviles,
 perfil económico y prueba Node 22/512 MiB/0,1 CPU ya comprobados. No repetir sus

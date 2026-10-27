@@ -1,5 +1,10 @@
 # Ensayo privado preparado, sin crear servicios
 
+Actualización de auditoría: consultar `FULL_SYSTEM_AUDIT_20261026.md` y
+`render.audit-preview.yaml` para la candidata revisada .4. La candidata .2 y
+las referencias de este documento se conservan como preparación anterior;
+ninguna de ellas se ha desplegado.
+
 No hubo nueva consulta administrativa a Render durante esta fase. RENDER_API_KEY
 sigue siendo una dependencia externa, no un motivo para detener las mejoras.
 Cuando la conexión esté disponible, el primer uso será diagnóstico GET.

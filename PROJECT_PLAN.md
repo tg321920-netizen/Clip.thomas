@@ -4,24 +4,22 @@ Regla principal: no simular funciones. Cada fase debe producir resultados reales
 
 ## MVP de propietario único
 
-Las fases necesarias para trabajar con ClipForge como herramienta propia ya están implementadas y verificadas en código:
+La implementación y su aceptación se distinguen en [la auditoría actual](docs/FULL_SYSTEM_AUDIT_20261026.md). Tener código o CI aprobada no acredita disponibilidad para el propietario.
 
-1. **Upload + FFprobe** — completado.
-2. **Whisper** — completado con worker y E2E real.
-3. **Detección de clips** — completado con candidatos configurables y ViralScore explicable.
-4. **Preview + flujo de clips** — completado.
-5. **Edición no destructiva** — completada para el flujo actual.
-6. **Subtítulos** — completados con estilos CLEAN/VIRAL/KARAOKE.
-7. **Auto Edit** — completado.
-8. **Render 9:16** — completado a 1080×1920 con FFmpeg.
-9. **Perfiles/canales** — completados para TikTok, YouTube y Facebook.
-10. **Publicación preparada y providers oficiales** — completados a nivel de código; la prueba en vivo requiere OAuth real.
-11. **Batch / cantidad de clips** — completado; cambiar la cantidad invalida y repite el análisis cuando corresponde.
-12. **Auto-reframe V1** — completado con zoom reactivo a voz.
-13. **News Mode / TTS** — completado.
-14. **Captura manual de streams/pantalla** — completada cuando el navegador ofrece `getDisplayMedia`.
-15. **Autopilot, scheduler, analytics y aprendizaje** — completados para el MVP de propietario único.
-16. **Runtime persistente** — Docker y Blueprint Render implementados y verificados por CI.
+| Capacidad | Estado actual |
+| --- | --- |
+| Subida, FFprobe, recorte manual, cola, MP4 y descarga | VERIFIED_LOCAL |
+| ASR español/inglés y candidatos locales sobre material real | VERIFIED_LOCAL; calidad editorial PARTIAL |
+| Subtítulos originales, SRT y corrección móvil | VERIFIED_LOCAL |
+| Traducción inglés-español automática | PARTIAL: necesita revisión de nombres y significado |
+| Traducción corregida, render y recuperación R2 | VERIFIED_LOCAL |
+| Ensayo privado independiente | READY_FOR_DEPLOYMENT, sujeto a conexión y autorización |
+| Acceso del propietario desde Android por Internet | BLOCKED |
+| Captura LIVE y observación de chat actuales | NOT_TESTED / LIVE_NOT_TESTED |
+| Seguimiento de protagonistas, doblaje y otras fuentes no evaluadas | PARTIAL o NOT_TESTED según la matriz |
+| Publicación real y OAuth social | BLOCKED; publicación OFF |
+
+Se conservan los demás módulos y la historia de sus pruebas. No se certifica operación permanente, Android físico, precisión universal de ASR ni calidad comercial de todos los géneros.
 
 ## Activación externa necesaria
 
