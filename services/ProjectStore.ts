@@ -34,7 +34,7 @@ export class ProjectStore {
     });
   }
 
-  async list(limit = 20): Promise<ProjectRecord[]> {
+  async list(limit = 20, {summariesOnly = false}: {summariesOnly?: boolean} = {}): Promise<ProjectRecord[]> {
     const projectsDir = getProjectsDir();
     await mkdir(projectsDir, { recursive: true });
 
@@ -43,16 +43,20 @@ export class ProjectStore {
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => entry.name);
 
-    const records = await Promise.all(
-      files.map(async (filename) => {
+    const records: (ProjectRecord|null)[] = [];
+    // Never parse every long transcript at once just to show the mobile history.
+    for(let offset=0;offset<files.length;offset+=2){
+      const batch=await Promise.all(files.slice(offset,offset+2).map(async (filename) => {
         try {
           const raw = await readFile(path.join(projectsDir, filename), "utf8");
-          return parseProject(raw);
+          const record=parseProject(raw);
+          return summariesOnly&&record ? {id:record.id,createdAt:record.createdAt,source:record.source} : record;
         } catch {
           return null;
         }
-      }),
-    );
+      }));
+      records.push(...batch);
+    }
 
     return records
       .filter((record): record is ProjectRecord => record !== null)

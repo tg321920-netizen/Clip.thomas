@@ -71,7 +71,8 @@ export class BestClipsService {
       continuityBreaks: original.source.capture?.continuityBreaks || [], continuityIntervals:original.source.capture?.continuityIntervals || [] });
     const eventStore=new EditorialEventStore(), sourceSha256 = original.liveObservation?.source ? null : await hashFile(resolveStoragePath(original.source.relativePath));
     const eventSource=original.liveObservation?.source || {channelId:'FILE',sourceId:sourceSha256,sourceKind:'FILE'}, selected=[];
-    if (sourceSha256) await eventStore.recoverFileProjects(eventSource, await listProjectFiles(1000));
+    if (sourceSha256) await eventStore.recoverFileProjects(eventSource, await listProjectFiles(1000,{mapProject:p=>({id:p.id,createdAt:p.createdAt,clipsOrigin:p.clipsOrigin,
+      analysis:{candidates:p.analysis?.candidates||[]},clips:(p.clips||[]).map(c=>({candidateId:c.candidateId,startTime:c.startTime,endTime:c.endTime,status:c.status,render:{validation:c.render?.validation}}))})}));
     for(const candidate of independent){
       if(eventSource && original.source.mediaKind!=='AUDIO' && selected.length<count){try{candidate.visualFingerprint=await sampleCandidateFingerprint(original,candidate);}catch{candidate.visualFingerprint=null;}}
       if(await eventStore.reserve(eventSource,candidate,outputProjectId))selected.push(candidate);if(selected.length>=count)break;

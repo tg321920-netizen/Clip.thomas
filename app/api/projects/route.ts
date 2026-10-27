@@ -8,7 +8,7 @@ const store = new ProjectStore();
 
 export async function GET() {
   try {
-    const records = await store.list(20);
+    const records = await store.list(20,{summariesOnly:true});
     const projects = records.map((record) => ({
       id: record.id,
       createdAt: record.createdAt,

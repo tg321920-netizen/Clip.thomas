@@ -49,6 +49,15 @@ test('audio source, glossary and complete subtitle revision history survive a ch
   assert.equal(restored.source.mediaKind,'AUDIO');assert.deepEqual(restored.translationSettings,f.project.translationSettings);
   assert.deepEqual(restored.clips[0].subtitleHistory,f.project.clips[0].subtitleHistory);
 });
+
+test('a multi-megabyte transcript checkpoint keeps all text while a checkpoint above 16 MiB is refused',async t=>{
+  const f=await fixture(t);f.project.transcript={status:'COMPLETED',text:'UNIT_METADATA_ONLY '.repeat(120000),segments:[]};
+  await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  await f.service.backup(f.id);const target=path.join(f.root,'long-metadata');await f.service.restore(f.id,{targetRoot:target});
+  const restored=JSON.parse(await readFile(path.join(target,'projects',f.id+'.json'),'utf8'));assert.equal(restored.transcript.text,f.project.transcript.text);
+  f.project.transcript.text='x'.repeat(16*1024**2);await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  await assert.rejects(f.service.backup(f.id),{code:'RECOVERY_LIMIT'});
+});
 test('pending manual clips and jobs are recoverable, explicitly paused and never published or auto-enqueued',async t=>{
   const f=await fixture(t);f.project.clips[0].status='QUEUED';f.project.clips[0].render=null;
   await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));

@@ -11,7 +11,7 @@ import {validateMp4} from '../media-processing/MediaValidationService.mjs';
 
 const PREFIX='clipforge-managed/v1/';
 const INDEX=PREFIX+'project-recovery/';
-const LIMIT=1_900_000;
+const LIMIT=16*1024**2;
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=(code,message)=>{throw storageError(code,message);};
 const validHash=value=>/^[a-f0-9]{64}$/.test(value);
@@ -187,7 +187,7 @@ export class ProjectRecoveryService{
           if(remote?.size!==file.sizeBytes||remote.metadata?.sha256!==file.sha256)fail('STORAGE_INTEGRITY','No se confirmó la integridad del respaldo.');
         }
         await this.library.assertStorageQuota(snapshotBytes.length+8192,signal);
-        const existing=await this.cloud.getJson(manifest.snapshotKey,{signal});
+        const existing=await this.cloud.getJson(manifest.snapshotKey,{signal,maximumBytes:LIMIT});
         if(existing&&digest(Buffer.from(JSON.stringify(existing.value)))!==snapshotHash)fail('STORAGE_INTEGRITY','El checkpoint remoto cambió.');
         if(!existing)await this.cloud.putJson(manifest.snapshotKey,snapshot,{ifAbsent:true,signal});
         // CAS prevents an older competing snapshot from replacing a newer one.
@@ -210,7 +210,7 @@ export class ProjectRecoveryService{
     return withLocalStateLock(path.join(targetRoot,'project-recovery',id),async()=>{
       const remote=await this.cloud.getJson(INDEX+id+'.json'),m=remote?.value;
       if(m?.version!==1||m.id!==id||!validHash(m.snapshotHash)||m.snapshotKey!==INDEX+'snapshots/'+id+'/'+m.snapshotHash+'.json'||!Array.isArray(m.outputs)||m.outputs.length>100)fail('RECOVERY_INVALID','No hay un respaldo válido del proyecto.');
-      const saved=await this.cloud.getJson(m.snapshotKey);
+      const saved=await this.cloud.getJson(m.snapshotKey,{maximumBytes:LIMIT});
       if(!saved||digest(Buffer.from(JSON.stringify(saved.value)))!==m.snapshotHash)fail('STORAGE_INTEGRITY','El SHA-256 del checkpoint no coincide.');
       const snapshot=saved.value;validSnapshot(snapshot,id);
       const files=[m.source,...m.outputs],seen=new Set();let total=0;

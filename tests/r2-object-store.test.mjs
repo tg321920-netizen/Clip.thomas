@@ -6,6 +6,14 @@ import { R2ObjectStore, readR2Config } from '../services/storage/R2ObjectStore.m
 
 const config = { accountId: 'a'.repeat(32), bucket: 'fixture-private-clips', accessKeyId: 'fixture-access-id', secretAccessKey: 'fixture-secret-not-an-actual-credential' };
 
+test('large project snapshots need an explicit bounded reader; normal records retain the 2 MB limit',async()=>{
+  const bytes=Buffer.from(JSON.stringify({text:'x'.repeat(2_100_000)}));
+  const store=new R2ObjectStore({config,customFetch:async()=>new Response(bytes,{status:200,headers:{ETag:'"bounded-large"'}})});
+  await assert.rejects(store.getJson('large.json'),{code:'STORAGE_INVALID'});
+  const result=await store.getJson('large.json',{maximumBytes:16*1024**2});assert.equal(result.value.text.length,2_100_000);
+  await assert.rejects(store.getJson('large.json',{maximumBytes:32*1024**2}),{code:'STORAGE_INVALID'});
+});
+
 test('R2 S3 SDK signs a streaming PUT with checksum and conditional creation on the fixed HTTPS origin', async () => {
   const bytes = Buffer.from('fixture stream payload'); let calls = 0;
   const store = new R2ObjectStore({ config, customFetch: async request => {

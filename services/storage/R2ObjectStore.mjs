@@ -67,7 +67,8 @@ export class R2ObjectStore {
     const body = result.Body?.getReader ? Readable.fromWeb(result.Body) : result.Body;
     return { body, etag: result.ETag, size: result.ContentLength, contentRange: result.ContentRange, metadata: result.Metadata };
   }
-  async getJson(key, { signal } = {}) {
+  async getJson(key, { signal, maximumBytes = 2_000_000 } = {}) {
+    if(!Number.isSafeInteger(maximumBytes)||maximumBytes<=0||maximumBytes>16*1024**2)throw storageError('STORAGE_INVALID','Límite de metadatos inválido.');
     const result = await this.get(key, { signal });
     if (!result) return null;
     if (!result.etag || result.etag.startsWith('W/')) {
@@ -77,7 +78,7 @@ export class R2ObjectStore {
     const chunks = []; let size = 0;
     for await (const chunk of result.body) {
       size += chunk.length;
-      if (size > 2_000_000) { result.body.destroy(); throw storageError('STORAGE_INVALID', 'El registro del almacenamiento supera el tamaño permitido.'); }
+      if (size > maximumBytes) { result.body.destroy(); throw storageError('STORAGE_INVALID', 'El registro del almacenamiento supera el tamaño permitido.'); }
       chunks.push(Buffer.from(chunk));
     }
     try { return { value: JSON.parse(Buffer.concat(chunks).toString('utf8')), etag: result.etag }; }
