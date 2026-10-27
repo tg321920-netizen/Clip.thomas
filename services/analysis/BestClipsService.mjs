@@ -19,6 +19,7 @@ import { clipResult } from '../clip/ClipResult.mjs';
 import { withLocalStateLock } from '../../lib/atomic-local-state.mjs';
 import { isProjectId } from '../../lib/project-id.mjs';
 import { automaticOutputOptions, ENCODER_QUALITY } from '../../lib/render-options.mjs';
+import { assessCandidateQuality } from './EditorialQualityService.mjs';
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -79,6 +80,7 @@ export class BestClipsService {
         throw error;
       }
     }
+    candidates = candidates.map(candidate => ({ ...candidate, editorialQuality: assessCandidateQuality(candidate) }));
     const independent = selectIndependentClips(candidates, { count: 50, minDuration, maxDuration,
       onlyChatReactions: input.onlyChatReactions === true, excludedReactionPeaks: input.excludedReactionPeaks || [],
       sourceEnd: Math.min(original.source.durationSeconds, original.source.audioDurationSeconds || Infinity, original.source.videoDurationSeconds || Infinity),
@@ -99,6 +101,8 @@ export class BestClipsService {
     const reusable = matching ? previous.clips || [] : [];
     const now = new Date().toISOString();
     const project = { id: outputProjectId, createdAt: previous?.createdAt || now, translationSettings: previous?.translationSettings || original.translationSettings, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, liveObservation:original.liveObservation || null, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
+    project.analysis.rejectedCandidates = candidates.filter(candidate => candidate.editorialQuality.status === 'REJECTED')
+      .map(({id,startTime,endTime,editorialQuality}) => ({id,startTime,endTime,editorialQuality}));
     // Persist the editorial decision before encoding so a restart does not call the model again.
     if (sourceSha256) project.clipsOrigin.sourceSha256=sourceSha256;
     if (previous) await updateProjectFile(outputProjectId, current => {
@@ -188,6 +192,7 @@ function editingKey(clip) {
 export function selectIndependentClips(candidates, { count, minDuration, maxDuration, sourceEnd = Infinity, onlyChatReactions = false, ownershipStartUtc, ownershipEndUtc, sourceRanges = [], excludedReactionPeaks = [], continuityBreaks = [], continuityIntervals = [] }) {
   const selected = [];
   for (const candidate of candidates) {
+    if (assessCandidateQuality(candidate).status === 'REJECTED') continue;
     if (!Number.isFinite(candidate?.startTime) || !Number.isFinite(candidate?.endTime) ||
         !Number.isFinite(candidate?.duration) || candidate.endTime <= candidate.startTime ||
         candidate.duration < minDuration || candidate.duration > maxDuration ||
