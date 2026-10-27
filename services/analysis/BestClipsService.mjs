@@ -7,7 +7,7 @@ import { hashFile } from '../ingest/ResumableUploadStore.mjs';
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { transcribeProject } from "../transcription/TranscriptionService.mjs";
 import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
-import { buildSubtitleTrack, prepareSubtitleTrack, SUBTITLE_MODES } from "../subtitles/SubtitleService.mjs";
+import { buildSubtitleTrack, prepareSubtitleTrack, rememberSubtitleVersion, SUBTITLE_MODES } from "../subtitles/SubtitleService.mjs";
 import { RenderService } from "../clip/RenderService.mjs";
 import { runMedia, validateMp4 } from "../media-processing/MediaValidationService.mjs";
 import { WaitingResourceError } from "../owned-content/SceneStoryService.mjs";
@@ -16,6 +16,8 @@ import { sampleCandidateFingerprint } from "./VisualEvidenceService.mjs";
 import { EditorialEventStore } from "./EditorialEventStore.mjs";
 import { LocalTranslationProvider } from "../subtitles/LocalTranslationProvider.mjs";
 import { clipResult } from '../clip/ClipResult.mjs';
+import { withLocalStateLock } from '../../lib/atomic-local-state.mjs';
+import { isProjectId } from '../../lib/project-id.mjs';
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -25,6 +27,11 @@ export class BestClipsService {
     this.provider = options.provider;
   }
   async render(outputProjectId, input, onStage = async () => {}) {
+    if (!isProjectId(outputProjectId)) throw new Error('Identificador de lote inválido.');
+    return withLocalStateLock(path.join(getStorageRoot(), 'clips', outputProjectId, 'batch-state'),
+      () => this.renderUnlocked(outputProjectId, input, onStage), { timeoutMs: 1000, staleMs: 0 });
+  }
+  async renderUnlocked(outputProjectId, input, onStage) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
     if (input.subtitleMode !== undefined && !SUBTITLE_MODES.includes(input.subtitleMode)) throw new Error("Modo de subtítulos inválido.");
@@ -93,31 +100,63 @@ export class BestClipsService {
     else await replaceProjectFile(outputProjectId, project);
     const results = [];
     for (const candidate of selected) {
-      const saved = reusable.find(clip => clip.status === "READY" && clip.startTime === candidate.startTime && clip.endTime === candidate.endTime);
+      const saved = reusable.find(clip => clip.candidateId === candidate.id && clip.startTime === candidate.startTime && clip.endTime === candidate.endTime);
+      if (saved && ['QUEUED', 'RENDERING'].includes(saved.status)) throw new WaitingResourceError('Este recorte tiene otro render pendiente. Espera a que termine antes de reanudar el lote.');
       let recovered = null;
-      if (saved?.render?.relativePath) {
+      if (saved?.status === 'READY' && saved?.render?.relativePath) {
         try {
           await validateMp4(resolveStoragePath(saved.render.relativePath), { width: this.width, height: this.height, duration: saved.duration, requireAudio: original.source.hasAudio !== false, audioOnly: original.source.mediaKind === 'AUDIO' });
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      const clip = recovered || { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null };
+      let clip = recovered || (saved ? structuredClone(saved) : { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null });
       try {
       if (!recovered) {
-        if (input.subtitleMode !== undefined) {
+        const expectedEdit = editingKey(clip);
+        clip = await updateProjectFile(outputProjectId, current => {
+          const latest = current.clips?.find(item => item.id === clip.id);
+          if (saved && (!latest || editingKey(latest) !== expectedEdit || latest.status !== saved.status)) throw new WaitingResourceError('La edición cambió mientras se reanudaba. Se conservan las correcciones; vuelve a intentar el lote.');
+          const processing = { ...clip, ...latest, status: 'PROCESSING', error: null, updatedAt: new Date().toISOString() };
+          current.clips = (current.clips || []).filter(item => item.id !== processing.id);
+          current.clips.push(processing);
+          return structuredClone(processing);
+        });
+        if (!saved && input.subtitleMode !== undefined) {
           clip.edit.subtitleMode = input.subtitleMode;
-          clip.edit.subtitlesEnabled = input.subtitleMode !== "NONE";
-          if (clip.edit.subtitlesEnabled) clip.subtitles = await prepareSubtitleTrack(original, clip);
-        } else if (input.subtitles !== false) clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: "CLEAN" });
+          clip.edit.subtitlesEnabled = input.subtitleMode !== 'NONE';
+        }
+        if (clip.edit.subtitleMode && clip.edit.subtitlesEnabled) {
+          const track = await prepareSubtitleTrack(original, clip, { translator: new LocalTranslationProvider({ env: this.env }) });
+          if (clip.subtitles && track !== clip.subtitles) rememberSubtitleVersion(clip, 'AUTOMATIC_REGENERATED');
+          clip.subtitles = track;
+          if (clip.edit.subtitleRegenerate === true) clip.edit.subtitleRegenerate = false;
+        } else if (!saved && input.subtitles !== false && input.subtitleMode === undefined) {
+          clip.subtitles = buildSubtitleTrack({ transcript: original.transcript, clip, style: 'CLEAN' });
+        }
+        await updateProjectFile(outputProjectId, current => {
+          const latest = current.clips.find(item => item.id === clip.id);
+          if (!latest || latest.status !== 'PROCESSING') throw new WaitingResourceError('El estado del recorte cambió. Se conservan los archivos para reintentar.');
+          latest.edit = clip.edit; latest.subtitles = clip.subtitles;
+          if (clip.subtitleHistory) latest.subtitleHistory = clip.subtitleHistory;
+        });
+        clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip });
+        const encodedEdit = editingKey(clip);
+        clip = await updateProjectFile(outputProjectId, current => {
+          const latest = current.clips.find(item => item.id === clip.id);
+          if (!latest || latest.status !== 'PROCESSING' || editingKey(latest) !== encodedEdit) throw new WaitingResourceError('La edición cambió durante el render. No se marcó como terminado un archivo de otra revisión.');
+          Object.assign(latest, { render: clip.render, status: 'READY', error: null, updatedAt: new Date().toISOString() });
+          return structuredClone(latest);
+        });
       }
-      if (!recovered) clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip }); clip.status = "READY";}
-      catch(error){await eventStore.release(eventSource,outputProjectId);throw error;}
+      } catch(error){
+        await updateProjectFile(outputProjectId, current => {
+          const latest = current.clips?.find(item => item.id === clip.id);
+          if (latest?.status === 'PROCESSING') Object.assign(latest, { status: 'FAILED', error: 'El procesamiento se interrumpió. El original y los subtítulos guardados se conservan para reintentar.', updatedAt: new Date().toISOString() });
+        });
+        await eventStore.release(eventSource,outputProjectId);throw error;
+      }
       project.clips = project.clips.filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
       project.clips.push(clip);
-      await updateProjectFile(outputProjectId, current => {
-        current.clips = (current.clips || []).filter(item => item.startTime !== clip.startTime || item.endTime !== clip.endTime);
-        current.clips.push(clip);
-      });
       await eventStore.confirm(eventSource,candidate.id,outputProjectId);
       results.push(clipResult(project, clip));
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
@@ -131,6 +170,10 @@ export class BestClipsService {
     await updateProjectFile(outputProjectId, current => { current.clipsOrigin.deliveryComplete = true; });
     return { projectId: outputProjectId, clips: results, requestedCount: count, actualCount: results.length, warnings: selectionWarning ? [selectionWarning] : [], validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };
   }
+}
+
+function editingKey(clip) {
+  return JSON.stringify({ edit: clip.edit, subtitles: clip.subtitles || null, autoReframe: clip.autoReframe || null });
 }
 
 /** Preserve the rescue branch's finite, non-overlapping candidate validation. */
