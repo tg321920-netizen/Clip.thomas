@@ -27,7 +27,7 @@ export type SubtitleTrack = {
   machineCues?: SubtitleCue[];
   timingBasis?: string;
   reviewStatus?: "PENDING" | "REVIEW_REQUIRED";
-  translation?: { provider: string; modelSha256: string; audioReplaced: false; reviewRequired: true; manuallyEdited?: boolean;
+  translation?: { provider: string; modelSha256: string; modelId?:string; modelRevision?:string; modelLicense?:string; modelFormat?:string; audioReplaced: false; reviewRequired: true; manuallyEdited?: boolean;
     glossary?: Array<{source:string;target:string}>; pipelineVersion?: string;
     units?: Array<{text:string;target:string;direct?:string;contextUsed:boolean;quality:{status:string;issues:string[]}}> };
   enabled: boolean;

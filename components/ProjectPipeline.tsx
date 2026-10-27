@@ -5,6 +5,7 @@ import type { ContentAnalysisRecord } from "@/types/analysis";
 import type { ClipRecord } from "@/types/clip";
 import type { TranscriptRecord } from "@/types/transcription";
 import { ClipSubtitleEditor } from "@/components/ClipSubtitleEditor";
+import { candidateRenderRequest } from '@/lib/candidate-render-request.mjs';
 import { explainQualityIssue } from '@/lib/editorial-warnings.mjs';
 
 type JobRecord = {
@@ -262,11 +263,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(clipId ? { retryClipId: clipId } : {
-          candidateId,
-          framingMode: "FILL",
-          quality: "BALANCED",
-        }),
+        body: JSON.stringify(candidateRenderRequest(candidateId,clipId?{id:clipId}:clips.find(clip=>clip.candidateId===candidateId))),
       });
       const payload = (await response.json()) as ClipsPayload;
 
@@ -311,11 +308,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            candidateId: candidate.id,
-            framingMode: "FILL",
-            quality: "BALANCED",
-          }),
+          body: JSON.stringify(candidateRenderRequest(candidate.id,clips.find(clip=>clip.candidateId===candidate.id))),
         });
         const payload = (await response.json()) as ClipsPayload;
 
@@ -524,7 +517,8 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                 );
                 const clipBusy =
                   clip?.job?.status === "QUEUED" ||
-                  clip?.job?.status === "PROCESSING";
+                  clip?.job?.status === "PROCESSING" ||
+                  ['QUEUED','RENDERING','PROCESSING'].includes(clip?.status||'');
                 const clipProgress = Math.max(
                   0,
                   Math.min(100, Number(clip?.job?.progress || 0)),
@@ -561,7 +555,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                       {candidate.hook}
                     </p>
                     <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      {candidate.reasons[0] || candidate.reason}
+                      {candidate.reasons?.[0] || candidate.reason}
                     </p>
                     {!!candidate.qualityWarnings?.length&&<p className="mt-2 text-sm text-amber-200">{candidate.qualityWarnings.map(explainQualityIssue).join(' ')}</p>}
                     <button type="button" className="mt-3 min-h-12 rounded-xl border border-violet-400/40 px-4 text-sm" onClick={()=>window.dispatchEvent(new CustomEvent('clipforge:trim-interval',{detail:{projectId,startTime:candidate.startTime,endTime:candidate.endTime}}))}>Ajustar este recorte</button>
@@ -584,12 +578,6 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                           <span>{clip.edit.quality}</span>
                         </div>
 
-                        <ClipSubtitleEditor
-                          key={clip.id}
-                          projectId={projectId}
-                          clip={clip}
-                          onRenderNeeded={() => queueClip(candidate.id, clip.id)}
-                        />
                       </div>
                     ) : (
                       <>
@@ -621,13 +609,16 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                           {loadingAction === `clip:${candidate.id}`
                             ? "Encolando render…"
                             : clip?.status === "FAILED"
-                              ? "Reintentar clip 9:16"
+                              ? "Reintentar recorte"
                               : clipBusy
                                 ? "Procesando…"
-                                : "Crear clip 9:16"}
+                                : clip ? "Renderizar esta revisión" : "Crear clip"}
                         </button>
                       </>
                     )}
+                    {clip&&<fieldset disabled={clipBusy} className="min-w-0" aria-busy={clipBusy}>
+                      <ClipSubtitleEditor key={clip.id} projectId={projectId} clip={clip} onRenderNeeded={()=>queueClip(candidate.id,clip.id)}/>
+                    </fieldset>}
                   </article>
                 );
               })}
