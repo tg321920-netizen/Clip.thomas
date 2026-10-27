@@ -4,7 +4,7 @@ import {mkdtemp,rm,writeFile,utimes} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {manualOutputOptions,ENCODER_QUALITY,renderThreads} from '../lib/render-options.mjs';
+import {manualOutputOptions,automaticOutputOptions,ENCODER_QUALITY,renderThreads} from '../lib/render-options.mjs';
 import {withRenderCapacity} from '../lib/render-capacity.mjs';
 import {JobStore} from '../services/JobStore.mjs';
 import {leaseOwner} from '../lib/process-lease.mjs';
@@ -17,6 +17,16 @@ test('manual output keeps 720p/1080p and horizontal/vertical separate; invalid p
   assert.equal(ENCODER_QUALITY.EFFICIENT.crf,ENCODER_QUALITY.BALANCED.crf);
   assert.equal(ENCODER_QUALITY.EFFICIENT.preset,'veryfast');
   assert.equal(renderThreads({CLIPFORGE_RENDER_THREADS:'999'}),2);
+});
+test('automatic output supports all four owner profiles and preserves legacy internal dimensions',()=>{
+  assert.deepEqual(automaticOutputOptions({format:'16:9',resolution:'720p'}),{width:1280,height:720,aspectRatio:'16:9',resolution:'720p'});
+  assert.equal(automaticOutputOptions({format:'16:9',resolution:'1080p'}).width,1920);
+  assert.equal(automaticOutputOptions({format:'9:16',resolution:'720p'}).height,1280);
+  assert.equal(automaticOutputOptions({format:'9:16',resolution:'1080p'}).height,1920);
+  assert.deepEqual(automaticOutputOptions({}, {width:360,height:640}),{width:360,height:640});
+  assert.equal(automaticOutputOptions({format:'16:9'}, {width:720,height:1280}).width,1280);
+  assert.throws(()=>automaticOutputOptions({format:'16:9',aspectRatio:'9:16'}),/dos formatos/);
+  assert.throws(()=>automaticOutputOptions({resolution:'4k'}),/720p/);
 });
 test('independent render calls share one slot, apply backpressure, and release capacity after an error',async t=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'clipforge-render-slot-'));t.after(()=>rm(root,{recursive:true,force:true}));

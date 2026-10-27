@@ -18,6 +18,7 @@ import { LocalTranslationProvider } from "../subtitles/LocalTranslationProvider.
 import { clipResult } from '../clip/ClipResult.mjs';
 import { withLocalStateLock } from '../../lib/atomic-local-state.mjs';
 import { isProjectId } from '../../lib/project-id.mjs';
+import { automaticOutputOptions, ENCODER_QUALITY } from '../../lib/render-options.mjs';
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -32,6 +33,11 @@ export class BestClipsService {
       () => this.renderUnlocked(outputProjectId, input, onStage), { timeoutMs: 1000, staleMs: 0 });
   }
   async renderUnlocked(outputProjectId, input, onStage) {
+    const output = automaticOutputOptions(input, { width: this.width, height: this.height, env: this.env });
+    const { width, height } = output;
+    const quality = input.quality || 'BALANCED';
+    if (!Object.hasOwn(ENCODER_QUALITY, quality)) throw new Error('Calidad de render inválida.');
+    const renderer = new RenderService({ width, height });
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
     const previous = await loadProjectFile(outputProjectId);
@@ -53,7 +59,7 @@ export class BestClipsService {
     const framingMode=String(input.framingMode||"CONVERSATION").toUpperCase();
     if(!["CONVERSATION","FILL","FIT"].includes(framingMode))throw new Error("Encuadre no válido.");
     const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
-    const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
+    const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width, height,
       transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], continuityBreaks: original.source.capture?.continuityBreaks || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
     const matching = previous?.clipsOrigin?.checkpointKey === checkpointKey;
     if (previous && !matching) throw new WaitingResourceError('Los ajustes, la transcripción o el proveedor del lote cambiaron. Se conservó el lote anterior; inicia uno nuevo para analizar con esa configuración.');
@@ -107,11 +113,11 @@ export class BestClipsService {
       let recovered = null;
       if (saved?.status === 'READY' && saved?.render?.relativePath) {
         try {
-          await validateMp4(resolveStoragePath(saved.render.relativePath), { width: this.width, height: this.height, duration: saved.duration, requireAudio: original.source.hasAudio !== false, audioOnly: original.source.mediaKind === 'AUDIO' });
+          await validateMp4(resolveStoragePath(saved.render.relativePath), { width, height, duration: saved.duration, requireAudio: original.source.hasAudio !== false, audioOnly: original.source.mediaKind === 'AUDIO' });
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
-      let clip = recovered || (saved ? structuredClone(saved) : { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality: "BALANCED" }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null });
+      let clip = recovered || (saved ? structuredClone(saved) : { id: randomUUID(), projectId: outputProjectId, candidateId: candidate.id, startTime: candidate.startTime, endTime: candidate.endTime, duration: candidate.duration, status: "PROCESSING", edit: { framingMode, ...(input.focusX===undefined?{}:{focusX:Number(input.focusX)}), motionIntensity:input.intensity||"GENTLE", subtitlesEnabled: input.subtitles !== false, subtitleStyle: "CLEAN", quality, output }, title: candidate.title, reason: candidate.reason, aiAssessment: candidate.aiAssessment || null, editorialReview: { status: "PENDING", analysisKind: candidate.aiAssessment ? "MODEL_SELECTION" : "LOCAL_HEURISTIC", detectionBasis: (candidate.chatEvidence?.isPeak || candidate.chatEvidence?.isCollectiveReaction) && candidate.chatEvidence.score >= 25 ? "OBSERVED_CHAT_AND_AV" : "AV_ONLY", boundaryEvidence: "TRANSCRIPT_PUNCTUATION" }, createdAt: now, updatedAt: now, error: null });
       try {
       if (!recovered) {
         const expectedEdit = editingKey(clip);
@@ -141,7 +147,7 @@ export class BestClipsService {
           latest.edit = clip.edit; latest.subtitles = clip.subtitles;
           if (clip.subtitleHistory) latest.subtitleHistory = clip.subtitleHistory;
         });
-        clip.render = await new RenderService({ width: this.width, height: this.height }).renderClip({ project, clip });
+        clip.render = await renderer.renderClip({ project, clip });
         const encodedEdit = editingKey(clip);
         clip = await updateProjectFile(outputProjectId, current => {
           const latest = current.clips.find(item => item.id === clip.id);

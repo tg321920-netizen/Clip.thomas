@@ -10,6 +10,10 @@ export function clipResult(project, clip, validation = clip.render?.validation) 
     editorialReview: clip.editorialReview || { status: 'PENDING' },
     sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`,
     relativePath: clip.render.relativePath, validation,
+    renderProfile: (clip.render.mediaKind || project.source.mediaKind) === 'AUDIO' ? null : {
+      width: clip.render.width, height: clip.render.height, quality: clip.edit?.quality || null,
+      aspectRatio: clip.edit?.output?.aspectRatio || (clip.render.width > clip.render.height ? '16:9' : '9:16'),
+    },
     subtitleMode: hasCues ? clip.subtitles.mode || clip.edit?.subtitleMode || (clip.subtitles.language === 'en' ? 'ORIGINAL_EN' : 'ORIGINAL_ES') : 'NONE',
     subtitleLanguage: hasCues ? clip.subtitles.language || null : null,
     subtitleReviewStatus: hasCues ? clip.subtitles.reviewStatus || 'PENDING' : null,
