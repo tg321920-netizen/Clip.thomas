@@ -15,6 +15,7 @@ import { measureAudioEnergy, measureSceneChanges, sentenceSegments } from "./Aud
 import { sampleCandidateFingerprint } from "./VisualEvidenceService.mjs";
 import { EditorialEventStore } from "./EditorialEventStore.mjs";
 import { LocalTranslationProvider } from "../subtitles/LocalTranslationProvider.mjs";
+import { clipResult } from '../clip/ClipResult.mjs';
 
 export class BestClipsService {
   constructor(options = {}) {
@@ -118,7 +119,7 @@ export class BestClipsService {
         current.clips.push(clip);
       });
       await eventStore.confirm(eventSource,candidate.id,outputProjectId);
-      results.push({ mediaKind: clip.render.mediaKind, clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
+      results.push(clipResult(project, clip));
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
     }
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);

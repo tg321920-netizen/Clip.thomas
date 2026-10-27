@@ -84,3 +84,16 @@ test("a recovered story keeps narration review and licensed scene provenance", a
   assert.equal(result.story.scenes[0].imageUrl, "/story-library/sunrise.jpg");
   assert.match(result.warnings[0], /Revisión editorial pendiente/);
 });
+
+test('a completed audio-only podcast restores as M4A with its SRT instead of requiring a nonexistent video track', async () => {
+  const project = fixture(1); project.source.mediaKind = 'AUDIO';
+  project.clips[0].render.mediaKind = 'AUDIO'; project.clips[0].render.width = 0; project.clips[0].render.height = 0;
+  project.clips[0].subtitles = { mode: 'ORIGINAL_EN', language: 'en', reviewStatus: 'PENDING', cues: [{ id: 'cue-1', startTime: 0, endTime: 2, text: 'A measured podcast sentence.' }] };
+  const result = await recoverMediaResult(project, { ...job, payload: { count: 1 } }, { validate: async (_filename, options) => {
+    assert.equal(options.audioOnly, true, 'An AAC-only container must not require a video stream during recovery');
+    return { valid: true, audioCodec: 'aac', duration: 45 };
+  } });
+  assert.equal(result.clips[0].mediaKind, 'AUDIO');
+  assert.equal(result.clips[0].subtitleMode, 'ORIGINAL_EN');
+  assert.equal(result.clips[0].srtUrl, '/api/projects/output/clips/clip-0/subtitles?format=srt');
+});
