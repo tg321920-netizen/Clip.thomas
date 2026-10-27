@@ -151,7 +151,7 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
 
 export function assertSubtitleEditable(clip) {
   if (["QUEUED", "RENDERING", "PROCESSING"].includes(clip?.status)) {
-    throw Object.assign(new Error("Espera a que termine el trabajo antes de cambiar los subtítulos."), { code: "SUBTITLE_BUSY" });
+    throw Object.assign(new Error("Espera a que termine el trabajo antes de cambiar la edición."), { code: "SUBTITLE_BUSY" });
   }
 }
 
@@ -494,7 +494,7 @@ function sanitizeWord(word, cueStart, cueEnd) {
   };
 }
 
-function invalidateClipRender(clip) {
+export function invalidateClipRender(clip) {
   clip.editRevision = Number(clip.editRevision || 0) + 1;
   clip.status = "DRAFT";
   clip.render = null;

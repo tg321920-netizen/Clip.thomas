@@ -1,6 +1,6 @@
-import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { createClipFromCandidate } from "../clip/ClipService.mjs";
-import { generateSubtitleTrack } from "../subtitles/SubtitleService.mjs";
+import { generateSubtitleTrack, assertSubtitleEditable, invalidateClipRender } from "../subtitles/SubtitleService.mjs";
 import { createAutoEditProvider } from "./createAutoEditProvider.mjs";
 
 const PLATFORM_SET = new Set(["TIKTOK", "YOUTUBE", "FACEBOOK"]);
@@ -108,11 +108,10 @@ export async function prepareAutoEdit(projectId, options = {}) {
     },
   );
 
-  const latest = await loadProjectFile(projectId);
-  if (!latest) throw new Error("Project disappeared during Auto Edit.");
-
+  const clip = await updateProjectFile(projectId, latest => {
   const clip = latest.clips?.find((entry) => entry.id === created.clip.id);
   if (!clip) throw new Error("Prepared clip could not be reloaded.");
+  assertSubtitleEditable(clip);
 
   clip.startTime = plan.startTime;
   clip.endTime = plan.endTime;
@@ -129,9 +128,10 @@ export async function prepareAutoEdit(projectId, options = {}) {
     subtitleStyle: plan.subtitleStyle,
   };
   clip.autoEdit = plan;
-  clip.updatedAt = new Date().toISOString();
-
-  await replaceProjectFile(projectId, latest);
+  invalidateClipRender(clip);
+  return clip;
+  });
+  const latest = await loadProjectFile(projectId);
 
   if (
     options.generateSubtitles !== false &&

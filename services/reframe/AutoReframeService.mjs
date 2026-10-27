@@ -1,4 +1,5 @@
-import { loadProjectFile, replaceProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
+import { assertSubtitleEditable, invalidateClipRender as invalidateRender } from "../subtitles/SubtitleService.mjs";
 
 const MODE = "SPEECH_ZOOM";
 const BASIS = "TRANSCRIPT_SPEECH_ACTIVITY";
@@ -14,11 +15,10 @@ export async function getAutoReframe(projectId, clipId) {
 }
 
 export async function applySpeechFocus(projectId, clipId, options = {}) {
-  const project = await loadProjectFile(projectId);
-  if (!project) throw new Error("Project not found.");
-
+  return updateProjectFile(projectId, project => {
   const clip = findClip(project, clipId);
   if (!clip) throw new Error("Clip not found.");
+  assertSubtitleEditable(clip);
 
   const transcript = project.transcript;
   if (
@@ -64,17 +64,15 @@ export async function applySpeechFocus(projectId, clipId, options = {}) {
   };
 
   invalidateRender(clip);
-  await replaceProjectFile(projectId, project);
-
   return clip.autoReframe;
+  });
 }
 
 export async function disableAutoReframe(projectId, clipId) {
-  const project = await loadProjectFile(projectId);
-  if (!project) throw new Error("Project not found.");
-
+  return updateProjectFile(projectId, project => {
   const clip = findClip(project, clipId);
   if (!clip) throw new Error("Clip not found.");
+  assertSubtitleEditable(clip);
 
   if (!clip.autoReframe && !clip.edit?.autoReframeEnabled) {
     return null;
@@ -94,9 +92,8 @@ export async function disableAutoReframe(projectId, clipId) {
   };
 
   invalidateRender(clip);
-  await replaceProjectFile(projectId, project);
-
   return clip.autoReframe;
+  });
 }
 
 export function buildSpeechWindows(transcript, clip, options = {}) {
@@ -227,13 +224,6 @@ export function normalizeAutoReframeOptions(options = {}) {
 function findClip(project, clipId) {
   const clips = Array.isArray(project?.clips) ? project.clips : [];
   return clips.find((clip) => clip.id === clipId) || null;
-}
-
-function invalidateRender(clip) {
-  clip.status = "DRAFT";
-  clip.render = null;
-  clip.error = null;
-  clip.updatedAt = new Date().toISOString();
 }
 
 function clampNumber(value, min, max, fallback) {

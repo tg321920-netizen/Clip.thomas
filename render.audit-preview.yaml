@@ -8,7 +8,7 @@ services:
     region: virginia
     repo: https://github.com/tg321920-netizen/Clip.thomas
     # Frozen candidate ref. Development pushes cannot change the selected code.
-    branch: preview/clipforge-android-audit-20261026.3
+    branch: preview/clipforge-android-audit-20261026.4
     autoDeployTrigger: "off"
     buildCommand: bash scripts/render-native-free-build.sh
     startCommand: node scripts/render-runtime-free.mjs

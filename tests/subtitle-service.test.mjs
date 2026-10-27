@@ -12,6 +12,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadProjectFile, replaceProjectFile, updateProjectFile } from "../lib/project-files.mjs";
+import { applySpeechFocus } from "../services/reframe/AutoReframeService.mjs";
 
 const clip = {
   startTime: 10,
@@ -147,5 +148,10 @@ test("subtitle edits serialize with project updates and reject an active render"
   assert.equal((await loadProjectFile(id)).clips[0].editRevision, 1);
   await updateProjectFile(id, p => { p.clips[0].status = 'RENDERING'; });
   await assert.rejects(updateSubtitleTrack(id, clipId, { enabled: false }), { code: 'SUBTITLE_BUSY' });
+  await assert.rejects(applySpeechFocus(id, clipId), { code: 'SUBTITLE_BUSY' });
   assert.equal((await loadProjectFile(id)).clips[0].status, 'RENDERING');
+  await updateProjectFile(id, p => { p.clips[0].status = 'DRAFT'; });
+  await Promise.all([applySpeechFocus(id, clipId), updateProjectFile(id, p => { p.annotation = 'Still preserved during reframing'; })]);
+  const reframed = await loadProjectFile(id);
+  assert.equal(reframed.annotation, 'Still preserved during reframing');assert.equal(reframed.clips[0].subtitles.cues.length, 1);assert.equal(reframed.clips[0].editRevision, 2);
 });
