@@ -14,7 +14,7 @@ import { isProjectId } from "../lib/project-id.mjs";
 import { getStorageRoot, resolveStoragePath } from "../lib/storage-paths.mjs";
 import { validateMp4 } from "./media-processing/MediaValidationService.mjs";
 import { leaseOwner,ownerIsAlive } from "../lib/process-lease.mjs";
-import {withLocalStateLock} from '../lib/atomic-local-state.mjs';
+import {withLocalStateLock, writeAtomicJson} from '../lib/atomic-local-state.mjs';
 
 const JOB_PREFIX = {
   TRANSCRIBE_VIDEO: "transcribe",
@@ -41,6 +41,7 @@ export class JobStore {
     this.maxAttempts = options.maxAttempts ?? 3;
     this.staleAfterMs = options.staleAfterMs ?? 15 * 60 * 1000;
     this.renderStaleAfterMs = options.renderStaleAfterMs ?? 2 * 60 * 1000;
+    this.claims = new Map();
   }
 
   async enqueueMedia(type, id, payload = {}) {
@@ -71,14 +72,16 @@ export class JobStore {
   }
 
   async transition(id, status, stage, progress = null, patch = {}) {
+    if (status === 'CANCELLED' && (await this.get(id))?.type.startsWith('MEDIA_')) return this.cancelMedia(id);
+    return this.#withJobMutation(id, async () => {
     const job = await this.get(id);
-    if (!job || job.status === "CANCELLED") return job;
-    if (status === "CANCELLED" && job.type.startsWith("MEDIA_")) return this.cancelMedia(id);
+    if (!job || ['CANCELLED', 'COMPLETED', 'READY'].includes(job.status) || (this.claims.has(id) && this.claims.get(id) !== job.claimId)) return job;
     if (!["PROCESSING", "VALIDATING", "WAITING_RESOURCE", "FAILED", "CANCELLED"].includes(status)) throw new Error("Invalid media state.");
     const history = [...(job.history || []), { status, stage, at: new Date().toISOString() }].slice(-100);
     const updated = { ...job, ...patch, status, stage, history, updatedAt: new Date().toISOString(),
       progress: progress === null ? job.progress : Math.max(0, Math.min(99, Math.round(progress))) };
     await this.#write(updated); return updated;
+    });
   }
 
   async enqueueTranscription(projectId, options = {}) {
@@ -150,6 +153,7 @@ export class JobStore {
 
     await this.#ensureDirectory();
     const id = jobId(type, projectId, entityId);
+    return this.#withJobMutation(id, async () => {
     const existing = await this.get(id);
     const restartCompleted = options.restartCompleted === true;
 
@@ -179,6 +183,7 @@ export class JobStore {
     };
     await this.#write(job);
     return job;
+    });
   }
 
   async get(id) {
@@ -240,11 +245,15 @@ export class JobStore {
   }
 
   async interruptMedia(job) {
+    return this.#withJobMutation(job.id, async () => {
     const fresh = await this.get(job.id);
+    if (!sameAttempt(job, fresh)) return fresh;
     if (fresh?.generation !== job.generation) return fresh;
-    if (!fresh || fresh.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    if (!fresh || fresh.status === "CANCELLED") { await this.release(job.id, job.claimId); return fresh; }
+    if (!['PROCESSING', 'VALIDATING'].includes(fresh.status)) return fresh;
     await this.#write({ ...fresh, status: "QUEUED", stage: "RECOVERED", startedAt: null, nextAttemptAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: "El procesador se reinició; el trabajo se reanudará desde sus avances verificados." });
-    await this.release(job.id); return this.get(job.id);
+    await this.release(job.id, job.claimId); return this.get(job.id);
+    });
   }
 
   async getTranscriptionJob(projectId) { return this.get(jobId("TRANSCRIBE_VIDEO", projectId)); }
@@ -270,15 +279,18 @@ export class JobStore {
       const job = await this.#readRecoverable(id);
       if (!job || job.status !== "QUEUED" || (allowed && !allowed.has(job.type)) || Date.parse(job.nextAttemptAt || job.createdAt) > now) continue;
       const claim = async () => {
-      const locked = await this.#tryLock(id);
+      return this.#withJobMutation(id, async () => {
+      const claimId = randomUUID();
+      const locked = await this.#tryLock(id, claimId);
       if (!locked) return null;
       const fresh = await this.#readRecoverable(id);
-      if (!fresh || fresh.status !== "QUEUED" || (allowed && !allowed.has(fresh.type))) {
-        await this.release(id);
+      if (!fresh || fresh.status !== "QUEUED" || (allowed && !allowed.has(fresh.type)) || Date.parse(fresh.nextAttemptAt || fresh.createdAt) > Date.now()) {
+        await this.release(id, claimId);
         return null;
       }
       const updated = {
         ...fresh,
+        claimId,
         status: "PROCESSING",
         progress: Number(fresh.progress || 0),
         attempts: Number(fresh.attempts || 0) + 1,
@@ -286,8 +298,11 @@ export class JobStore {
         updatedAt: new Date().toISOString(),
         error: null,
       };
-      await this.#write(updated);
+      try { await this.#write(updated); }
+      catch (error) { await this.release(id, claimId); throw error; }
+      this.claims.set(id, claimId);
       return updated;
+      });
       };
       const claimed = job.type.startsWith("MEDIA_") ? await this.#withMediaMutation(id, claim) : await claim();
       if (claimed) return claimed;
@@ -296,33 +311,43 @@ export class JobStore {
   }
 
   async updateProgress(id, progress) {
+    return this.#withJobMutation(id, async () => {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return job;
-    const normalized = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+    if (this.claims.has(id) && this.claims.get(id) !== job.claimId) return job;
+    const normalized = Math.max(0, Math.min(99, Math.round(Number(progress) || 0)));
     const updated = { ...job, progress: normalized, updatedAt: new Date().toISOString() };
     await this.#write(updated);
     return updated;
+    });
   }
 
   async heartbeat(id) {
     const job = await this.get(id);
     if (!job || !["PROCESSING", "VALIDATING"].includes(job.status)) return false;
+    if (this.claims.has(id) && this.claims.get(id) !== job.claimId) return false;
     const lockPath = this.#lockPath(id);
+    let handle;
     try {
-      await stat(lockPath);
-      if (job.type.startsWith("MEDIA_") || job.type==="RENDER_CLIP") await writeFile(lockPath, JSON.stringify(leaseOwner()), { encoding: "utf8" });
-      else await writeFile(lockPath, new Date().toISOString(), { encoding: "utf8" });
+      handle = await open(lockPath, 'r+');
+      let owner;
+      try { owner = JSON.parse(await handle.readFile('utf8')); }
+      catch (error) { if (error instanceof SyntaxError) return false; throw error; }
+      const current = leaseOwner();
+      if (owner?.pid !== current.pid || owner.key !== current.key || owner.claimId !== job.claimId) return false;
+      const now = new Date(); await handle.utimes(now, now);
       return true;
     } catch (error) {
       if (getErrorCode(error) === "ENOENT") return false;
       throw error;
-    }
+    } finally { await handle?.close(); }
   }
 
   async complete(job) {
     const current = await this.get(job.id);
+    if (!sameAttempt(job, current)) return current;
     if (job.generation && current?.generation !== job.generation) return current;
-    if (current?.status === "CANCELLED") { await this.release(job.id); return current; }
+    if (current?.status === "CANCELLED") { await this.release(job.id, job.claimId); return current; }
     const media = job.type.startsWith("MEDIA_");
     if (media && job.result?.validation?.valid !== true) throw new Error("Media jobs need real validation evidence before READY.");
     if (media) {
@@ -333,9 +358,12 @@ export class JobStore {
         output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", requireAudibleNarration:job.type==="MEDIA_STORY",duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation, audioOnly: job.type !== 'MEDIA_STORY' && output.mediaKind === 'AUDIO' });
       }
     }
+    return this.#withJobMutation(job.id, async () => {
     const fresh = await this.get(job.id);
+    if (!sameAttempt(job, fresh)) return fresh;
     if (job.generation && fresh?.generation !== job.generation) return fresh;
-    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    if (fresh?.status === "CANCELLED") { await this.release(job.id, job.claimId); return fresh; }
+    if (!['PROCESSING', 'VALIDATING'].includes(fresh?.status)) return fresh;
     const completed = {
       ...job,
       status: media ? "READY" : "COMPLETED",
@@ -347,14 +375,18 @@ export class JobStore {
       error: null,
     };
     await this.#write(completed);
-    await this.release(job.id);
+    await this.release(job.id, job.claimId);
     return completed;
+    });
   }
 
   async fail(job, error, options = {}) {
+    return this.#withJobMutation(job.id, async () => {
     const fresh = await this.get(job.id);
+    if (!sameAttempt(job, fresh)) return fresh;
     if (job.generation && fresh?.generation !== job.generation) return fresh;
-    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    if (fresh?.status === "CANCELLED") { await this.release(job.id, job.claimId); return fresh; }
+    if (!['PROCESSING', 'VALIDATING'].includes(fresh?.status)) return fresh;
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
     const terminal = options.retryable === false || attempts >= maxAttempts;
@@ -369,19 +401,32 @@ export class JobStore {
       error: error instanceof Error ? error.message : String(error),
     };
     await this.#write(failed);
-    await this.release(job.id);
+    await this.release(job.id, job.claimId);
     return failed;
+    });
   }
 
-  async release(id) { await rm(this.#lockPath(id), { force: true }); }
+  async release(id, claimId = null) {
+    if (claimId) {
+      try {
+        const owner = JSON.parse(await readFile(this.#lockPath(id), 'utf8'));
+        if (owner.claimId !== claimId) return false;
+      } catch (error) { if (getErrorCode(error) === 'ENOENT') return false; throw error; }
+    }
+    await rm(this.#lockPath(id), { force: true });
+    if (!claimId || this.claims.get(id) === claimId) this.claims.delete(id);
+    return true;
+  }
 
-  async #tryLock(id) {
+  async #tryLock(id, claimId) {
+    let handle;
     try {
-      const handle = await open(this.#lockPath(id), "wx");
-      await handle.writeFile(id.startsWith("render-") || id.startsWith("story-") || id.startsWith("videoedit-") || id.startsWith("bestclips-") ? JSON.stringify(leaseOwner()) : new Date().toISOString(), "utf8");
-      await handle.close();
+      handle = await open(this.#lockPath(id), "wx");
+      await handle.writeFile(JSON.stringify({ ...leaseOwner(), claimId }), "utf8");
+      await handle.close(); handle = null;
       return true;
     } catch (error) {
+      if (handle) { await handle.close().catch(() => {}); await rm(this.#lockPath(id), { force: true }); }
       if (getErrorCode(error) === "EEXIST") return false;
       throw error;
     }
@@ -408,29 +453,20 @@ export class JobStore {
       try {
         const info = await stat(lockPath);
         const id = name.slice(0, -5);
+        try { safeJobId(id); } catch { continue; }
+        await this.#withJobMutation(id, async () => {
         const job = await this.#readRecoverable(id);
-        if (!job) continue;
+        if (!job) return;
         let confirmedDead = false;
-        if (job?.type.startsWith("MEDIA_") || job?.type==="RENDER_CLIP") {
-          try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (ownerIsAlive(owner)) continue;confirmedDead=Boolean(owner.pid); }
-          catch (error) { if (getErrorCode(error) === "ENOENT" || Date.now()-info.mtimeMs<(job.type==="RENDER_CLIP"?5000:5*60*1000)) continue; }
-        }
+        try { const owner = JSON.parse(await readFile(lockPath, "utf8")); if (ownerIsAlive(owner)) return;confirmedDead=Number.isSafeInteger(owner?.pid)&&owner.pid>0; }
+        catch (error) { if (getErrorCode(error) === "ENOENT" || Date.now()-info.mtimeMs<5000) return; if (!(error instanceof SyntaxError)) throw error; }
         const staleAfterMs = job?.type === "RENDER_CLIP" ? this.renderStaleAfterMs : this.staleAfterMs;
-        if (!confirmedDead && Date.now() - info.mtimeMs < staleAfterMs) continue;
+        if (!confirmedDead && Date.now() - info.mtimeMs < staleAfterMs) return;
         if (["PROCESSING", "VALIDATING"].includes(job?.status)) {
-          await this.#write({
-            ...job,
-            status: "QUEUED",
-            progress: job.type === "RENDER_CLIP" ? 0 : job.progress,
-            startedAt: job.type === "RENDER_CLIP" ? null : job.startedAt,
-            updatedAt: new Date().toISOString(),
-            nextAttemptAt: new Date().toISOString(),
-            error: "Recovered after a stale worker lock.",
-            stage: "RECOVERED",
-            history: [...(job.history||[]),{status:"QUEUED",stage:"RECOVERED",at:new Date().toISOString()}].slice(-100),
-          });
+          await this.#write(this.#recovered(job, false));
         }
         await rm(lockPath, { force: true });
+        });
       } catch (error) {
         if (getErrorCode(error) !== "ENOENT") throw error;
       }
@@ -438,30 +474,38 @@ export class JobStore {
 
     for (const name of names.filter((value) => value.endsWith(".json"))) {
       const id = name.slice(0, -5);
+      try { safeJobId(id); } catch { continue; }
+      await this.#withJobMutation(id, async () => {
       const job = await this.#readRecoverable(id);
-      if (!job || !(job.type === "RENDER_CLIP" || job.type.startsWith("MEDIA_")) || !["PROCESSING", "VALIDATING"].includes(job.status)) continue;
+      if (!job || !["PROCESSING", "VALIDATING"].includes(job.status)) return;
       const lastActivity = Date.parse(job.updatedAt || job.startedAt || job.createdAt);
-      if (Number.isFinite(lastActivity) && Date.now() - lastActivity < this.renderStaleAfterMs) continue;
-      try { await stat(this.#lockPath(id)); continue; }
+      const staleAfterMs = job.type === 'RENDER_CLIP' || job.type.startsWith('MEDIA_') ? this.renderStaleAfterMs : this.staleAfterMs;
+      if (Number.isFinite(lastActivity) && Date.now() - lastActivity < staleAfterMs) return;
+      try { await stat(this.#lockPath(id)); return; }
       catch (error) { if (getErrorCode(error) !== "ENOENT") throw error; }
-      await this.#write({
-        ...job,
-        status: "QUEUED",
-        progress: 0,
-        startedAt: null,
-        updatedAt: new Date().toISOString(),
-        nextAttemptAt: new Date().toISOString(),
-        error: "Recovered orphaned render job without an active worker lock.",
+      await this.#write(this.#recovered(job, true));
       });
     }
   }
 
   async #write(job) {
     await this.#ensureDirectory();
-    const target = this.#jobPath(job.id);
-    const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(job, null, 2), { encoding: "utf8", flag: "wx" });
-    await rename(temp, target);
+    await writeAtomicJson(this.#jobPath(job.id), job);
+  }
+
+  async #withJobMutation(id, action) {
+    return withLocalStateLock(`${this.#jobPath(id)}.state`, action, { staleMs: 0 });
+  }
+
+  #recovered(job, orphaned) {
+    const exhausted = Number(job.attempts || 0) >= Number(job.maxAttempts || this.maxAttempts);
+    const now = new Date().toISOString(), status = exhausted ? 'FAILED' : 'QUEUED';
+    const stage = exhausted ? 'RECOVERY_ATTEMPTS_EXHAUSTED' : 'RECOVERED';
+    return { ...job, status, stage, progress: job.type === 'RENDER_CLIP' || orphaned ? 0 : job.progress,
+      startedAt: null, completedAt: exhausted ? now : null, updatedAt: now, nextAttemptAt: exhausted ? null : now,
+      error: exhausted ? 'El worker se interrumpió demasiadas veces. Revisa los recursos antes de reintentarlo.' :
+        orphaned ? 'Recovered orphaned job without an active worker lock.' : 'Recovered after an exited worker lock.',
+      history: [...(job.history || []), { status, stage, at: now }].slice(-100) };
   }
 
   async #ensureDirectory() { await mkdir(this.#jobsDir(), { recursive: true }); }
@@ -509,3 +553,8 @@ function safeJobId(value) {
 function sanitizePayload(payload) { if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}; return JSON.parse(JSON.stringify(payload)); }
 function assertProjectId(projectId) { if (!isProjectId(projectId)) throw new Error("Invalid project id."); }
 function getErrorCode(error) { return error instanceof Error && "code" in error ? error.code : undefined; }
+function sameAttempt(previous, current) {
+  if (!current) return false;
+  if (previous.claimId || current.claimId) return Boolean(previous.claimId && previous.claimId === current.claimId);
+  return previous.attempts === current.attempts && previous.startedAt === current.startedAt;
+}
