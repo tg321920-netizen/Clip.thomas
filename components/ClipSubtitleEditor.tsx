@@ -165,7 +165,7 @@ export function ClipSubtitleEditor({
               value={style}
               onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
               disabled={busy !== null}
-              className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
+              className="min-h-12 rounded-lg border border-white/10 bg-zinc-950 px-2 py-2 text-sm text-zinc-300"
             >
               <option value="CLEAN">CLEAN</option>
               <option value="VIRAL">VIRAL</option>
@@ -234,7 +234,7 @@ export function ClipSubtitleEditor({
               value={style}
               onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
               disabled={busy !== null}
-              className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300"
+              className="min-h-12 rounded-lg border border-white/10 bg-zinc-950 px-2 py-2 text-sm text-zinc-300"
             >
               <option value="CLEAN">CLEAN</option>
               <option value="VIRAL">VIRAL</option>
@@ -271,7 +271,7 @@ export function ClipSubtitleEditor({
                         startTime: Number(event.target.value),
                       })
                     }
-                    className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
+                    className="mt-1 min-h-12 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-base normal-case text-zinc-300"
                   />
                 </label>
 
@@ -288,7 +288,7 @@ export function ClipSubtitleEditor({
                         endTime: Number(event.target.value),
                       })
                     }
-                    className="mt-1 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-1.5 text-xs normal-case text-zinc-300"
+                    className="mt-1 min-h-12 w-full rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-base normal-case text-zinc-300"
                   />
                 </label>
               </div>
@@ -301,7 +301,7 @@ export function ClipSubtitleEditor({
                 }
                 rows={2}
                 maxLength={300}
-                className="mt-2 w-full resize-y rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-xs leading-5 text-zinc-300"
+                className="mt-2 w-full resize-y rounded-md border border-white/10 bg-zinc-950 px-2 py-2 text-base leading-6 text-zinc-300"
               />
             </div>
           ))}
@@ -311,7 +311,7 @@ export function ClipSubtitleEditor({
           type="button"
           onClick={() => void save()}
           disabled={busy !== null}
-          className="mt-3 w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400 disabled:opacity-40"
+          className="mt-3 min-h-12 w-full rounded-lg bg-violet-500 px-3 py-3 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:opacity-40"
         >
           {busy === "save"
             ? "Guardando…"

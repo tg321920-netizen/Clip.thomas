@@ -114,6 +114,7 @@ else
   echo "[render-native] reusing cached whisper.cpp and model."
 fi
 test -s "$RUNTIME_ROOT/models/ggml-tiny.bin"
+echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  $RUNTIME_ROOT/models/ggml-tiny.bin" | sha256sum --check --status
 
 # News Mode needs real narration. Reuse the pinned cached build when available.
 if [ ! -x "$ESPEAK_PREFIX/bin/espeak-ng" ] || [ ! -d "$ESPEAK_PREFIX/share/espeak-ng-data" ]; then

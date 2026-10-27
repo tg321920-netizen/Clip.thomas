@@ -12,6 +12,7 @@ export async function GET() {
     const projects = records.map((record) => ({
       id: record.id,
       createdAt: record.createdAt,
+      kind: record.clipsOrigin ? 'CLIP_BATCH' : 'SOURCE',
       source: {
         projectId: record.source.projectId || record.id,
         originalName: record.source.originalName,

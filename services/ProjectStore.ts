@@ -10,6 +10,7 @@ import type { ClipRecord } from "@/types/clip";
 import type { NewsBrief } from "@/types/news";
 
 export type ProjectRecord = {
+  clipsOrigin?: {projectId:string;selectedCount?:number;requestedCount?:number};
   translationSettings?: { glossary: Array<{source:string;target:string}>; updatedAt?: string };
   id: string;
   createdAt: string;
@@ -50,7 +51,7 @@ export class ProjectStore {
         try {
           const raw = await readFile(path.join(projectsDir, filename), "utf8");
           const record=parseProject(raw);
-          return summariesOnly&&record ? {id:record.id,createdAt:record.createdAt,source:record.source} : record;
+          return summariesOnly&&record ? {id:record.id,createdAt:record.createdAt,source:record.source,clipsOrigin:record.clipsOrigin} : record;
         } catch {
           return null;
         }

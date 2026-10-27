@@ -30,6 +30,7 @@ RUN mkdir -p /opt/clipforge/models \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
     --output /opt/clipforge/models/ggml-tiny.bin \
   && test -s /opt/clipforge/models/ggml-tiny.bin \
+  && echo 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/clipforge/models/ggml-tiny.bin' | sha256sum --check --status \
   && python3 -m venv /opt/clipforge-ytdlp \
   && /opt/clipforge-ytdlp/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
   && /opt/clipforge-ytdlp/bin/python -m pip install --no-cache-dir \

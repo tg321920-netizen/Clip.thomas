@@ -7,6 +7,7 @@ import {ProjectRecoveryPanel} from './ProjectRecoveryPanel';
 type ProjectRecord = {
   id: string;
   createdAt: string;
+  kind?: "SOURCE" | "CLIP_BATCH";
   source: UploadedVideo;
 };
 
@@ -132,6 +133,7 @@ export function RecentProjects() {
           return (
             <article
               key={project.id}
+              data-project-id={project.id}
               className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition hover:border-violet-400/30"
             >
               <div className="flex items-start justify-between gap-3">
@@ -141,6 +143,9 @@ export function RecentProjects() {
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     {formatDate(project.createdAt)}
+                  </p>
+                  <p className="mt-1 text-xs text-cyan-200">
+                    {project.kind === "CLIP_BATCH" ? "Lote de clips seleccionados" : "Fuente original"}
                   </p>
                 </div>
                 <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-zinc-400">

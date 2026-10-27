@@ -178,7 +178,7 @@ export function rememberSubtitleVersion(clip, reason) {
   if (clip.subtitleHistory.some(version=>version.versionId===versionId)) return;
   const version = { versionId, savedAt: new Date().toISOString(), reason, track };
   if (clip.subtitleHistory.length >= 30 || Buffer.byteLength(JSON.stringify([...clip.subtitleHistory,version])) > 180_000) {
-    throw new Error('El historial alcanzó su límite seguro. Exporta sus versiones antes de continuar; no se borró ninguna corrección.');
+    throw new Error('El historial alcanzó su límite seguro de esta versión. La edición queda pausada para conservarlo; puedes descargar las versiones SRT. No se borró ninguna corrección.');
   }
   clip.subtitleHistory.push(version);
 }
