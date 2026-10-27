@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, open, readFile, readdir, writeFile, link } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
@@ -30,6 +30,8 @@ for (const relative of new Set([project.source.relativePath, clip.render.relativ
 }
 await mkdir(path.join(root, 'projects'), { recursive: true });
 await writeFile(path.join(root, 'projects', `${project.id}.json`), JSON.stringify(project));
+await mkdir(path.join(root, 'ingest-jobs'), { recursive: true });
+await writeFile(path.join(root, 'ingest-jobs', `${randomUUID()}.json`), '{"fixture":"explicit interrupted metadata write"');
 process.env.CLIPFORGE_STORAGE_DIR = root;
 const port = Number(process.env.CLIPFORGE_TEST_PORT || 3187), base = `http://127.0.0.1:${port}`, accessKey = randomBytes(32).toString('hex');
 const env = { ...process.env, CLIPFORGE_STORAGE_DIR: root, CLIPFORGE_RELEASE_CHANNEL: 'stable', CLIPFORGE_EXPERIMENTAL_FEATURES: 'false',
@@ -55,6 +57,8 @@ try {
   const page = await context.newPage(), errors = []; page.on('pageerror', error => errors.push(error.name));
   await page.goto(base); await page.getByLabel('Clave de acceso', { exact: true }).fill(accessKey);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await page.getByText('Hay 1 trabajo con metadatos dañados. Los demás siguen disponibles. Se conservaron los archivos para recuperación.', { exact: true }).waitFor();
+  evidence.damagedIngestVisibleWithoutBlockingEditor = true;
   await page.locator(`article[data-project-id="${project.id}"]`).getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
   const editor = page.getByRole('region', { name: 'Recorte manual' });
   const input = editor.getByLabel(`Texto del subtítulo ${clip.subtitles.cues[0].id}`, { exact: true }); await input.waitFor();

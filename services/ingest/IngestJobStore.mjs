@@ -113,6 +113,8 @@ export class IngestJobStore {
     assertId(id);
     try {
       const job = JSON.parse(await readFile(this.#jobPath(id), "utf8"));
+      if (!job || job.id !== id || job.projectId !== id || !['INGEST_URL', 'INGEST_UPLOAD', 'LIVE_CAPTURE', 'INGEST_LIVE_WINDOW'].includes(job.type) ||
+          typeof job.status !== 'string' || !job.source || typeof job.source !== 'object' || Array.isArray(job.source) || !Number.isFinite(Date.parse(job.createdAt))) throw invalidMetadata();
       try {
         const cancelledAt = await readFile(`${this.#jobPath(id)}.cancel`, "utf8");
         return { ...job, status: "CANCELLED", stage: "CANCELLED", completedAt: cancelledAt, nextAttemptAt: null };
@@ -120,22 +122,27 @@ export class IngestJobStore {
       return job;
     } catch (error) {
       if (getErrorCode(error) === "ENOENT") return null;
+      if (error instanceof SyntaxError) throw invalidMetadata();
       throw error;
     }
   }
 
   async list(limit = 50) {
+    return (await this.listWithIssues(limit)).jobs;
+  }
+
+  async listWithIssues(limit = 50) {
     await this.#ensureDirectory();
     const names = await readdir(this.#jobsDir());
-    const jobs = await Promise.all(
-      names
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => this.get(name.slice(0, -5)).catch(() => null)),
-    );
-    return jobs
+    const files = names.filter(name => name.endsWith('.json'));
+    const jobs = [], issues = []; let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, files.length) }, async () => {
+      while (next < files.length) { const job = await this.#readRecoverable(files[next++].slice(0, -5), issues); if (job) jobs.push(job); }
+    }));
+    return { jobs: jobs
       .filter(Boolean)
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-      .slice(0, Math.max(1, Math.min(Number(limit) || 50, 500)));
+      .slice(0, Math.max(1, Math.min(Number(limit) || 50, 500))), issues };
   }
 
   async claimNext(allowedTypes = null, targetId = null) {
@@ -147,7 +154,7 @@ export class IngestJobStore {
       .sort();
     const now = Date.now();
 
-    const available = (await Promise.all(names.map(name => this.get(name.slice(0,-5))))).filter(Boolean);
+    const available = (await Promise.all(names.map(name => this.#readRecoverable(name.slice(0,-5))))).filter(Boolean);
     const priority = job => Number(job.priority || 0) + Math.min(100, Math.floor((now - Date.parse(job.createdAt)) / 60000));
     available.sort((a,b) => priority(b) - priority(a) || a.createdAt.localeCompare(b.createdAt));
     for (const job of available) {
@@ -363,8 +370,9 @@ export class IngestJobStore {
     const names = await readdir(this.#jobsDir());
     for (const name of names.filter((name) => name.endsWith(".json"))) {
       const id = name.slice(0, -5);
+      if (!isProjectId(id)) continue;
       await this.#withMutation(id, async () => {
-      const job = await this.get(id);
+      const job = await this.#readRecoverable(id);
       if (!job || !['PROCESSING', 'QUEUED'].includes(job.status)) return;
       const lease = await this.#leaseState(id);
       if (lease.active) return;
@@ -410,6 +418,18 @@ export class IngestJobStore {
 
   async #withMutation(id, action) {
     return withLocalStateLock(`${this.#jobPath(id)}.state`, action, { staleMs: 0 });
+  }
+
+  async #readRecoverable(id, issues = []) {
+    if (!isProjectId(id)) {
+      issues.push({ id: 'INVALID_INGEST_ID', message: 'Hay un registro de importación con identificador inválido. Se conserva para recuperación.' });
+      return null;
+    }
+    try { return await this.get(id); }
+    catch (error) {
+      if (error.code !== 'INGEST_METADATA_INVALID') throw error;
+      issues.push({ id, message: error.message }); return null;
+    }
   }
 
   async #leaseState(id) {
@@ -475,6 +495,10 @@ function sameAttempt(previous, current) {
   if (!current) return false;
   if (previous.claimId || current.claimId) return Boolean(previous.claimId && previous.claimId === current.claimId);
   return previous.attempts === current.attempts && previous.startedAt === current.startedAt;
+}
+
+function invalidMetadata() {
+  return Object.assign(new Error('No se pudieron leer los metadatos de esta importación. Se conservaron los archivos para recuperar el trabajo.'), { code: 'INGEST_METADATA_INVALID' });
 }
 
 

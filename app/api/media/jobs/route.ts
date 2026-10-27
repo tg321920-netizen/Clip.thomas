@@ -23,8 +23,9 @@ export async function POST(request: Request) {
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo iniciar el trabajo." }, { status: 400 }); }
 }
 export async function GET() {
-  const [{ jobs, issues }, ingests] = await Promise.all([new JobStore().listMediaWithIssues(),new IngestJobStore().list(30)]);
-  const uploads = ingests.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,retryable:job.retryable,error:job.error,createdAt:job.createdAt }));
+  const [{ jobs, issues: mediaIssues }, ingests] = await Promise.all([new JobStore().listMediaWithIssues(),new IngestJobStore().listWithIssues(30)]);
+  const issues = [...mediaIssues, ...ingests.issues];
+  const uploads = ingests.jobs.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,retryable:job.retryable,error:job.error,createdAt:job.createdAt }));
   const reviewed=[];for(const job of jobs)reviewed.push(await withCurrentEditorialReviews(job));
   return NextResponse.json({ jobs:reviewed,issues,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
 }
