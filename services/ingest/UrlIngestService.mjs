@@ -101,7 +101,7 @@ export async function ingestUrlJob(job, options = {}) {
   }
 
   await onProgress(94, "PROBING");
-  const technical = await probeMedia(mediaPath);
+  const technical = await probeMedia(mediaPath, { signal: options.signal });
   if (mode === "STREAM") {
     if (kickSource && !technical.hasAudio) throw new Error("La captura de Kick no contiene la pista de audio original.");
     await runProcess(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-threads", "1", "-xerror", "-i", mediaPath, "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"],
@@ -111,6 +111,7 @@ export async function ingestUrlJob(job, options = {}) {
     mediaPath,
     posterPath,
     Math.min(1, technical.durationSeconds / 2),
+    { signal: options.signal },
   );
 
   const storedName = path.basename(mediaPath);
@@ -331,11 +332,16 @@ export async function captureSegmentedStream({
   for (const name of existing) {
     signal?.throwIfAborted();
     try {
-      const technical = await probeMedia(path.join(partsDir, name));
+      const technical = await probeMedia(path.join(partsDir, name), { signal });
       await runProcess(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-threads", "1", "-xerror", "-i", path.join(partsDir, name), "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"],
         { signal, timeoutMs: (technical.durationSeconds + 180) * 1000 });
       capturedSeconds += technical.durationSeconds;
-    } catch {
+    } catch (error) {
+      // Cancellation, unavailable tools and worker/host failures do not prove
+      // that preserved media is corrupt. Keep its identity for a later retry.
+      signal?.throwIfAborted();
+      if (["ENOENT", "EACCES", "EPERM", "EAGAIN", "ENOMEM", "EMFILE", "ENFILE", "ENOSPC",
+        "INGEST_PROCESS_TIMEOUT", "INGEST_PROCESS_INTERRUPTED", "INGEST_PROBE_INVALID_RESPONSE"].includes(getErrorCode(error))) throw error;
       // Retain damaged recorder output for diagnosis, but never merge it.
       await rename(path.join(partsDir, name), path.join(partsDir, `${name}.invalid-${Date.now()}`));
     }
@@ -352,7 +358,7 @@ export async function captureSegmentedStream({
     const parts = await listStreamParts(partsDir);
     let offsetSeconds = 0;
     for (const name of final ? parts : parts.slice(0, -1)) {
-      const technical = await probeMedia(path.join(partsDir, name));
+      const technical = await probeMedia(path.join(partsDir, name), { signal: interrupted ? undefined : signal });
       const partOffset = offsetSeconds; offsetSeconds += technical.durationSeconds;
       if (delivered.has(name)) continue;
       if (!interrupted) signal?.throwIfAborted();
@@ -509,8 +515,8 @@ export async function queueCapturedSegment({ file, index, job, signal, liveObser
     signal?.throwIfAborted();
     const media = path.join(directory, "source.mp4");
     await runProcess(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-y", "-i", file, "-c", "copy", "-movflags", "+faststart", media], { signal, timeoutMs: 120000 });
-    const technical = await probeMedia(media);
-    await createPoster(media, path.join(directory, "poster.jpg"), Math.min(1, technical.durationSeconds / 2));
+    const technical = await probeMedia(media, { signal });
+    await createPoster(media, path.join(directory, "poster.jpg"), Math.min(1, technical.durationSeconds / 2), { signal });
     project = { id: projectId, createdAt: new Date().toISOString(), source: {
       projectId, originalName: `live-segment-${index}.mp4`, storedName: "source.mp4",
       relativePath: path.posix.join("uploads", projectId, "source.mp4"),
@@ -685,19 +691,19 @@ async function downloadDirectWithFfmpeg(url, output, signal) {
   );
 }
 
-async function probeMedia(filePath) {
+async function probeMedia(filePath, { signal } = {}) {
   const ffprobe = process.env.FFPROBE_PATH?.trim() || "ffprobe";
   const { stdout } = await runProcess(
     ffprobe,
     ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", filePath],
-    { timeoutMs: 2 * 60 * 1000 },
+    { signal, timeoutMs: 2 * 60 * 1000 },
   );
 
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error("FFprobe devolvió metadatos inválidos para la URL importada.");
+    throw Object.assign(new Error("FFprobe devolvió una respuesta de metadatos inválida. El original se conserva para revisar el entorno."), { code: "INGEST_PROBE_INVALID_RESPONSE" });
   }
 
   const video = parsed?.streams?.find((stream) => stream?.codec_type === "video" && stream.disposition?.attached_pic !== 1);
@@ -724,7 +730,7 @@ async function probeMedia(filePath) {
   };
 }
 
-async function createPoster(input, output, seekSeconds) {
+async function createPoster(input, output, seekSeconds, { signal } = {}) {
   const ffmpeg = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
   await runProcess(
     ffmpeg,
@@ -742,7 +748,7 @@ async function createPoster(input, output, seekSeconds) {
       "3",
       output,
     ],
-    { timeoutMs: 2 * 60 * 1000 },
+    { signal, timeoutMs: 2 * 60 * 1000 },
   );
 }
 
@@ -824,10 +830,11 @@ function runProcess(command, args, options = {}) {
     const timer = timeoutMs > 0
       ? setTimeout(() => {
           if (settled) return;
-          settled = true;
           if (resourceTimer) clearInterval(resourceTimer);
+          resourceFailure = Object.assign(new Error("El proceso de ingesta excedió su tiempo máximo."), { code: "INGEST_PROCESS_TIMEOUT" });
           child.kill("SIGKILL");
-          reject(new Error("El proceso de ingesta excedió su tiempo máximo."));
+          // As for cancellation, do not inspect a recorder's last fragment
+          // until its process and output pipes have actually closed.
         }, timeoutMs)
       : null;
     timer?.unref?.();
@@ -841,12 +848,13 @@ function runProcess(command, args, options = {}) {
       if (resourceTimer) clearInterval(resourceTimer);
       reject(error);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, exitSignal) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       if (resourceTimer) clearInterval(resourceTimer);
       if (resourceFailure) reject(resourceFailure);
+      else if (exitSignal) reject(Object.assign(new Error("El proceso de ingesta fue interrumpido; se conservan los segmentos para reintentar su verificación."), { code: "INGEST_PROCESS_INTERRUPTED" }));
       else if (code === 0) resolve({ stdout, stderr });
       else reject(
         new Error(
