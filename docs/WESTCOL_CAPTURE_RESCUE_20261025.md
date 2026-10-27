@@ -1,5 +1,10 @@
 # Rescate de captura y revisión de Westcol — 25 de octubre de 2026
 
+Actualización posterior: [WESTCOL_CAPTURE_RECHECK_20261027.md](WESTCOL_CAPTURE_RECHECK_20261027.md)
+registra otra captura VOD auténtica, un clip distinto en R2 y la corrección de
+cancelación/recuperación. Este documento conserva la evidencia histórica del 25;
+sus cifras no son el estado nuevo ni prueban un LIVE actual.
+
 ## Resultado y alcance
 
 **La captura de un VOD público autorizado volvió a funcionar con archivos nuevos verificables. No se declara reparada la captura del próximo directo ni una vigilancia 24/7.** Westcol estaba desconectado en la comprobación final del 25 de octubre a las 22:05:01 UTC (16:05:01 en Costa Rica): `SOURCE_OFFLINE`, etapa `SOURCE_STATE`.

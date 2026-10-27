@@ -14,6 +14,12 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Rescate de captura posterior: leer `docs/WESTCOL_CAPTURE_RECHECK_20261027.md`.
+Hay una captura VOD nueva, un borrador de 30,56 s y dos TS restaurados desde R2.
+La recuperación ya no aparta segmentos válidos por cancelación/fallo del host.
+No regenerar el comentario, VIP, Nike o reloj como entregas nuevas. El monitor
+sigue OFF y LIVE_NOT_TESTED; no atribuir chat inexistente a ese VOD.
+
 Continuación posterior del 27 de octubre: leer primero
 `docs/STUDIO_COMPLETION_20261027.md`. Conserva audio-only, glosarios, historial
 de subtítulos, recuperación de metadatos de hasta 16 MiB, deduplicación y el

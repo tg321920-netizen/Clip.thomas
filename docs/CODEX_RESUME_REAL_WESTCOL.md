@@ -1,5 +1,14 @@
 # Reanudar ClipForge: clips auténticos de Westcol
 
+**Rescate posterior del 27 de octubre:** leer primero
+[WESTCOL_CAPTURE_RECHECK_20261027.md](WESTCOL_CAPTURE_RECHECK_20261027.md).
+El VOD antiguo no aparecía entre los recientes; se capturó otra grabación pública
+del mismo canal. Nuevo clip: comentario y falta de tiempo, 30,56 s, archivo R2
+`78d8194bdd363ae41f80216bfed9ea257a255a13e03e7e3565654f1ece068237`.
+Fuente, dos TS, clip y checkpoints se restauraron con hashes idénticos.
+No volver a generarlo ni confundir esta prueba VOD con una captura LIVE.
+Se preservan todas las versiones candidatas y trabajos descritos debajo.
+
 **Continuación del 27 de octubre:** leer primero
 [STUDIO_COMPLETION_20261027.md](STUDIO_COMPLETION_20261027.md). Incluye cambios
 del motor compartido, audio-only, traducción revisable y pruebas móviles/R2.

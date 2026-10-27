@@ -57,6 +57,20 @@ La copia TS original se conserva incluso si su extracción final resulta inváli
 
 ## Recuperación privada
 
+La corrección del 27 de octubre distingue interrupción de corrupción: cancelar
+una verificación, no encontrar el decodificador, recibir una señal del host o una
+respuesta de FFprobe inválida no aparta por sí solo un TS como `.invalid-*`.
+La inspección del fragmento final espera al cierre del proceso. Los rechazos
+reales de datos siguen apartándose sin borrar bytes. La regresión y la nueva
+captura/restauración VOD están en `WESTCOL_CAPTURE_RECHECK_20261027.md`.
+
+La reanudación manual de Kick compara la sesión actual con el checkpoint antes
+de concatenar medios nuevos. `LIVE_SOURCE_CHANGED` o
+`LIVE_SOURCE_IDENTITY_UNKNOWN` requieren recuperar el checkpoint correcto o
+crear otra captura: no se reintentan automáticamente ni se cambia el reloj del
+material retenido. Una captura ya completa no consulta el directo actual para
+recuperar sus bytes. Esto no activa el monitor ni acredita un LIVE nuevo.
+
 Detener los workers antes de restaurar. Elegir un directorio nuevo; una colisión con datos diferentes se rechaza y no se sobrescribe:
 
 ```bash
