@@ -7,13 +7,19 @@ test('old heuristic cache cannot hide the repaired duration and context algorith
   const project={transcript:{id:'t',completedAt:'now',model:'real',segments:[{}]},analysis:{provider:'transcript-heuristic-v2',status:'COMPLETED',sourceKey:'t:now:real:1',candidates:[{}]}};
   assert.equal(isAnalysisCurrent(project),false);
   project.analysis.provider='transcript-heuristic-v3';assert.equal(isAnalysisCurrent(project),false);
-  project.analysis.provider='transcript-heuristic-v5';assert.equal(isAnalysisCurrent(project),true);
+  project.analysis.provider='transcript-heuristic-v6';assert.equal(isAnalysisCurrent(project),true);
 });
 test('applause does not move a complete speech boundary into non-spoken audio',async()=>{
   const segments=sentenceSegments([{startTime:0,endTime:4,text:'An earlier statement.'},{startTime:4,endTime:6,text:'[APPLAUSE]'},{startTime:6,endTime:32,text:'We choose to do this work because the challenge deserves our best efforts.'}]);
   const candidates=await new TranscriptCandidateProvider().analyze({transcript:{segments},options:{minDuration:20,maxDuration:30,targetDuration:26,requireCompleteSentences:true}});
   assert.ok(candidates.some(c=>c.startTime===6&&c.endTime===32));
   assert.ok(candidates.every(c=>!c.text.includes('APPLAUSE')));
+});
+
+test('strict automatic selection refuses a source beginning inside a sentence and removes actual parenthesized ASR annotations',async()=>{
+  const segments=sentenceSegments([{startTime:0,endTime:8,text:'the leader expects to stay behind in this race.'},{startTime:8,endTime:30,text:'Those who came before us made certain that this country led important discoveries.'},{startTime:32,endTime:60,text:'(applause) We have vowed to use these discoveries for freedom and peace.'}]);
+  const result=await new TranscriptCandidateProvider().analyze({transcript:{segments},options:{minDuration:15,maxDuration:35,targetDuration:25,requireCompleteSentences:true}});
+  assert.ok(result.length>0);assert.ok(result.every(c=>c.startTime>0));assert.ok(result.every(c=>!c.text.includes('(applause)')));
 });
 test('a sparse transcript never bypasses requested clip duration through fallback',async()=>{
   const result=await new TranscriptCandidateProvider().analyze({

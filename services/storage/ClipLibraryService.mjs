@@ -8,6 +8,7 @@ import { getStorageRoot } from '../../lib/storage-paths.mjs';
 import { signPrivateClip } from './SignedMediaAccess.mjs';
 import { parseByteRange } from '../../lib/http-range.mjs';
 import { R2ObjectStore, readR2Config, storageError } from './R2ObjectStore.mjs';
+import { loadProjectFile, updateProjectFile } from '../../lib/project-files.mjs';
 
 const PREFIX = 'clipforge-managed/v1/';
 const RECORDS = `${PREFIX}records/`;
@@ -198,11 +199,17 @@ export class ClipLibraryService {
   }
   async setReview(id,status,recut=null) {
     if(!['PENDING','REJECTED','RECUT_REQUESTED'].includes(status))throw storageError('STORAGE_INVALID','Revisión no válida.');
-    return this.#withWriter(async signal=>{
+    const saved=await this.#withWriter(async signal=>{
       const entry=await this.#read(id,signal);if(!entry || entry.record.status!=='READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');
       const updated={...entry.record,review:{status,reviewedAt:new Date(this.now()).toISOString()},...(recut?{recut}:{})};
       await this.store.putJson(recordKey(id),updated,{ifMatch:entry.etag,signal});return this.publicEntry(updated);
     });
+    try {
+      if(await loadProjectFile(saved.projectId))await updateProjectFile(saved.projectId,project=>{
+        const clip=project.clips?.find(c=>c.id===saved.clipId);if(clip)clip.editorialReview={...clip.editorialReview,status,reviewedAt:new Date(this.now()).toISOString()};
+      });
+    } catch { return {...saved,reviewSyncWarning:'La revisión está guardada en R2; falta sincronizar el proyecto local. Reintenta cuando vuelva a estar disponible.'}; }
+    return saved;
   }
   async temporaryAccess(id,options={}) {
     const entry=await this.#read(id);if(!entry || entry.record.status!=='READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');

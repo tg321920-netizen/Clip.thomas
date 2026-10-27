@@ -101,3 +101,11 @@ test("disabled auto reframe adds no FFmpeg filter", () => {
 
   assert.equal(filter, "");
 });
+
+test('Auto Focus preserves selected horizontal and 720p dimensions instead of forcing 1080x1920',()=>{
+  const plan={enabled:true,mode:'SPEECH_ZOOM',windows:[{startTime:1,endTime:3}]};
+  assert.match(buildSpeechZoomFilter(plan,30,{width:1280,height:720}),/s=1280x720/);
+  assert.match(buildSpeechZoomFilter(plan,30,{width:720,height:1280}),/s=720x1280/);
+  assert.match(buildSpeechZoomFilter(plan,30,{width:1920,height:1080}),/s=1920x1080/);
+  assert.throws(()=>buildSpeechZoomFilter(plan,30,{width:1279,height:720}),/inválida/);
+});

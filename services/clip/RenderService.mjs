@@ -84,7 +84,8 @@ export class RenderService {
     ) {
       const reframeFilter = buildSpeechZoomFilter(
         clip.autoReframe,
-        project?.source?.fps,
+        30, // fps=30 is applied before zoompan; source fps must not shift windows.
+        { width: this.width, height: this.height },
       );
 
       if (reframeFilter) {

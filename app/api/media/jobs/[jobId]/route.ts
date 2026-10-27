@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { JobStore } from "@/services/JobStore.mjs";
 import { readBoundedJson } from "@/lib/bounded-json.mjs";
+import { withCurrentEditorialReviews } from '@/services/clip/PrivateClipReviewService.mjs';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ jobId: string }> };
 export async function GET(_request: Request, context: Context) {
   try {
     const { jobId } = await context.params;
-    const job = await new JobStore().get(jobId);
+    const job = await withCurrentEditorialReviews(await new JobStore().get(jobId));
     return NextResponse.json({ job }, { status: job ? 200 : 404, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "JOB_METADATA_INVALID") return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });

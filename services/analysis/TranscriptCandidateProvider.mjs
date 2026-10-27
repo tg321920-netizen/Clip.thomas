@@ -9,7 +9,7 @@ const DEFAULTS = {
   targetDuration: 30,
   maxCandidates: 10,
 };
-export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v5';
+export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v6';
 
 export class TranscriptCandidateProvider {
   constructor(options = {}) {
@@ -116,6 +116,10 @@ function buildWindows(segments, config) {
   const windows = [];
 
   for (let startIndex = 0; startIndex < segments.length; startIndex += 1) {
+    // A source window itself can begin inside a sentence. Punctuation at its
+    // end is not evidence that a lowercase opening is a complete beginning.
+    const opening=segments[startIndex].text.match(/\p{L}/u)?.[0];
+    if(config.requireCompleteSentences && startIndex===0 && opening && opening!==opening.toUpperCase() && !/^[¿¡]/u.test(segments[startIndex].text))continue;
     if(config.preserveDialogueContext&&config.contentProfile==='PODCAST'&&startIndex>0&&
       /[?？]["'»”)]?$/.test(segments[startIndex-1].text.trim())&&
       segments[startIndex].startTime-segments[startIndex-1].endTime<=Math.min(2,config.maxSilenceGapSeconds))continue;

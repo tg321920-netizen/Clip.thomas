@@ -166,11 +166,12 @@ export function buildSpeechWindows(transcript, clip, options = {}) {
   return merged.slice(0, 32);
 }
 
-export function buildSpeechZoomFilter(plan, fpsValue) {
+export function buildSpeechZoomFilter(plan, fpsValue, { width=1080, height=1920 } = {}) {
   if (!plan?.enabled || plan.mode !== MODE) return "";
 
   const windows = Array.isArray(plan.windows) ? plan.windows : [];
   if (windows.length === 0) return "";
+  if(![width,height].every(n=>Number.isSafeInteger(n)&&n>=144&&n<=3840&&n%2===0))throw new Error('Resolución de Auto Focus inválida.');
 
   const fps = clampNumber(fpsValue, 12, 60, 30);
   const zoom = clampNumber(plan.zoom, 1.03, 1.35, 1.12);
@@ -205,7 +206,7 @@ export function buildSpeechZoomFilter(plan, fpsValue) {
     "x='iw/2-(iw/zoom/2)'",
     "y='ih*0.44-(ih/zoom/2)'",
     "d=1",
-    "s=1080x1920",
+    `s=${width}x${height}`,
     `fps=${round(fps, 3)}`,
   ].join(":");
 }

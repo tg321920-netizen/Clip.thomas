@@ -6,6 +6,7 @@ import { readBoundedJson } from "@/lib/bounded-json.mjs";
 import { IngestJobStore } from "@/services/ingest/IngestJobStore.mjs";
 import { getStoryProviderStatus } from "@/services/owned-content/StoryGenerationProviders.mjs";
 import { releasePolicy } from "@/lib/release-policy.mjs";
+import { withCurrentEditorialReviews } from '@/services/clip/PrivateClipReviewService.mjs';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
 export async function GET() {
   const [{ jobs, issues }, ingests] = await Promise.all([new JobStore().listMediaWithIssues(),new IngestJobStore().list(30)]);
   const uploads = ingests.map(job => ({ id:job.id,type:job.type,name:job.source.filename || "Importación URL",status:job.status,stage:job.stage,progress:job.progress,retryable:job.retryable,error:job.error,createdAt:job.createdAt }));
-  return NextResponse.json({ jobs,issues,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
+  const reviewed=[];for(const job of jobs)reviewed.push(await withCurrentEditorialReviews(job));
+  return NextResponse.json({ jobs:reviewed,issues,uploads,story:getStoryProviderStatus() }, { headers: { "Cache-Control": "no-store" } });
 }
 

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { ClipLibraryService, getClipLibraryStatus, readClipArchiveHealth } from '../services/storage/ClipLibraryService.mjs';
 import { MemoryObjectStore } from './helpers/memory-object-store.mjs';
+import { replaceProjectFile,loadProjectFile } from '../lib/project-files.mjs';
+import { withCurrentEditorialReviews } from '../services/clip/PrivateClipReviewService.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'clip-library-'));
@@ -47,6 +49,15 @@ test('audio-only archives keep their kind and bytes across a fresh library insta
   const second=new ClipLibraryService({store:f.store});const loaded=await second.identity(saved.id);assert.equal(loaded.mediaKind,'AUDIO');
   const downloaded=await second.source(saved.id);const parts=[];for await(const part of downloaded.body)parts.push(part);
   assert.deepEqual(Buffer.concat(parts),f.bytes);assert.equal((await f.service.archive(f.project,f.clip)).id,saved.id);assert.equal(f.store.uploads,1);
+});
+
+test('rejecting an archived clip updates the local editorial review and history response without changing its render state',async t=>{
+  const f=await fixture(t);await replaceProjectFile(f.project.id,{...f.project,clips:[f.clip]});
+  const saved=await f.service.archive(f.project,f.clip);await f.service.setReview(saved.id,'REJECTED');
+  const p=await loadProjectFile(f.project.id);assert.equal(p.clips[0].editorialReview.status,'REJECTED');assert.equal(p.clips[0].status,'READY');
+  const job={projectId:f.project.id,status:'READY',result:{clips:[{clipId:f.clip.id,editorialReview:{status:'PENDING'}}]}};
+  assert.equal((await withCurrentEditorialReviews(job)).result.clips[0].editorialReview.status,'REJECTED');
+  assert.equal(job.result.clips[0].editorialReview.status,'PENDING');assert.equal((await stat(f.filename)).size,f.bytes.length);
 });
 
 test('cleanup preserves MP4 referenced by a private project checkpoint even after ordinary retention expires',async t=>{

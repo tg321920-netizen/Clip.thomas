@@ -26,3 +26,15 @@ export async function requestPrivateRecut(archiveId,{startTime,endTime},{library
 }
 
 function recutError(message){return Object.assign(new Error(message),{code:'RECUT_INVALID'});}
+
+/** Render readiness and editorial approval are independent. Reflect an owner's
+ * latest local review without rewriting the completed render job or its files. */
+export async function withCurrentEditorialReviews(job){
+  if(!job?.result?.clips?.length)return job;
+  let project;try{project=await loadProjectFile(job.projectId);}catch{}
+  const clips=job.result.clips.map(output=>{
+    const current=project?.clips?.find(c=>c.id===output.clipId);
+    return {...output,editorialReview:current?.editorialReview||{status:'NOT_VERIFIED'}};
+  });
+  return {...job,result:{...job.result,clips}};
+}
