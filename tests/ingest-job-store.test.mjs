@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, utimes } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { IngestJobStore } from "../services/ingest/IngestJobStore.mjs";
@@ -33,6 +33,9 @@ test("ingest jobs persist, retry and recover an interrupted worker without infin
     assert.equal(persisted.stage, "DOWNLOADING");
 
     const lockPath = path.join(root, "ingest-jobs", `${created.id}.lock`);
+    // A slow live worker must not be reclaimed merely because its mtime aged.
+    // Simulate an exited owner, rather than the still-live test runner.
+    await writeFile(lockPath, JSON.stringify({ pid: 2147483647, key: 'dead-process' }));
     const old = new Date(Date.now() - 1000);
     await utimes(lockPath, old, old);
 
@@ -93,6 +96,7 @@ test("repeated worker crashes cannot bypass the maximum attempt count", async ()
     const job = await store.create({ url: "https://example.com/live.m3u8", mode: "STREAM" });
     await store.claimNext();
     const old = new Date(Date.now() - 1000);
+    await writeFile(path.join(root, "ingest-jobs", `${job.id}.lock`), JSON.stringify({ pid: 2147483647, key: 'dead-process' }));
     await utimes(path.join(root, "ingest-jobs", `${job.id}.lock`), old, old);
     assert.equal(await store.claimNext(), null);
     assert.equal((await store.get(job.id)).status, "FAILED");

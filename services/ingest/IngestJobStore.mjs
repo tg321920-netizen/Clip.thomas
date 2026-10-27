@@ -3,7 +3,6 @@ import {
   open,
   readFile,
   readdir,
-  rename,
   rm,
   stat,
   writeFile,
@@ -12,11 +11,14 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { isProjectId } from "../../lib/project-id.mjs";
+import { leaseOwner, ownerIsAlive } from "../../lib/process-lease.mjs";
+import { withLocalStateLock, writeAtomicJson } from "../../lib/atomic-local-state.mjs";
 
 export class IngestJobStore {
   constructor(options = {}) {
     this.maxAttempts = options.maxAttempts ?? 3;
     this.staleAfterMs = options.staleAfterMs ?? 2 * 60 * 1000;
+    this.claims = new Map();
   }
 
   async enqueueUpload(input) {
@@ -158,17 +160,23 @@ export class IngestJobStore {
         Date.parse(job.nextAttemptAt || job.createdAt) > now
       ) continue;
 
-      const locked = await this.#tryLock(id);
-      if (!locked) continue;
+      const claimed = await this.#withMutation(id, async () => {
+      // Recheck eligibility under the same lock used by retry and recovery.
+      const candidate = await this.get(id);
+      if (!candidate || candidate.status !== 'QUEUED' || Date.parse(candidate.nextAttemptAt || candidate.createdAt) > Date.now()) return null;
+      const claimId = randomUUID();
+      const locked = await this.#tryLock(id, claimId);
+      if (!locked) return null;
 
       const fresh = await this.get(id);
       if (!fresh || fresh.status !== "QUEUED") {
-        await this.release(id);
-        continue;
+        await this.release(id, claimId);
+        return null;
       }
 
       const updated = {
         ...fresh,
+        claimId,
         status: "PROCESSING",
         stage: fresh.stage === "QUEUED" ? "VALIDATING" : fresh.stage,
         attempts: Number(fresh.attempts || 0) + 1,
@@ -176,16 +184,22 @@ export class IngestJobStore {
         updatedAt: new Date().toISOString(),
         error: null,
       };
-      await this.#write(updated);
+      try { await this.#write(updated); }
+      catch (error) { await this.release(id, claimId); throw error; }
+      this.claims.set(id, claimId);
       return updated;
+      });
+      if (claimed) return claimed;
     }
 
     return null;
   }
 
   async update(id, patch = {}) {
+    return this.#withMutation(id, async () => {
     const job = await this.get(id);
     if (!job) return null;
+    if (job.status === 'CANCELLED') return job;
     const updated = {
       ...job,
       ...patch,
@@ -196,41 +210,62 @@ export class IngestJobStore {
     };
     await this.#write(updated);
     return updated;
+    });
   }
 
   async updateProgress(id, progress, stage = null, details = null) {
+    return this.#withMutation(id, async () => {
     const job = await this.get(id);
     if (!job || job.status !== "PROCESSING") return job;
-    return this.update(id, {
+    if (this.claims.has(id) && this.claims.get(id) !== job.claimId) return job;
+    const updated = { ...job,
       progress: Math.max(0, Math.min(99, Math.round(Number(progress) || 0))),
       ...(stage ? { stage: String(stage) } : {}),
       ...(details ? { details: { chatStatus: String(details.chatStatus || "UNAVAILABLE"), acceptedMessages: Math.max(0, Math.round(Number(details.acceptedMessages) || 0)) } } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.#write(updated);
+    return updated;
     });
   }
 
   async heartbeat(id) {
     assertId(id);
+    let handle;
     try {
-      await writeFile(this.#lockPath(id), new Date().toISOString(), {
-        encoding: "utf8",
-      });
+      const job = await this.get(id);
+      if (!job || job.status !== 'PROCESSING' || (this.claims.has(id) && this.claims.get(id) !== job.claimId)) return false;
+      // Opening an existing inode avoids resurrecting a lease after complete().
+      handle = await open(this.#lockPath(id), 'r+');
+      let owner;
+      try { owner = JSON.parse(await handle.readFile('utf8')); }
+      catch (error) { if (error instanceof SyntaxError) return false; throw error; }
+      const current = leaseOwner();
+      if (owner?.pid !== current.pid || owner.key !== current.key || owner.claimId !== job.claimId) return false;
+      const now = new Date();
+      await handle.utimes(now, now);
       return true;
     } catch (error) {
       if (getErrorCode(error) === "ENOENT") return false;
       throw error;
-    }
+    } finally { await handle?.close(); }
   }
 
   async cancel(id) {
+    return this.#withMutation(id, async () => {
     const job = await this.get(id);
     if (!job || ["COMPLETED", "FAILED", "CANCELLED"].includes(job.status)) return job;
     await writeFile(`${this.#jobPath(id)}.cancel`, new Date().toISOString(), "utf8");
     return this.get(id);
+    });
   }
 
   async complete(job, result) {
+    return this.#withMutation(job.id, async () => {
     const fresh = await this.get(job.id);
-    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    if (!sameAttempt(job, fresh)) return fresh;
+    if (fresh?.status === "CANCELLED") { await this.release(job.id, job.claimId); return fresh; }
+    if (fresh?.status !== 'PROCESSING') return fresh;
     job = fresh || job;
     const completed = {
       ...job,
@@ -244,13 +279,17 @@ export class IngestJobStore {
       nextAttemptAt: null,
     };
     await this.#write(completed);
-    await this.release(job.id);
+    await this.release(job.id, job.claimId);
     return completed;
+    });
   }
 
   async fail(job, error, options = {}) {
+    return this.#withMutation(job.id, async () => {
     const fresh = await this.get(job.id);
-    if (fresh?.status === "CANCELLED") { await this.release(job.id); return fresh; }
+    if (!sameAttempt(job, fresh)) return fresh;
+    if (fresh?.status === "CANCELLED") { await this.release(job.id, job.claimId); return fresh; }
+    if (fresh?.status !== 'PROCESSING') return fresh;
     job = fresh || job;
     const attempts = Number(job.attempts || 0);
     const maxAttempts = Number(job.maxAttempts || this.maxAttempts);
@@ -272,25 +311,23 @@ export class IngestJobStore {
       nextAttemptAt: terminal ? null : new Date(now + delayMs).toISOString(),
     };
     await this.#write(failed);
-    await this.release(job.id);
+    await this.release(job.id, job.claimId);
     return failed;
+    });
   }
 
   async retry(id) {
+    return this.#withMutation(id, async () => {
     const job = await this.get(id);
     if (!job) return null;
     if (!new Set(["FAILED", "QUEUED", "CANCELLED"]).has(job.status)) {
       throw new Error(`Ingest job cannot be retried from ${job.status}.`);
     }
-    if (job.status === "CANCELLED") {
-      try {
-        const lock = await stat(this.#lockPath(id));
-        if (Date.now() - lock.mtimeMs < this.staleAfterMs) throw new Error("La captura todavía está deteniéndose. Espera unos segundos antes de reanudar.");
-      } catch (error) { if (getErrorCode(error) !== "ENOENT") throw error; }
-    }
+    if ((await this.#leaseState(id)).active) throw new Error("La captura todavía está deteniéndose. Espera unos segundos antes de reanudar.");
     await rm(`${this.#jobPath(id)}.cancel`, { force: true });
     const retried = {
       ...job,
+      claimId: null,
       status: "QUEUED",
       stage: "QUEUED",
       progress: 0,
@@ -305,32 +342,36 @@ export class IngestJobStore {
     await this.#write(retried);
     await this.release(id);
     return retried;
+    });
   }
 
-  async release(id) {
+  async release(id, claimId = null) {
     assertId(id);
+    if (claimId) {
+      try {
+        const owner = JSON.parse(await readFile(this.#lockPath(id), 'utf8'));
+        if (owner.claimId !== claimId) return false;
+      } catch (error) { if (getErrorCode(error) === 'ENOENT') return false; throw error; }
+    }
     await rm(this.#lockPath(id), { force: true });
+    if (!claimId || this.claims.get(id) === claimId) this.claims.delete(id);
+    return true;
   }
 
   async #recoverStale() {
     await this.#ensureDirectory();
     const names = await readdir(this.#jobsDir());
-    const now = Date.now();
-
     for (const name of names.filter((name) => name.endsWith(".json"))) {
       const id = name.slice(0, -5);
+      await this.#withMutation(id, async () => {
       const job = await this.get(id);
-      if (!job || job.status !== "PROCESSING") continue;
-
-      let lockAge = Infinity;
-      try {
-        const info = await stat(this.#lockPath(id));
-        lockAge = now - info.mtimeMs;
-      } catch (error) {
-        if (getErrorCode(error) !== "ENOENT") throw error;
-      }
-
-      if (lockAge < this.staleAfterMs) continue;
+      if (!job || !['PROCESSING', 'QUEUED'].includes(job.status)) return;
+      const lease = await this.#leaseState(id);
+      if (lease.active) return;
+      if (job.status === 'QUEUED') { if (lease.exists) await this.release(id); return; }
+      // A missing file immediately after an old deployment is not proof that
+      // the last known work is already stale. Fresh claims are serialized.
+      if (!lease.exists && Date.now() - Date.parse(job.updatedAt || job.createdAt) < this.staleAfterMs) return;
 
       const exhausted = Number(job.attempts || 0) >= Number(job.maxAttempts || this.maxAttempts);
       await this.#write({
@@ -344,16 +385,19 @@ export class IngestJobStore {
         nextAttemptAt: exhausted ? null : new Date().toISOString(),
       });
       await this.release(id);
+      });
     }
   }
 
-  async #tryLock(id) {
+  async #tryLock(id, claimId) {
+    let handle;
     try {
-      const handle = await open(this.#lockPath(id), "wx");
-      await handle.writeFile(new Date().toISOString(), "utf8");
-      await handle.close();
+      handle = await open(this.#lockPath(id), "wx");
+      await handle.writeFile(JSON.stringify({ ...leaseOwner(), claimId }), "utf8");
+      await handle.close(); handle = null;
       return true;
     } catch (error) {
+      if (handle) { await handle.close().catch(() => {}); await rm(this.#lockPath(id), { force: true }); }
       if (getErrorCode(error) === "EEXIST") return false;
       throw error;
     }
@@ -361,13 +405,25 @@ export class IngestJobStore {
 
   async #write(job) {
     await this.#ensureDirectory();
-    const target = this.#jobPath(job.id);
-    const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(job, null, 2), {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    await rename(temp, target);
+    await writeAtomicJson(this.#jobPath(job.id), job);
+  }
+
+  async #withMutation(id, action) {
+    return withLocalStateLock(`${this.#jobPath(id)}.state`, action, { staleMs: 0 });
+  }
+
+  async #leaseState(id) {
+    try {
+      const info = await stat(this.#lockPath(id));
+      const contents = await readFile(this.#lockPath(id), 'utf8');
+      let owner;
+      try { owner = JSON.parse(contents); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+      if (Number.isSafeInteger(owner?.pid) && owner.pid > 0) return { exists: true, active: ownerIsAlive(owner) };
+      // Timestamp leases from prior versions remain supported. An incomplete
+      // create needs a grace period before it can safely be recovered.
+      const grace = Number.isFinite(Date.parse(contents)) ? this.staleAfterMs : Math.max(5000, this.staleAfterMs);
+      return { exists: true, active: Date.now() - info.mtimeMs < grace };
+    } catch (error) { if (getErrorCode(error) === 'ENOENT') return { exists: false, active: false }; throw error; }
   }
 
   async #ensureDirectory() {
@@ -413,6 +469,12 @@ function assertId(id) {
 
 function getErrorCode(error) {
   return error instanceof Error && "code" in error ? error.code : undefined;
+}
+
+function sameAttempt(previous, current) {
+  if (!current) return false;
+  if (previous.claimId || current.claimId) return Boolean(previous.claimId && previous.claimId === current.claimId);
+  return previous.attempts === current.attempts && previous.startedAt === current.startedAt;
 }
 
 
