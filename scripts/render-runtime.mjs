@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { stopChildProcesses } from '../lib/child-shutdown.mjs';
 
 const storageRoot = path.resolve(
   process.env.CLIPFORGE_STORAGE_DIR?.trim() || path.join(process.cwd(), "storage"),
@@ -75,32 +76,13 @@ function startChild(name, args) {
   });
 }
 
-function shutdown(signal, exitCode = 0) {
+async function shutdown(signal, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[runtime] shutting down ${children.size} processes...`);
 
-  for (const child of children.values()) {
-    if (!child.killed) child.kill(signal);
-  }
-
-  const timer = setTimeout(() => {
-    for (const child of children.values()) {
-      if (!child.killed) child.kill("SIGKILL");
-    }
-    process.exit(exitCode);
-  }, 15_000);
-  timer.unref();
-
-  Promise.all(
-    [...children.values()].map(
-      (child) =>
-        new Promise((resolve) => {
-          if (child.exitCode !== null || child.signalCode !== null) resolve();
-          else child.once("exit", resolve);
-        }),
-    ),
-  ).finally(() => process.exit(exitCode));
+  const result=await stopChildProcesses([...children.values()],{signal,graceMs:15000});
+  process.exit(result.remaining?1:exitCode);
 }
 
 async function verifyRuntime() {

@@ -20,6 +20,8 @@ export async function GET() {
         posterUrl: record.source.posterUrl,
         sourceUrl: record.source.sourceUrl || `/api/projects/${record.id}/source`,
         durationSeconds: record.source.durationSeconds,
+        mediaKind: record.source.mediaKind || 'VIDEO',
+        hasAudio: record.source.hasAudio,
         width: record.source.width,
         height: record.source.height,
         fps: record.source.fps,

@@ -45,7 +45,7 @@ async function audioCorrelation(filename,clip){
 }
 try{
   await waitUntil(async()=>{try{return(await fetch(base+'/api/health')).ok;}catch{return false;}},90);
-  assert.equal((await fetch(base+'/api/projects')).status,401);
+  const anonymousStatus=(await fetch(base+'/api/projects')).status;evidence.anonymousStatus=anonymousStatus;assert.equal(anonymousStatus,401);
   const proxyUrl=process.env.HTTPS_PROXY||process.env.HTTP_PROXY,proxy=proxyUrl?{server:new URL(proxyUrl).origin,bypass:'127.0.0.1,localhost'}:undefined;
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox'],proxy});
   const context=await browser.newContext({viewport:{width:393,height:851},isMobile:true,hasTouch:true,acceptDownloads:true,proxy});
@@ -96,5 +96,5 @@ try{
   }
   evidence.status='PASSED';evidence.peakProcessTreeRssKiB=peakRssKiB;evidence.memoryMethod='SUM_OF_PROCESS_TREE_RSS_INCLUDING_SHARED_PAGES_NOT_CGROUP_PEAK';
   evidence.realAsr=(await loadProjectFile(project.id)).transcript?.provider;await writeFile(path.join(run,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({status:'PASSED',run,sha256:initialSha,r2:cloud}));
-}catch(error){evidence.status='FAILED';evidence.failedStage=stage;evidence.errorCode=error.code||'ACCEPTANCE_FAILED';await writeFile(path.join(run,'evidence.json'),JSON.stringify(evidence,null,2));console.error(JSON.stringify({status:'FAILED',stage,run,errorCode:evidence.errorCode}));process.exitCode=1;}
+}catch(error){evidence.status='FAILED';evidence.failedStage=stage;evidence.errorCode=error.code||'ACCEPTANCE_FAILED';evidence.diagnostic=String(error.message).split('\n')[0].replace(/https?:\/\/\S+/gu,'[URL_REDACTED]').replace(/[a-f0-9]{32,}/giu,'[HASH_OR_SECRET_REDACTED]').slice(0,350);const pages=browser?.contexts()[0]?.pages()||[];await pages.at(-1)?.screenshot({path:path.join(run,'failure-mobile.png'),fullPage:true}).catch(()=>{});await writeFile(path.join(run,'evidence.json'),JSON.stringify(evidence,null,2));console.error(JSON.stringify({status:'FAILED',stage,run,errorCode:evidence.errorCode,diagnostic:evidence.diagnostic}));process.exitCode=1;}
 finally{clearInterval(sampler);await browser?.close();server.kill('SIGTERM');await Promise.race([once(server,'exit'),delay(8000)]);await log.close();}

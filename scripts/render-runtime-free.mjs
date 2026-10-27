@@ -5,6 +5,7 @@ import path from "node:path";
 import { PUBLISHING_ENABLED } from "../lib/publishing-policy.mjs";
 import { runtimeWorkerScripts, releasePolicy } from "../lib/release-policy.mjs";
 import { saveRuntimeStatus } from "../lib/runtime-status.mjs";
+import { stopChildProcesses } from '../lib/child-shutdown.mjs';
 
 const storageRoot = path.resolve(
   process.env.CLIPFORGE_STORAGE_DIR?.trim() || "/tmp/clipforge",
@@ -255,36 +256,15 @@ function runWorkerOnce(script) {
   });
 }
 
-function shutdown(signal, exitCode = 0) {
+async function shutdown(signal, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(runtimeHeartbeat);
   void saveRuntimeStatus({status:'STOPPED',profile:releasePolicy().channel}).catch(()=>{});
   console.log("[free-runtime] shutting down...");
 
-  for (const child of [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]) {
-    if (child && !child.killed) child.kill(signal);
-  }
-
-  const timer = setTimeout(() => {
-    for (const child of [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]) {
-      if (child && !child.killed) child.kill("SIGKILL");
-    }
-    process.exit(exitCode);
-  }, 10_000);
-  timer.unref();
-
-  const pending = [activeWorker, smokeChild, projectBackupChild, ingestChild, webChild]
-    .filter(Boolean)
-    .map(
-      (child) =>
-        new Promise((resolve) => {
-          if (child.exitCode !== null || child.signalCode !== null) resolve();
-          else child.once("exit", resolve);
-        }),
-    );
-
-  Promise.all(pending).finally(() => process.exit(exitCode));
+  const result=await stopChildProcesses([activeWorker,smokeChild,projectBackupChild,ingestChild,webChild],{signal,graceMs:10000});
+  process.exit(result.remaining?1:exitCode);
 }
 
 async function verifyRuntime() {
