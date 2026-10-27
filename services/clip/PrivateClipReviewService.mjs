@@ -7,6 +7,7 @@ import {withLocalStateLock} from '../../lib/atomic-local-state.mjs';
 import {createClipFromCandidate} from './ClipService.mjs';
 import {JobStore} from '../JobStore.mjs';
 import path from 'node:path';
+import {clipResult} from './ClipResult.mjs';
 export async function requestPrivateRecut(archiveId,{startTime,endTime},{library=new ClipLibraryService(),jobs=new JobStore()}={}){
   const entry=await library.identity(archiveId),start=Number(startTime),end=Number(endTime);
   if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end-start<15||end-start>90)throw recutError('El nuevo recorte debe durar de 15 a 90 segundos.');
@@ -34,7 +35,13 @@ export async function withCurrentEditorialReviews(job){
   let project;try{project=await loadProjectFile(job.projectId);}catch{}
   const clips=job.result.clips.map(output=>{
     const current=project?.clips?.find(c=>c.id===output.clipId);
-    return {...output,editorialReview:current?.editorialReview||{status:'NOT_VERIFIED'}};
+    const available=current?.status==='READY'&&Boolean(current.render?.relativePath&&current.render?.sourceUrl);
+    const hasCues=Boolean(current?.subtitles?.cues?.length);
+    return {...output,...(available?clipResult(project,current):{}),available,clipStatus:current?.status||'NOT_VERIFIED',
+      srtUrl:hasCues?`/api/projects/${project.id}/clips/${current.id}/subtitles?format=srt`:null,
+      subtitleMode:hasCues?current.subtitles.mode||current.edit?.subtitleMode||null:'NONE',
+      subtitleReviewStatus:hasCues?current.subtitles.reviewStatus||'PENDING':null,
+      editorialReview:current?.editorialReview||{status:'NOT_VERIFIED'}};
   });
   return {...job,result:{...job.result,clips}};
 }

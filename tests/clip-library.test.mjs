@@ -60,6 +60,18 @@ test('rejecting an archived clip updates the local editorial review and history 
   assert.equal(job.result.clips[0].editorialReview.status,'PENDING');assert.equal((await stat(f.filename)).size,f.bytes.length);
 });
 
+test('finished media history reflects the current subtitle revision and hides obsolete render links while editing',async t=>{
+  const f=await fixture(t);
+  const current={...f.clip,status:'DRAFT',render:null,subtitles:{mode:'TRANSLATE_ES',language:'es',reviewStatus:'REVIEW_REQUIRED',cues:[{id:'cue',startTime:0,endTime:2,text:'Texto corregido.'}]}};
+  await replaceProjectFile(f.project.id,{...f.project,clips:[current]});
+  const job={projectId:f.project.id,status:'READY',result:{clips:[{clipId:f.clip.id,srtUrl:null,subtitleMode:'NONE',downloadUrl:'/obsolete-render'}]}};
+  const refreshed=(await withCurrentEditorialReviews(job)).result.clips[0];
+  assert.equal(refreshed.clipStatus,'DRAFT');assert.equal(refreshed.available,false);
+  assert.equal(refreshed.subtitleMode,'TRANSLATE_ES');assert.equal(refreshed.subtitleReviewStatus,'REVIEW_REQUIRED');
+  assert.match(refreshed.srtUrl,/subtitles\?format=srt$/);
+  assert.equal(job.result.clips[0].srtUrl,null);
+});
+
 test('cleanup preserves MP4 referenced by a private project checkpoint even after ordinary retention expires',async t=>{
   const f=await fixture(t),saved=await f.service.archive(f.project,f.clip);
   await f.store.putJson('clipforge-managed/v1/project-recovery/'+f.project.id+'.json',
