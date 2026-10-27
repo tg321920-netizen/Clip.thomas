@@ -9,7 +9,7 @@ const DEFAULTS = {
   targetDuration: 30,
   maxCandidates: 10,
 };
-export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v4';
+export const TRANSCRIPT_HEURISTIC_VERSION='transcript-heuristic-v5';
 
 export class TranscriptCandidateProvider {
   constructor(options = {}) {
@@ -17,7 +17,7 @@ export class TranscriptCandidateProvider {
     this.options = normalizeAnalysisOptions(options);
   }
 
-  async analyze({ transcript, options = {}, audioEnergyWindows = [], sceneChanges = null, chatActivityWindows = [] }) {
+  async analyze({ project, transcript, options = {}, audioEnergyWindows = [], sceneChanges = null, chatActivityWindows = [] }) {
     const config = normalizeAnalysisOptions({ ...this.options, ...options });
     const segments = normalizeSegments(transcript?.segments);
 
@@ -43,6 +43,14 @@ export class TranscriptCandidateProvider {
           reason: scoring.reasons.join(" "),
           status: "CANDIDATE",
           analysisMethod: this.name,
+          sourceReference: { projectId: project?.id || transcript?.projectId || null, videoId: project?.source?.videoId || null },
+          editorialReview: {status:'PENDING',semanticConfirmation:'NOT_PERFORMED'},
+          qualityWarnings: [
+            ...(/^(?:and|but|because|its|their|his|her|y|pero|porque|su|sus)\b/iu.test(window.text)?['CONTEXT_DEPENDENT_START']:[]),
+            ...(!hasSentenceEnd(window.text)?['INCOMPLETE_SENTENCE_END']:[]),
+            ...(!audioEnergyWindows.length?['AUDIO_NOT_MEASURED']:!window.audiovisualEvidence.audio.audible?['LOW_OR_UNVERIFIED_AUDIO']:[]),
+            ...(sceneChanges===null?[project?.source?.mediaKind==='AUDIO'?'AUDIO_ONLY_SOURCE':'VISUAL_NOT_MEASURED']:[]),
+          ],
         };
       })
       .filter(candidate => !config.requireAvEvidence || (candidate.audiovisualEvidence.audio.audible && candidate.audiovisualEvidence.sceneScanMeasured && candidate.components.clarity >= 60 && candidate.components.standaloneComprehensibility >= 50))

@@ -20,7 +20,7 @@ export async function probeMediaFile(filename) {
   const { stdout } = await runMedia(process.env.FFPROBE_PATH?.trim() || "ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", filename], { timeoutMs: 60_000 });
   const parsed = JSON.parse(stdout);
   const video = parsed.streams?.find(s => s.codec_type === "video"), audio = parsed.streams?.find(s => s.codec_type === "audio");
-  return { parsed, video, audio, duration: Number(parsed.format?.duration || video?.duration || 0) };
+  return { parsed, video, audio, duration: Number(parsed.format?.duration || video?.duration || audio?.duration || 0) };
 }
 
 /** Validate the actual container and decode it before a result can become READY. */
@@ -28,6 +28,12 @@ export async function validateMp4(filename, options = {}) {
   const info = await stat(filename);
   if (!info.isFile() || info.size <= 0) throw new Error("El MP4 no existe o está vacío.");
   const { video, audio, duration, parsed } = await probeMediaFile(filename);
+  if (options.audioOnly === true) {
+    if (video || !audio || audio.codec_name !== 'aac' || !String(parsed.format?.format_name).includes('mp4') || !Number.isFinite(duration) || duration<=0) throw new Error('El recorte de audio no es un M4A/AAC válido o contiene una imagen no solicitada.');
+    if (options.duration && Math.abs(duration-options.duration)>Math.max(.4,options.duration*.025)) throw new Error('El recorte de audio está incompleto.');
+    await runMedia(process.env.FFMPEG_PATH?.trim()||'ffmpeg',['-v','error','-threads','1','-xerror','-i',filename,'-map','0:a:0','-f','null','-']);
+    return {valid:true,checkedAt:new Date().toISOString(),sizeBytes:info.size,mediaKind:'AUDIO',duration,width:0,height:0,videoCodec:null,audioCodec:'aac',fullDecode:true,subtitleValidation:'SRT_SIDECAR_ONLY',synchronization:'ORIGINAL_AUDIO_ONLY'};
+  }
   if (!video?.width || !video?.height || !Number.isFinite(duration) || duration <= 0) throw new Error("El MP4 no tiene una pista de video y duración válidas.");
   if (options.requireAudio && !audio) throw new Error("El MP4 no contiene el audio solicitado.");
   if (video.codec_name !== "h264" || video.pix_fmt !== "yuv420p" || (audio && audio.codec_name !== "aac")) throw new Error("El MP4 no usa H.264, yuv420p y AAC compatibles con Android.");

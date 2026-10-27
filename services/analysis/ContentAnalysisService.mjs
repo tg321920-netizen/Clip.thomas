@@ -61,7 +61,7 @@ export async function analyzeProject(projectId, options = {}) {
 
   try {
     const [audioEnergyWindows, sceneChanges] = config.measureMediaEvidence
-      ? await Promise.all([measureAudioEnergy(resolveStoragePath(project.source.relativePath)),measureSceneChanges(resolveStoragePath(project.source.relativePath))]) : [[],null];
+      ? await Promise.all([measureAudioEnergy(resolveStoragePath(project.source.relativePath)),project.source.mediaKind === 'AUDIO' ? Promise.resolve(null) : measureSceneChanges(resolveStoragePath(project.source.relativePath))]) : [[],null];
     const candidates = await provider.analyze({
       project,
       transcript: config.requireCompleteSentences ? {...transcript,segments:sentenceSegments(transcript.segments,{maxGapSeconds:config.maxSilenceGapSeconds})} : transcript,

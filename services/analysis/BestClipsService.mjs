@@ -49,7 +49,7 @@ export class BestClipsService {
     let candidates = matching ? previous.analysis?.candidates : null;
     if (!candidates?.length) {
       const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));
-      const sceneChanges = await measureSceneChanges(resolveStoragePath(original.source.relativePath));
+      const sceneChanges = original.source.mediaKind === 'AUDIO' ? null : await measureSceneChanges(resolveStoragePath(original.source.relativePath));
       const selectionTranscript = { ...original.transcript, segments: sentenceSegments(boundTranscriptSegments(original.transcript.segments, original.source.durationSeconds)) };
       try {
         candidates = await provider.analyze({ project: original, transcript: selectionTranscript, audioEnergyWindows, sceneChanges,
@@ -91,7 +91,7 @@ export class BestClipsService {
       let recovered = null;
       if (saved?.render?.relativePath) {
         try {
-          await validateMp4(resolveStoragePath(saved.render.relativePath), { width: this.width, height: this.height, duration: saved.duration, requireAudio: original.source.hasAudio !== false });
+          await validateMp4(resolveStoragePath(saved.render.relativePath), { width: this.width, height: this.height, duration: saved.duration, requireAudio: original.source.hasAudio !== false, audioOnly: original.source.mediaKind === 'AUDIO' });
           recovered = saved;
         } catch { /* An invalid cached render must be rebuilt. */ }
       }
@@ -113,13 +113,14 @@ export class BestClipsService {
         current.clips.push(clip);
       });
       await eventStore.confirm(eventSource,candidate.id,outputProjectId);
-      results.push({ clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
+      results.push({ mediaKind: clip.render.mediaKind, clipId: clip.id, title: candidate.title, duration: clip.duration, startTime: clip.startTime, endTime: clip.endTime, reason: candidate.reason, aiAssessment: clip.aiAssessment || null, editorialReview: clip.editorialReview, sourceUrl: clip.render.sourceUrl, downloadUrl: `${clip.render.sourceUrl}?download=1`, relativePath: clip.render.relativePath, validation: clip.render.validation });
       await onStage("PROCESSING", "RENDERING_CLIPS", 35 + Math.round(results.length / selected.length * 55));
     }
     await onStage("VALIDATING", "MEDIA_VALIDATION", 95);
     const posters = path.join(getStorageRoot(), "uploads", outputProjectId); await mkdir(posters, { recursive: true });
-    try { await copyFile(resolveStoragePath(path.posix.join("uploads", original.id, "poster.jpg")), path.join(posters, "poster.jpg")); }
+    if (original.source.mediaKind !== 'AUDIO') { try { await copyFile(resolveStoragePath(path.posix.join("uploads", original.id, "poster.jpg")), path.join(posters, "poster.jpg")); }
     catch { await runMedia(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-y", "-i", resolveStoragePath(results[0].relativePath), "-frames:v", "1", path.join(posters, "poster.jpg")]); }
+    }
     project.clipsOrigin.deliveryComplete = true;
     await updateProjectFile(outputProjectId, current => { current.clipsOrigin.deliveryComplete = true; });
     return { projectId: outputProjectId, clips: results, requestedCount: count, actualCount: results.length, warnings: selectionWarning ? [selectionWarning] : [], validation: { valid: results.every(r => r.validation?.valid), checkedAt: new Date().toISOString(), clipCount: results.length, distinct: true }, title: `Clips de ${original.source.originalName}` };

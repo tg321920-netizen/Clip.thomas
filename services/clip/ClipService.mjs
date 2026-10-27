@@ -112,7 +112,7 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
 
   if (clip.status === "READY" && clip.render?.relativePath) {
     try {
-      clip.render.validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: project.source.hasAudio !== false, duration: clip.duration,width,height, allowDarkVideo: project.allowDarkVideo });
+      clip.render.validation = await validateMp4(resolveStoragePath(clip.render.relativePath), { requireAudio: project.source.hasAudio !== false, duration: clip.duration,width,height, audioOnly: project.source.mediaKind === 'AUDIO', allowDarkVideo: project.allowDarkVideo });
       await saveClipState(projectId, clip);
       return { clip, reused: true };
     } catch { clip.render = null; }

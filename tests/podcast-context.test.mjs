@@ -7,7 +7,7 @@ test('old heuristic cache cannot hide the repaired duration and context algorith
   const project={transcript:{id:'t',completedAt:'now',model:'real',segments:[{}]},analysis:{provider:'transcript-heuristic-v2',status:'COMPLETED',sourceKey:'t:now:real:1',candidates:[{}]}};
   assert.equal(isAnalysisCurrent(project),false);
   project.analysis.provider='transcript-heuristic-v3';assert.equal(isAnalysisCurrent(project),false);
-  project.analysis.provider='transcript-heuristic-v4';assert.equal(isAnalysisCurrent(project),true);
+  project.analysis.provider='transcript-heuristic-v5';assert.equal(isAnalysisCurrent(project),true);
 });
 test('applause does not move a complete speech boundary into non-spoken audio',async()=>{
   const segments=sentenceSegments([{startTime:0,endTime:4,text:'An earlier statement.'},{startTime:4,endTime:6,text:'[APPLAUSE]'},{startTime:6,endTime:32,text:'We choose to do this work because the challenge deserves our best efforts.'}]);

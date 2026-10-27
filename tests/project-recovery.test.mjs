@@ -37,6 +37,18 @@ test('ordinary project backup survives an empty filesystem, restores intervals a
   assert.equal(f.cloud.deletes.length,0);
   await f.service.restore(f.id,{targetRoot:target}); // idempotent, no conflicting overwrite
 });
+
+test('audio source, glossary and complete subtitle revision history survive a checkpoint',async t=>{
+  const f=await fixture(t);const source='uploads/'+f.id+'/source.m4a';await writeFile(path.join(f.root,source),'Original immutable unit bytes');
+  f.project.source.relativePath=source;f.project.source.mediaKind='AUDIO';f.project.clips[0].render.mediaKind='AUDIO';
+  f.project.translationSettings={glossary:[{source:'Rice',target:'Rice'}]};
+  f.project.clips[0].subtitleHistory=[{versionId:'a'.repeat(64),track:{cues:[{startTime:0,endTime:2,text:'Previous correction.'}]}}];
+  await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));
+  await f.service.backup(f.id);const target=path.join(f.root,'audio-restored');await f.service.restore(f.id,{targetRoot:target});
+  const restored=JSON.parse(await readFile(path.join(target,'projects',f.id+'.json'),'utf8'));
+  assert.equal(restored.source.mediaKind,'AUDIO');assert.deepEqual(restored.translationSettings,f.project.translationSettings);
+  assert.deepEqual(restored.clips[0].subtitleHistory,f.project.clips[0].subtitleHistory);
+});
 test('pending manual clips and jobs are recoverable, explicitly paused and never published or auto-enqueued',async t=>{
   const f=await fixture(t);f.project.clips[0].status='QUEUED';f.project.clips[0].render=null;
   await writeFile(path.join(f.root,'projects',f.id+'.json'),JSON.stringify(f.project));

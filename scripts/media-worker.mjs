@@ -65,6 +65,8 @@ while (!stopping) {
       await store.interruptMedia(job);
     } else if (controller.signal.aborted) {
       await store.fail(job, controller.signal.reason, { retryable: false });
+    } else if (error.code === 'STATE_BUSY' || error.code === 'RENDER_CAPACITY_BUSY') {
+      await store.fail({...job,attempts:Math.max(0,job.attempts-1)},error,{retryable:true});
     } else if (error.code === "WAITING_RESOURCE") {
       await store.transition(job.id, "WAITING_RESOURCE", "WAITING_RESOURCE", null, { error: error.message }); await store.release(job.id);
     } else await store.fail(job, error, { retryable: false });

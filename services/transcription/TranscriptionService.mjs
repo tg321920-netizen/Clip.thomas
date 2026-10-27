@@ -1,5 +1,5 @@
 import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
@@ -7,19 +7,23 @@ import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs"
 import { extractWhisperAudio } from "./AudioExtractor.mjs";
 import { WhisperCliProvider } from "./WhisperCliProvider.mjs";
 import { WhisperCppProvider } from "./WhisperCppProvider.mjs";
+import { withLocalStateLock } from '../../lib/atomic-local-state.mjs';
+import { isProjectId } from '../../lib/project-id.mjs';
 
 const DEFAULT_CHUNK_SECONDS = 10 * 60;
 const MIN_CHUNK_SECONDS = 60;
 const MAX_CHUNK_SECONDS = 30 * 60;
 
 export async function transcribeProject(projectId, options = {}) {
+  if (!isProjectId(projectId)) throw new Error('Invalid project id.');
+  return withLocalStateLock(path.join(getStorageRoot(),'transcripts',projectId,'run'),()=>transcribeUnlocked(projectId,options),{timeoutMs:1000,staleMs:0});
+}
+
+async function transcribeUnlocked(projectId, options = {}) {
   let project = await loadProjectFile(projectId);
   if (!project) throw new Error("Project not found.");
 
   const sourceKey = getSourceKey(project);
-  if (isTranscriptCurrent(project, sourceKey)) {
-    return { transcript: project.transcript, reused: true };
-  }
 
   const sourcePath = resolveStoragePath(project?.source?.relativePath);
   const transcriptDir = path.join(getStorageRoot(), "transcripts", projectId);
@@ -31,12 +35,18 @@ export async function transcribeProject(projectId, options = {}) {
   const expectedChunks = buildChunkPlan(sourceDuration, chunkDurationSeconds);
   const provider = options.provider || createDefaultProvider(options);
   const providerMetadata = getDefaultProviderMetadata({ ...options, provider });
+  const settingsKey = createHash('sha256').update(JSON.stringify({ ...providerMetadata, language: provider.language || options.language || 'auto',
+    wordTimestamps: provider.wordTimestamps === true || provider instanceof WhisperCliProvider, chunkDurationSeconds })).digest('hex');
+  const settingsMatch = project.transcript?.settingsKey === settingsKey || (!project.transcript?.settingsKey &&
+    project.transcript?.provider === providerMetadata.provider && project.transcript?.model === providerMetadata.model &&
+    !options.wordTimestamps && (!options.language || options.language === 'auto' || project.transcript?.language === options.language));
+  if (settingsMatch && isTranscriptCurrent(project, sourceKey)) return { transcript: project.transcript, reused: true };
   const audioExtractor = options.audioExtractor || extractWhisperAudio;
   const startedAt = new Date().toISOString();
 
   await mkdir(chunkDir, { recursive: true });
 
-  const resumable = canResumeTranscript(
+  const resumable = settingsMatch && canResumeTranscript(
     project.transcript,
     sourceKey,
     chunkDurationSeconds,
@@ -45,7 +55,7 @@ export async function transcribeProject(projectId, options = {}) {
 
   if (!resumable) {
     project.transcript = {
-      id: project?.transcript?.id || randomUUID(),
+      id: randomUUID(),
       projectId,
       videoId: getVideoId(project),
       status: "PROCESSING",
@@ -56,6 +66,7 @@ export async function transcribeProject(projectId, options = {}) {
       durationSeconds: sourceDuration || undefined,
       segments: [],
       sourceKey,
+      settingsKey,
       audioRelativePath: path.posix.join(
         "transcripts",
         projectId,
@@ -73,6 +84,7 @@ export async function transcribeProject(projectId, options = {}) {
   } else {
     project.transcript = {
       ...project.transcript,
+      settingsKey,
       status: "PROCESSING",
       provider: providerMetadata.provider,
       model: providerMetadata.model,
@@ -322,6 +334,8 @@ function normalizeChunkDuration(value) {
 }
 
 function getDefaultProviderMetadata(options = {}) {
+  if (options.provider instanceof WhisperCppProvider) return {provider:'whisper.cpp',model:path.basename(options.provider.modelPath)};
+  if (options.provider instanceof WhisperCliProvider) return {provider:'whisper-cli',model:options.provider.model};
   if (options.provider) {
     return {
       provider: String(options.provider.name || "transcription-provider"),

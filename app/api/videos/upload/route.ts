@@ -142,7 +142,7 @@ export async function POST(request: Request) {
   try {
     const technical = await videoProcessor.probe(filePath);
     const posterSeek = Math.min(1, technical.durationSeconds / 2);
-    await videoProcessor.createPoster(filePath, posterPath, posterSeek);
+    if (technical.mediaKind !== 'AUDIO') await videoProcessor.createPoster(filePath, posterPath, posterSeek);
 
     const video: UploadedVideo = {
       projectId,
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
       originalName,
       storedName,
       sizeBytes: bytesWritten,
-      posterUrl: `/api/projects/${projectId}/poster`,
+      posterUrl: technical.mediaKind === 'AUDIO' ? '' : `/api/projects/${projectId}/poster`,
       sourceUrl: `/api/projects/${projectId}/source`,
       ...technical,
     };

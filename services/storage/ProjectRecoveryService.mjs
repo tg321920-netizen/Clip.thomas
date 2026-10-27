@@ -69,7 +69,7 @@ async function fileProof(root,relative){
 }
 function allowedSource(id,relative){
   if(typeof relative!=='string')return false;
-  const shared=relative.match(/^uploads\/([a-f0-9-]{36})\/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\.(mp4|mov|webm)$/i);
+  const shared=relative.match(/^uploads\/([a-f0-9-]{36})\/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\.(mp4|mov|webm|mp3|m4a|wav|ogg|flac|aac)$/i);
   // BestClipsService deliberately references the original project's upload.
   // Preserve that relation; copying it into another upload would waste space.
   return Boolean(shared&&isProjectId(shared[1]))||relative==='auto-videos/'+id+'/edited-clean.mp4';
@@ -240,7 +240,7 @@ export class ProjectRecoveryService{
           if(file!==m.source){
             const clip=snapshot.project.clips.find(c=>c.id===file.clipId);
             await this.validate(target,{requireAudio:snapshot.project.source.hasAudio!==false,duration:clip.duration,
-              width:clip.render?.width,height:clip.render?.height,allowDarkVideo:snapshot.project.allowDarkVideo});
+              width:clip.render?.width,height:clip.render?.height,allowDarkVideo:snapshot.project.allowDarkVideo,audioOnly:snapshot.project.source.mediaKind==='AUDIO'});
           }
         }
         const project=snapshot.project;

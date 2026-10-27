@@ -109,15 +109,15 @@ function numberClaims(text, language) {
   const scales = language === 'en' ? {hundred:100,thousand:1000,million:1e6,billion:1e9} : {cien:100,ciento:100,mil:1000,millon:1e6,millones:1e6,billon:1e12,billones:1e12};
   const tokens = text.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').match(/\d+(?:[.,]\d+)*|[a-z]+/gu) || [];
   const result=[];let total=0,current=0,active=false;
-  const numeric=token=>token in values || token in scales || /^\d/u.test(token||'');
+  const numeric=token=>Object.hasOwn(values,token) || Object.hasOwn(scales,token) || /^\d/u.test(token||'');
   const finish=()=>{if(active)result.push(total+current);total=0;current=0;active=false;};
   for(let i=0;i<tokens.length;i++) {
     const token=tokens[i];
     if ((token==='and'||token==='y')&&active&&numeric(tokens[i+1]))continue;
     if (!numeric(token)) {finish();continue;}
     active=true;
-    if(token in values)current+=values[token];
-    else if(token in scales){const scale=scales[token];if(scale===100)current=Math.max(1,current)*100;else if(scale===1000){total+=Math.max(1,current)*scale;current=0;}else{total=(total+current||1)*scale;current=0;}}
+    if(Object.hasOwn(values,token))current+=values[token];
+    else if(Object.hasOwn(scales,token)){const scale=scales[token];if(scale===100)current=Math.max(1,current)*100;else if(scale===1000){total+=Math.max(1,current)*scale;current=0;}else{total=(total+current||1)*scale;current=0;}}
     else {let raw=token;if(/^\d{1,3}(?:[.,]\d{3})+$/u.test(raw))raw=raw.replace(/[.,]/gu,'');else raw=raw.replace(',','.');current+=Number(raw);}
   }
   finish();return result.sort((a,b)=>a-b);

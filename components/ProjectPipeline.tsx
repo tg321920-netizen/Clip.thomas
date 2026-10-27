@@ -5,6 +5,7 @@ import type { ContentAnalysisRecord } from "@/types/analysis";
 import type { ClipRecord } from "@/types/clip";
 import type { TranscriptRecord } from "@/types/transcription";
 import { ClipSubtitleEditor } from "@/components/ClipSubtitleEditor";
+import { explainQualityIssue } from '@/lib/editorial-warnings.mjs';
 
 type JobRecord = {
   id: string;
@@ -562,21 +563,22 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                     <p className="mt-2 text-xs leading-5 text-zinc-500">
                       {candidate.reasons[0] || candidate.reason}
                     </p>
+                    {!!candidate.qualityWarnings?.length&&<p className="mt-2 text-sm text-amber-200">{candidate.qualityWarnings.map(explainQualityIssue).join(' ')}</p>}
                     <button type="button" className="mt-3 min-h-12 rounded-xl border border-violet-400/40 px-4 text-sm" onClick={()=>window.dispatchEvent(new CustomEvent('clipforge:trim-interval',{detail:{projectId,startTime:candidate.startTime,endTime:candidate.endTime}}))}>Ajustar este recorte</button>
 
                     {clip?.status === "READY" && clip.render ? (
                       <div className="mt-3">
-                        <video
+                        {clip.render.mediaKind==='AUDIO'?<audio controls preload="metadata" src={clip.render.sourceUrl} className="w-full"/>:<video
                           controls
                           preload="metadata"
                           src={clip.render.sourceUrl}
                           className="mx-auto max-h-[420px] w-full rounded-xl bg-black object-contain"
                         >
                           Tu navegador no puede reproducir este clip.
-                        </video>
+                        </video>}
                         <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-400">
                           <span>
-                            Clip {clip.render.width}×{clip.render.height} listo
+                            {clip.render.mediaKind==='AUDIO'?'Recorte M4A listo':`Clip ${clip.render.width}×${clip.render.height} listo`}
                             {clip.render.subtitlesBurned ? " · subtítulos incluidos" : ""}
                           </span>
                           <span>{clip.edit.quality}</span>

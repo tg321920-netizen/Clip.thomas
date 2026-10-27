@@ -141,7 +141,7 @@ export class ClipLibraryService {
         if (!remote) {
           await this.#assertQuota(info.size + 8192, signal);
           const stream = file.createReadStream({ autoClose: false, start: 0 });
-          try { await this.store.put(mediaKey(id), stream, { length: info.size, type: 'video/mp4', md5: contentMd5, metadata: { sha256, managed: 'clipforge-v1' }, ifAbsent: true, signal }); }
+          try { await this.store.put(mediaKey(id), stream, { length: info.size, type: clip.render.mediaKind === 'AUDIO' ? 'audio/mp4' : 'video/mp4', md5: contentMd5, metadata: { sha256, managed: 'clipforge-v1' }, ifAbsent: true, signal }); }
           finally { stream.destroy(); }
         } else {
           // A previous attempt may have uploaded the object but lost its index.
@@ -159,7 +159,7 @@ export class ClipLibraryService {
         const verified = await this.store.head(mediaKey(id), { signal });
         if (verified?.size !== info.size || verified.metadata?.sha256 !== sha256) throw storageError('STORAGE_INTEGRITY', 'No se confirmó la integridad de la copia. El archivo local se conserva.');
         const now = new Date(this.now()).toISOString();
-        const record = existing ? { ...existing.record, origin, objectEtag: verified.etag } : { id, managedBy: 'clipforge-v1', projectId: project.id, clipId: clip.id, objectKey: mediaKey(id), sha256,
+        const record = existing ? { ...existing.record, origin, objectEtag: verified.etag } : { id, managedBy: 'clipforge-v1', mediaKind: clip.render.mediaKind === 'AUDIO' ? 'AUDIO' : 'VIDEO', projectId: project.id, clipId: clip.id, objectKey: mediaKey(id), sha256,
           sizeBytes: info.size, objectEtag: verified.etag, createdAt: now, expiresAt: new Date(this.now() + 30 * DAY).toISOString(), keep: false, status: 'READY',
           origin, review: {status:'PENDING'}, context:clipContext(project,clip),
           title: String(clip.title || project.source?.originalName || 'Clip').slice(0, 300), reason: String(clip.reason || '').slice(0, 2000), duration: Number(clip.duration) || 0 };
@@ -169,7 +169,7 @@ export class ClipLibraryService {
     } finally { await file.close(); }
   }
   publicEntry(record) {
-    return { id: record.id, projectId: record.projectId, clipId: record.clipId, title: record.title, reason: record.reason,
+    return { id: record.id, mediaKind: record.mediaKind === 'AUDIO' ? 'AUDIO' : 'VIDEO', projectId: record.projectId, clipId: record.clipId, title: record.title, reason: record.reason,
       duration: record.duration, sha256:record.sha256, sizeBytes: record.sizeBytes, createdAt: record.createdAt, expiresAt: record.keep ? null : record.expiresAt,
       keep: record.keep, status: record.status, origin:record.origin || {kind:'VIDEO',sourceKind:'UNKNOWN'}, review:record.review || {status:'PENDING'}, context:record.context || null, recut:record.recut || null, sourceUrl: `/api/media/library/${record.id}/source`, downloadUrl: `/api/media/library/${record.id}/source?download=1` };
   }
@@ -208,7 +208,7 @@ export class ClipLibraryService {
     const entry=await this.#read(id);if(!entry || entry.record.status!=='READY')throw storageError('STORAGE_NOT_FOUND','El clip ya no está disponible.');
     const object=await this.store.head(mediaKey(id));
     if(object?.etag!==entry.record.objectEtag || object?.metadata?.sha256!==entry.record.sha256 || object?.size!==entry.record.sizeBytes)throw storageError('STORAGE_INTEGRITY','La copia privada no pudo verificarse.');
-    return signPrivateClip(id,options);
+    return signPrivateClip(id,{...options,mediaKind:entry.record.mediaKind});
   }
   async source(id, range) {
     const entry = await this.#read(id);

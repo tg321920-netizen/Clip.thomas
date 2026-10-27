@@ -10,6 +10,7 @@ type FfprobeStream = {
   r_frame_rate?: string;
   display_aspect_ratio?: string;
   duration?: string;
+  disposition?: {attached_pic?: number};
 };
 
 type FfprobeOutput = {
@@ -74,15 +75,16 @@ export class VideoProcessor {
       );
     }
 
-    const video = parsed.streams?.find((stream) => stream.codec_type === "video");
-    if (!video?.width || !video.height) {
+    const video = parsed.streams?.find((stream) => stream.codec_type === "video" && stream.disposition?.attached_pic !== 1);
+    const audio = parsed.streams?.find((stream) => stream.codec_type === 'audio');
+    if ((!video?.width || !video.height) && !audio) {
       throw new VideoProcessingError(
         "El archivo no contiene una pista de video válida.",
         "INVALID_MEDIA",
       );
     }
 
-    const duration = Number(parsed.format?.duration ?? video.duration ?? 0);
+    const duration = Number(parsed.format?.duration ?? video?.duration ?? audio?.duration ?? 0);
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new VideoProcessingError(
         "No se pudo determinar la duración real del video.",
@@ -92,15 +94,15 @@ export class VideoProcessor {
 
     return {
       durationSeconds: round(duration, 3),
+      mediaKind: video ? 'VIDEO' : 'AUDIO',
       hasAudio: parsed.streams?.some(stream => stream.codec_type === "audio") === true,
-      width: video.width,
-      height: video.height,
-      fps: round(parseRate(video.avg_frame_rate || video.r_frame_rate), 3),
-      codec: video.codec_name || "desconocido",
+      width: video?.width || 0,
+      height: video?.height || 0,
+      fps: round(parseRate(video?.avg_frame_rate || video?.r_frame_rate), 3),
+      codec: video?.codec_name || audio?.codec_name || "desconocido",
       container: parsed.format?.format_name?.split(",")[0] || "desconocido",
       aspectRatio:
-        normalizeAspectRatio(video.display_aspect_ratio) ||
-        reduceRatio(video.width, video.height),
+        video ? (normalizeAspectRatio(video.display_aspect_ratio) || reduceRatio(video.width || 0, video.height || 0)) : 'AUDIO',
     };
   }
 

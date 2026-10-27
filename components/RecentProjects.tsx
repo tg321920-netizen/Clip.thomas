@@ -144,7 +144,7 @@ export function RecentProjects() {
                   </p>
                 </div>
                 <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-zinc-400">
-                  {project.source.width}×{project.source.height}
+                  {project.source.mediaKind==='AUDIO'?'Audio':`${project.source.width}×${project.source.height}`}
                 </span>
               </div>
 
@@ -174,7 +174,7 @@ export function RecentProjects() {
                   {deleting ? "Eliminando…" : "Eliminar"}
                 </button>
               </div>
-              {previewId===project.id&&<video controls playsInline preload="metadata" src={project.source.sourceUrl} poster={project.source.posterUrl} className="mt-4 max-h-80 w-full rounded-xl bg-black"/>}
+              {previewId===project.id&&(project.source.mediaKind==='AUDIO'?<audio controls preload="metadata" src={project.source.sourceUrl} className="mt-4 w-full"/>:<video controls playsInline preload="metadata" src={project.source.sourceUrl} poster={project.source.posterUrl} className="mt-4 max-h-80 w-full rounded-xl bg-black"/>)}
             </article>
           );
         })}

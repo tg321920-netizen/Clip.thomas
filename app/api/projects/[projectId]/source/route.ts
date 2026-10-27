@@ -8,11 +8,12 @@ import { isProjectId } from "@/lib/project-id.mjs";
 import { getStorageRoot } from "@/services/StorageService";
 import { loadProjectFile } from "@/lib/project-files.mjs";
 import { resolveStoragePath } from "@/lib/storage-paths.mjs";
+import { mediaMimeType } from '@/lib/upload-policy.mjs';
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SOURCE_PATTERN = /^source\.(mp4|mov|webm)$/i;
+const SOURCE_PATTERN = /^source\.(mp4|mov|webm|mp3|m4a|wav|ogg|flac|aac)$/i;
 
 export async function GET(
   request: Request,
@@ -67,7 +68,7 @@ export async function GET(
   try {
     // These files are created after deployment inside the validated storage root.
     const fileStat = await stat(/* turbopackIgnore: true */ filePath);
-    const mimeType = mimeFor(sourceName);
+    const mimeType = project?.source?.mediaKind === 'AUDIO' && extension.toLowerCase()==='.mp4' ? 'audio/mp4' : mediaMimeType(sourceName);
     const range = request.headers.get("range");
 
     if (!range) {
@@ -125,13 +126,6 @@ export async function GET(
       { status: 500 },
     );
   }
-}
-
-function mimeFor(filename: string): string {
-  const extension = path.extname(filename).toLowerCase();
-  if (extension === ".webm") return "video/webm";
-  if (extension === ".mov") return "video/quicktime";
-  return "video/mp4";
 }
 
 function getErrorCode(error: unknown): string | undefined {

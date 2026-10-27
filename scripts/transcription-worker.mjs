@@ -54,7 +54,7 @@ while (!stopping) {
       chunks: result.transcript?.chunks?.length ?? 1,
     });
   } catch (error) {
-    const failed = await store.fail(job, error);
+    const failed = await store.fail(error.code==='STATE_BUSY'?{...job,attempts:Math.max(0,job.attempts-1)}:job, error);
     console.error("Transcription job failed", {
       projectId: job.projectId,
       status: failed.status,

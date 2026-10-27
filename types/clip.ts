@@ -112,6 +112,7 @@ export type ClipRecord = {
   autoEdit: AutoEditPlan | null;
   autoReframe: AutoReframePlan | null;
   render: {
+    mediaKind?: 'VIDEO'|'AUDIO';
     archiveEligible?: boolean;
     relativePath: string;
     sourceUrl: string;

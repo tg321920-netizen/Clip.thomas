@@ -107,7 +107,7 @@ export async function ingestUrlJob(job, options = {}) {
     await runProcess(process.env.FFMPEG_PATH?.trim() || "ffmpeg", ["-v", "error", "-threads", "1", "-xerror", "-i", mediaPath, "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"],
       { signal: options.signal, timeoutMs: (technical.durationSeconds + 180) * 1000 });
   }
-  await createPoster(
+  if (technical.mediaKind !== 'AUDIO') await createPoster(
     mediaPath,
     posterPath,
     Math.min(1, technical.durationSeconds / 2),
@@ -121,7 +121,7 @@ export async function ingestUrlJob(job, options = {}) {
     originalName: mode === "UPLOAD" ? job.source.filename : makeOriginalName(sourceUrl, storedName, mode),
     storedName,
     sizeBytes: fileStats.size,
-    posterUrl: `/api/projects/${projectId}/poster`,
+    posterUrl: technical.mediaKind === 'AUDIO' ? '' : `/api/projects/${projectId}/poster`,
     sourceUrl: `/api/projects/${projectId}/source`,
     ...(sourceUrl ? { originUrl: redactUrlForMetadata(sourceUrl) } : {}),
     ingestMode: mode,
@@ -700,27 +700,27 @@ async function probeMedia(filePath) {
     throw new Error("FFprobe devolvió metadatos inválidos para la URL importada.");
   }
 
-  const video = parsed?.streams?.find((stream) => stream?.codec_type === "video");
+  const video = parsed?.streams?.find((stream) => stream?.codec_type === "video" && stream.disposition?.attached_pic !== 1);
   const audio = parsed?.streams?.find((stream) => stream?.codec_type === "audio");
-  const duration = Number(parsed?.format?.duration ?? video?.duration ?? 0);
-  if (!video?.width || !video?.height || !Number.isFinite(duration) || duration <= 0) {
-    throw new Error("El contenido importado no contiene una pista de video válida con duración conocida.");
+  const duration = Number(parsed?.format?.duration ?? video?.duration ?? audio?.duration ?? 0);
+  if ((!video?.width && !audio) || !Number.isFinite(duration) || duration <= 0) {
+    throw new Error("El archivo no contiene audio o video válidos con duración conocida.");
   }
 
   return {
     durationSeconds: round(duration),
-    width: Number(video.width),
-    height: Number(video.height),
-    fps: round(parseRate(video.avg_frame_rate || video.r_frame_rate)),
-    codec: video.codec_name || "desconocido",
+    mediaKind: video ? 'VIDEO' : 'AUDIO',
+    width: Number(video?.width || 0),
+    height: Number(video?.height || 0),
+    fps: round(parseRate(video?.avg_frame_rate || video?.r_frame_rate)),
+    codec: video?.codec_name || audio?.codec_name || "desconocido",
     container: parsed?.format?.format_name?.split(",")[0] || "desconocido",
     hasAudio: parsed?.streams?.some((stream) => stream.codec_type === "audio"),
-    videoDurationSeconds: Number(video.duration) > 0 ? Number(video.duration) : null,
+    videoDurationSeconds: Number(video?.duration) > 0 ? Number(video.duration) : null,
     audioDurationSeconds: Number(audio?.duration) > 0 ? Number(audio.duration) : null,
-    trackDurationDeltaSeconds: Number(video.duration) > 0 && Number(audio?.duration) > 0 ? Math.abs(Number(video.duration) - Number(audio.duration)) : null,
+    trackDurationDeltaSeconds: Number(video?.duration) > 0 && Number(audio?.duration) > 0 ? Math.abs(Number(video.duration) - Number(audio.duration)) : null,
     aspectRatio:
-      normalizeAspectRatio(video.display_aspect_ratio) ||
-      reduceRatio(Number(video.width), Number(video.height)),
+      video ? (normalizeAspectRatio(video.display_aspect_ratio) || reduceRatio(Number(video.width), Number(video.height))) : 'AUDIO',
   };
 }
 

@@ -10,9 +10,9 @@ export async function GET(request: Request, context: { params: Promise<{ archive
     const source = await new ClipLibraryService().source(archiveId, range);
     const download = new URL(request.url).searchParams.get('download') === '1';
     return new Response(Readable.toWeb(source.body) as ReadableStream, { status: source.contentRange ? 206 : 200, headers: {
-      'Content-Type': 'video/mp4', 'Content-Length': String(source.size), 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Type': source.record.mediaKind === 'AUDIO' ? 'audio/mp4' : 'video/mp4', 'Content-Length': String(source.size), 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
       ...(source.contentRange ? { 'Content-Range': source.contentRange } : {}),
-      ...(download ? { 'Content-Disposition': `attachment; filename="clip-${source.record.clipId}.mp4"` } : {}),
+      ...(download ? { 'Content-Disposition': `attachment; filename="clip-${source.record.clipId}.${source.record.mediaKind==='AUDIO'?'m4a':'mp4'}"` } : {}),
     } });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? error.code : '';

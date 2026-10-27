@@ -18,7 +18,7 @@ const PROJECT_OPEN_EVENT = "clipforge:project-open";
 
 export function UploadPanel({ onReady, compact = false }: { onReady?: (video: UploadedVideo | null) => void; compact?: boolean } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLMediaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [stage, setStage] = useState("Subiendo");
@@ -181,7 +181,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
           ref={inputRef}
           type="file"
           className="hidden"
-          accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+          accept="video/mp4,video/quicktime,video/webm,audio/*,.mp4,.mov,.webm,.mp3,.m4a,.wav,.ogg,.flac,.aac"
           onChange={(event) => chooseFile(event.target.files?.[0])}
         />
 
@@ -190,7 +190,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
         </div>
         <h2 className="mt-4 text-lg font-medium">Sube tu video</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">
-          MP4, MOV o WebM · máximo {formatBytes(MAX_UPLOAD_BYTES)}
+          Video MP4/MOV/WebM o audio MP3/M4A/WAV/OGG/FLAC/AAC · máximo {formatBytes(MAX_UPLOAD_BYTES)}
         </p>
         <button
           type="button"
@@ -278,9 +278,9 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
 
       {result && (
         <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07]">
-          <div className="aspect-video w-full bg-black">
-            <video
-              ref={videoRef}
+          <div className={result.mediaKind==='AUDIO'?'w-full p-4':'aspect-video w-full bg-black'}>
+            {result.mediaKind==='AUDIO' ? <audio aria-label="Audio original" ref={element=>{videoRef.current=element;}} controls preload="metadata" src={result.sourceUrl} className="w-full"/> : <video
+              ref={element=>{videoRef.current=element;}}
               controls
               playsInline
               preload="metadata"
@@ -289,13 +289,13 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
               className="h-full w-full object-contain"
             >
               Tu navegador no puede reproducir este video.
-            </video>
+            </video>}
           </div>
 
           <div className="p-4">
             <div className="flex items-center justify-between">
               <h3 className="font-medium text-emerald-200">
-                Video original recibido
+                {result.mediaKind==='AUDIO'?'Audio original recibido':'Video original recibido'}
               </h3>
               <span className="text-xs text-emerald-400">REAL</span>
             </div>
@@ -304,7 +304,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <Metric label="Duración" value={formatDuration(result.durationSeconds)} />
-              <Metric label="Resolución" value={`${result.width}×${result.height}`} />
+              <Metric label="Resolución" value={result.mediaKind==='AUDIO'?'Solo audio':`${result.width}×${result.height}`} />
               <Metric label="FPS" value={String(result.fps)} />
               <Metric label="Códec" value={result.codec.toUpperCase()} />
               <Metric label="Aspecto" value={result.aspectRatio} />

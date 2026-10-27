@@ -41,6 +41,14 @@ test('archive is idempotent and a fresh instance can list, range-stream and down
   await assert.rejects(restored.source(saved.id, 'bytes=999999-'), error => error.code === 'STORAGE_RANGE');
 });
 
+test('audio-only archives keep their kind and bytes across a fresh library instance',async t=>{
+  const f=await fixture(t);f.project.source.mediaKind='AUDIO';f.clip.render.mediaKind='AUDIO';
+  const saved=await f.service.archive(f.project,f.clip);assert.equal(saved.mediaKind,'AUDIO');assert.equal(saved.origin.kind,'AUDIO');
+  const second=new ClipLibraryService({store:f.store});const loaded=await second.identity(saved.id);assert.equal(loaded.mediaKind,'AUDIO');
+  const downloaded=await second.source(saved.id);const parts=[];for await(const part of downloaded.body)parts.push(part);
+  assert.deepEqual(Buffer.concat(parts),f.bytes);assert.equal((await f.service.archive(f.project,f.clip)).id,saved.id);assert.equal(f.store.uploads,1);
+});
+
 test('cleanup preserves MP4 referenced by a private project checkpoint even after ordinary retention expires',async t=>{
   const f=await fixture(t),saved=await f.service.archive(f.project,f.clip);
   await f.store.putJson('clipforge-managed/v1/project-recovery/'+f.project.id+'.json',

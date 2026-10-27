@@ -8,6 +8,9 @@ export type ViralScoreComponents = {
 };
 
 export type ClipCandidate = {
+  sourceReference?: {projectId:string|null;videoId:string|null};
+  editorialReview?: {status:'PENDING';semanticConfirmation:'NOT_PERFORMED'};
+  qualityWarnings?: string[];
   id: string;
   startTime: number;
   endTime: number;

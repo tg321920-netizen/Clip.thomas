@@ -26,6 +26,7 @@ export class RenderService {
     onProgress = () => undefined,
   }) {
     const sourcePath = resolveStoragePath(project?.source?.relativePath);
+    const audioOnly = project.source.mediaKind === 'AUDIO';
     const outputDir = path.join(
       getStorageRoot(),
       "clips",
@@ -52,7 +53,7 @@ export class RenderService {
     const sourceInfo=await stat(sourcePath);
     const inputFingerprint=createHash('sha256').update(JSON.stringify({
       version:1,sourceSha256:await sha256(sourcePath),startTime,duration,width:this.width,height:this.height,
-      edit:clip.edit,subtitles:clip.subtitles,autoReframe:clip.autoReframe,quality,
+      edit:audioOnly?{audioCodec:'aac',bitrate:'160k'}:clip.edit,subtitles:audioOnly?null:clip.subtitles,autoReframe:audioOnly?null:clip.autoReframe,quality:audioOnly?null:quality,
     })).digest('hex');
     const requireAudio = project.source.hasAudio ?? Boolean((await probeMediaFile(sourcePath)).audio);
     // A process may die after the MP4 was validated but before project state
@@ -62,7 +63,7 @@ export class RenderService {
       for(const file of [outputPath,temporaryPath]){
         try{
           if(await sha256(file)!==savedProof.sha256)continue;
-          const validation=await validateMp4(file,{requireAudio,duration,width:this.width,height:this.height,allowDarkVideo:project.allowDarkVideo});
+          const validation=await validateMp4(file,{requireAudio,duration,width:this.width,height:this.height,allowDarkVideo:project.allowDarkVideo,audioOnly});
           if(file!==outputPath)await rename(file,outputPath);
           onProgress(100);
           return this.renderRecord(project,clip,validation,savedProof,true);
@@ -93,7 +94,7 @@ export class RenderService {
     }
 
     if (
-      clip?.edit?.subtitlesEnabled &&
+      !audioOnly && clip?.edit?.subtitlesEnabled &&
       clip?.subtitles?.enabled &&
       Array.isArray(clip?.subtitles?.cues) &&
       clip.subtitles.cues.length > 0
@@ -104,7 +105,7 @@ export class RenderService {
       subtitlesBurned = true;
     }
 
-    const videoPlan = buildRenderVideoPlan(
+    const videoPlan = audioOnly ? { args: ['-vn','-map','0:a:0'] } : buildRenderVideoPlan(
       clip?.edit?.framingMode || "FIT",
       postFilters,
       this.width,
@@ -126,7 +127,7 @@ export class RenderService {
       "-t",
       duration.toFixed(3),
       ...videoPlan.args,
-      "-c:v",
+      ...(audioOnly ? [] : ["-c:v",
       "libx264",
       "-preset",
       quality.preset,
@@ -135,7 +136,7 @@ export class RenderService {
       "-threads", String(renderThreads()),
       "-r", "30",
       "-pix_fmt",
-      "yuv420p",
+      "yuv420p"]),
       "-c:a",
       "aac",
       "-b:a",
@@ -155,7 +156,7 @@ export class RenderService {
       onProgress,
     );
 
-    const validation = await validateMp4(temporaryPath, { requireAudio, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
+    const validation = await validateMp4(temporaryPath, { requireAudio, duration, width: this.width, height: this.height, allowDarkVideo: project.allowDarkVideo, audioOnly, subtitleValidation: subtitlesBurned ? "ASS_BURNED_NOT_VISUALLY_VERIFIED" : "NOT_REQUESTED" });
     const sourceAfter=await stat(sourcePath);
     if(sourceInfo.size!==sourceAfter.size||sourceInfo.mtimeMs!==sourceAfter.mtimeMs||sourceInfo.ino!==sourceAfter.ino)throw new Error('La fuente cambió durante el render. No se confirmó el resultado.');
     const proof={inputFingerprint,sha256:await sha256(temporaryPath),subtitlesBurned,autoReframeApplied};
@@ -179,9 +180,10 @@ export class RenderService {
         "render.mp4",
       ),
       sourceUrl: `/api/projects/${project.id}/clips/${clip.id}/source`,
-      width: this.width,
-      height: this.height,
-      codec: 'h264',
+      mediaKind: project.source.mediaKind === 'AUDIO' ? 'AUDIO' : 'VIDEO',
+      width: project.source.mediaKind === 'AUDIO' ? 0 : this.width,
+      height: project.source.mediaKind === 'AUDIO' ? 0 : this.height,
+      codec: project.source.mediaKind === 'AUDIO' ? 'aac' : 'h264',
       container: 'mp4',
       sizeBytes: outputStat.size,
       subtitlesBurned:proof.subtitlesBurned,

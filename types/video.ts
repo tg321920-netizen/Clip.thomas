@@ -1,4 +1,5 @@
 export type ProbeMetadata = {
+  mediaKind?: 'VIDEO'|'AUDIO';
   durationSeconds: number;
   hasAudio?: boolean;
   width: number;

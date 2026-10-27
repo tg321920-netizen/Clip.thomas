@@ -21,7 +21,6 @@ export async function GET(
 ) {
   const { projectId, clipId } = await context.params;
   const download = new URL(request.url).searchParams.get("download") === "1";
-  const disposition: Record<string, string> = download ? { "Content-Disposition": `attachment; filename="clip-${clipId}.mp4"` } : {};
 
   if (!isProjectId(projectId) || !isProjectId(clipId)) {
     return NextResponse.json(
@@ -48,6 +47,8 @@ export async function GET(
       { status: 404 },
     );
   }
+  const audioOnly = clip.render.mediaKind === 'AUDIO';
+  const disposition: Record<string, string> = download ? { 'Content-Disposition': `attachment; filename="clip-${clipId}.${audioOnly?'m4a':'mp4'}"` } : {};
 
   let filePath;
   try {
@@ -67,7 +68,7 @@ export async function GET(
       const stream = createReadStream(/* turbopackIgnore: true */ filePath);
       return new Response(Readable.toWeb(stream) as ReadableStream, {
         status: 200,
-        headers: { ...headersFor(fileStat.size), ...disposition },
+        headers: { ...headersFor(fileStat.size, audioOnly), ...disposition },
       });
     }
 
@@ -88,7 +89,7 @@ export async function GET(
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: 206,
       headers: {
-        ...headersFor(end - start + 1),
+        ...headersFor(end - start + 1, audioOnly),
         ...disposition,
         "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
       },
@@ -114,9 +115,9 @@ export async function GET(
   }
 }
 
-function headersFor(contentLength: number): Record<string, string> {
+function headersFor(contentLength: number, audioOnly = false): Record<string, string> {
   return {
-    "Content-Type": "video/mp4",
+    "Content-Type": audioOnly ? 'audio/mp4' : "video/mp4",
     "Content-Length": String(contentLength),
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=0, must-revalidate",

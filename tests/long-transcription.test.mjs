@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { replaceProjectFile } from "../lib/project-files.mjs";
+import { loadProjectFile } from '../lib/project-files.mjs';
 import {
   buildChunkPlan,
   transcribeProject,
@@ -119,4 +120,17 @@ test("long transcription is chunked, keeps real timestamps and resumes after a p
     else process.env.CLIPFORGE_STORAGE_DIR = previousStorage;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('a changed model or language starts a new transcript instead of mixing completed old chunks',async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'cf-transcription-settings-'));const previous=process.env.CLIPFORGE_STORAGE_DIR;process.env.CLIPFORGE_STORAGE_DIR=root;
+  t.after(async()=>{if(previous===undefined)delete process.env.CLIPFORGE_STORAGE_DIR;else process.env.CLIPFORGE_STORAGE_DIR=previous;await rm(root,{recursive:true,force:true});});
+  const id=randomUUID();await replaceProjectFile(id,{id,source:{storedName:'source.mp3',relativePath:`uploads/${id}/source.mp3`,durationSeconds:130,sizeBytes:1234}});
+  let calls=0;const provider={name:'UNIT_MOCK_ONLY',model:'first',language:'en',transcribe:async()=>{calls++;return{language:'en',segments:[{startTime:0,endTime:3,text:'A complete sentence.'}]};}};
+  const options={provider,audioExtractor:async()=>{},chunkDurationSeconds:60};
+  const first=await transcribeProject(id,options);assert.equal(calls,3);
+  assert.equal((await transcribeProject(id,options)).reused,true);assert.equal(calls,3);
+  provider.model='second';const second=await transcribeProject(id,options);assert.equal(calls,6);assert.notEqual(second.transcript.id,first.transcript.id);
+  provider.language='es';await transcribeProject(id,options);assert.equal(calls,9);
+  assert.equal((await loadProjectFile(id)).transcript.chunks.length,3);
 });

@@ -17,6 +17,13 @@ test("accepts supported MP4 uploads", () => {
   assert.equal(result.extension, "mp4");
 });
 
+test('accepts supported audio-only podcast descriptors and still rejects executable files',()=>{
+  for(const [extension,mimeType] of [['mp3','audio/mpeg'],['m4a','audio/mp4'],['wav','audio/wav'],['ogg','audio/ogg'],['flac','audio/flac'],['aac','audio/aac']]){
+    assert.equal(validateUploadDescriptor({filename:'podcast.'+extension,mimeType,size:1024}).ok,true);
+  }
+  assert.equal(validateUploadDescriptor({filename:'podcast.exe',mimeType:'audio/mpeg',size:1024}).ok,false);
+});
+
 test("accepts MOV and WebM MIME types", () => {
   assert.equal(
     validateUploadDescriptor({

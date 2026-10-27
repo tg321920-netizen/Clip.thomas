@@ -330,7 +330,7 @@ export class JobStore {
       if (!outputs.length) throw new Error("No media outputs exist.");
       for (const output of outputs) {
         if (!output.relativePath) throw new Error("No result file is associated with this job.");
-        output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", requireAudibleNarration:job.type==="MEDIA_STORY",duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation });
+        output.validation = await validateMp4(resolveStoragePath(output.relativePath), { requireAudio: job.type === "MEDIA_STORY" || output.validation?.audioCodec === "aac", requireAudibleNarration:job.type==="MEDIA_STORY",duration: output.validation?.duration, subtitleValidation: output.validation?.subtitleValidation, audioOnly: job.type !== 'MEDIA_STORY' && output.mediaKind === 'AUDIO' });
       }
     }
     const fresh = await this.get(job.id);
