@@ -1,5 +1,12 @@
 # Reanudar ClipForge: clips auténticos de Westcol
 
+**Fiabilidad posterior del 27 de octubre:** leer
+[RELIABILITY_HARDENING_20261027.md](RELIABILITY_HARDENING_20261027.md).
+Código `54a08da`: recuperación de workers, separación de intentos, protección
+de originales y borradores de subtítulos; metadatos dañados visibles sin detener
+los demás trabajos. Hay una nueva comprobación móvil/R2 del clip preservado,
+cero clips reales nuevos y ningún despliegue. No confundir estos tests con LIVE.
+
 **Rescate posterior del 27 de octubre:** leer primero
 [WESTCOL_CAPTURE_RECHECK_20261027.md](WESTCOL_CAPTURE_RECHECK_20261027.md).
 El VOD antiguo no aparecía entre los recientes; se capturó otra grabación pública

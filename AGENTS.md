@@ -14,6 +14,13 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Continuación de fiabilidad: leer `docs/RELIABILITY_HARDENING_20261027.md`.
+Conserva los seis conjuntos de reparaciones posteriores a 54dcc89: leases y
+reclamaciones por intento, progreso serializado, subidas, guard de originales,
+aislamiento de metadatos y borradores móviles de subtítulos. No reintroducir
+keys de editor basadas en updatedAt que borren texto sin guardar al refrescar.
+No regenerar los vídeos ya preservados; producción y monitor siguen OFF.
+
 Rescate de captura posterior: leer `docs/WESTCOL_CAPTURE_RECHECK_20261027.md`.
 Hay una captura VOD nueva, un borrador de 30,56 s y dos TS restaurados desde R2.
 La recuperación ya no aparta segmentos válidos por cancelación/fallo del host.
