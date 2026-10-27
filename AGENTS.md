@@ -14,6 +14,13 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Continuación posterior del 27 de octubre: leer primero
+`docs/STUDIO_COMPLETION_20261027.md`. Conserva audio-only, glosarios, historial
+de subtítulos, recuperación de metadatos de hasta 16 MiB, deduplicación y el
+arreglo de dimensiones del zoom. No regenerar sus archivos de aceptación.
+La traducción sigue REVIEW_REQUIRED; Chromium móvil no acredita Android físico.
+La nueva referencia congelada no reemplaza a4b2305 ni 761e291.
+
 Auditoría posterior: leer `docs/FULL_SYSTEM_AUDIT_20261026.md` antes de retomar.
 Contiene los clips auténticos de prueba, errores de traducción y correcciones,
 recuperación R2, estados VERIFIED_LOCAL/PARTIAL/BLOCKED y la candidata nueva.
@@ -36,7 +43,10 @@ ClipForge Studio mantiene cuatro entradas visibles: importar URL autorizada, sub
 
 Flujo objetivo:
 
-`fuente licenciada → descarga → transcripción → análisis → fragmento >90 s → subtítulos → CONVERSATION 9:16 → zoom suave → render MP4 → metadata → YouTube → procesamiento → PUBLISHED`
+`fuente autorizada → importación → análisis opcional → intervalo con contexto (~30 s ajustable) → subtítulos revisables opcionales → formato elegido → FFmpeg → MP4/M4A → R2 privado → revisión/descarga`
+
+El flujo histórico de publicación se conserva, pero queda fuera de esta misión.
+Un podcast de solo audio produce audio real y SRT; no fabricar escenas para él.
 
 Nunca considerar `QUEUED`, `RENDERED`, `UPLOADED` o `PROCESSING` como publicación terminada.
 

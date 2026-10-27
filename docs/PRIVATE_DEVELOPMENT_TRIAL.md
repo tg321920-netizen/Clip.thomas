@@ -1,9 +1,10 @@
 # Ensayo privado preparado, sin crear servicios
 
-Actualización de auditoría: consultar `FULL_SYSTEM_AUDIT_20261026.md` y
-`render.audit-preview.yaml` para la candidata revisada .4. La candidata .2 y
-las referencias de este documento se conservan como preparación anterior;
-ninguna de ellas se ha desplegado.
+Actualización del 27 de octubre: consultar `STUDIO_COMPLETION_20261027.md` y
+`render.audit-preview.yaml` para la candidata nueva .1 del 27. Las candidatas
+.4, .2 y estable del 26 y las referencias históricas de este documento se
+conservan sin moverlas; ninguna de ellas acredita un despliegue del ensayo.
+La operación propuesta vigente usa `preview/clipforge-studio-completion-20261027.1`.
 
 No hubo nueva consulta administrativa a Render durante esta fase. RENDER_API_KEY
 sigue siendo una dependencia externa, no un motivo para detener las mejoras.

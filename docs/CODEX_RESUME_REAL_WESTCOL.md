@@ -1,5 +1,11 @@
 # Reanudar ClipForge: clips auténticos de Westcol
 
+**Continuación del 27 de octubre:** leer primero
+[STUDIO_COMPLETION_20261027.md](STUDIO_COMPLETION_20261027.md). Incluye cambios
+del motor compartido, audio-only, traducción revisable y pruebas móviles/R2.
+Westcol estaba OFFLINE en la consulta de esa fase, sin nueva captura ni chat.
+Los archivos NASA de QA no son clips del streamer. No regenerar entregas previas.
+
 **Avance posterior de edición/recuperación:** leer primero
 [CONTINUE_WITHOUT_RENDER_20261026.md](CONTINUE_WITHOUT_RENDER_20261026.md).
 Conserva siete commits sobre 774de6e, con código hasta 40cd791 y aceptación

@@ -21,8 +21,9 @@ que faltan en la instancia. Los controles permanecen detrás de la autenticació
 existente. Guardar un intervalo no significa que ya esté archivado: hay que
 consultar la fecha de la última copia confirmada.
 
-Se guardan original, proyecto, transcripción/análisis incluidos en sus metadatos,
-intervalos, cola de render/transcripción/análisis y MP4 completos. Se excluyen
+Se guardan original de vídeo o audio, proyecto, transcripción/análisis incluidos
+en sus metadatos, glosario, pistas de subtítulos y su historial, intervalos,
+cola de render/transcripción/análisis y resultados MP4/M4A completos. Se excluyen
 credenciales, leases, operaciones de publicación, cabeceras y queries firmadas.
 Los proyectos derivados conservan la referencia a la subida compartida; también
 se admite la fuente editada auto-videos/UUID/edited-clean.mp4. El proyecto bruto
@@ -41,7 +42,7 @@ trabajos incompletos en WAITING_RESOURCE. Se reanudan explícitamente desde el e
 No restaura locks ni inicia modelos, publicación o captura. Un MP4 completo se
 reutiliza; un render interrumpido no se considera terminado.
 
-El límite es 1 GiB por archivo original, 1,9 MB por checkpoint de metadatos,
+El límite es 1 GiB por archivo original, 16 MiB por checkpoint de metadatos,
 100 clips y 100 trabajos por proyecto, 200 proyectos en el listado de recuperación,
 2 GiB por recuperación y el cupo global
 R2 de 8 GB. La restauración exige espacio para staging y 128 MiB de margen.
@@ -49,6 +50,11 @@ No es un backup de todo el servidor ni de transferencias todavía incompletas.
 No incluye cachés de audio ni miniaturas. Se conserva la reproducción del original.
 Los cambios posteriores al último checkpoint confirmado pueden perderse.
 R2 no evita que Render suspenda sus procesos ni ejecuta workers por sí mismo.
+El límite ampliado es exclusivo de estos snapshots; las demás lecturas JSON de
+R2 mantienen su límite por defecto de 2 MB. No se trunca una transcripción para
+hacerla caber: el exceso falla explícitamente y conserva la copia anterior.
+El listado móvil procesa como máximo dos proyectos simultáneos y descarta sus
+transcripciones al preparar los resúmenes.
 
 CLI para una raíz nueva, con workers detenidos:
 
@@ -74,3 +80,14 @@ El respaldo archiva primero mediante ClipLibraryService los renders elegibles:
 el worker de biblioteca reutiliza luego ese mismo objeto, sin una segunda copia.
 La prueba con un directorio de almacenamiento alternativo reutilizó un MP4 real
 protegido en R2 sin escrituras nuevas: root-archive-proof.json en esos artefactos.
+
+## Evidencia adicional del 27 de octubre
+
+`artifacts/completion-20261027/audio-2JuT5b/evidence.json` y
+`automatic-evidence.json`: originales de audio, M4A, glosario e historial
+restaurados a raíces vacías con hashes idénticos. El índice de acontecimientos
+se reconstruye desde el proyecto derivado restaurado y rechaza su repetición.
+`artifacts/completion-20261027/layout-24FWYK/evidence.json`: MP4 real 1280×720,
+SRT y disposición de subtítulos restaurados desde R2. Las restauraciones se
+hacen en directorios nuevos; un checkpoint anterior no puede sobrescribir
+datos locales distintos. Estos ensayos no reinician una instancia de Render.

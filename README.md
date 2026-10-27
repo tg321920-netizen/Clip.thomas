@@ -8,7 +8,7 @@ No se aceptan funciones simuladas. Upload, análisis, metadatos, transcripción,
 
 ## Estado actual
 
-La [auditoría del 26 de octubre](docs/FULL_SYSTEM_AUDIT_20261026.md) distingue código, pruebas reales y despliegue. El editor, los subtítulos originales, R2 y la corrección de traducciones se verificaron localmente con vídeos auténticos. El traductor automático cometió errores de significado que necesitaron corrección. Android físico y el ensayo privado accesible siguen pendientes; no hay una URL nueva certificada.
+La [entrega técnica del 27 de octubre](docs/STUDIO_COMPLETION_20261027.md) distingue código, pruebas reales y despliegue. Se comprobaron vídeo y podcasts de solo audio, subtítulos con historial y glosario, selección local, descarga y restauración privada R2. Chromium móvil utilizó las APIs y archivos reales. La traducción automática sigue necesitando revisión de significado; Android físico y el ensayo accesible siguen pendientes. No hay una URL nueva certificada.
 
 Flujo comprobado localmente:
 
@@ -23,16 +23,18 @@ También incluye:
 - conexión de canales en `/connections`;
 - almacenamiento cifrado de credenciales OAuth;
 - autenticación de propietario obligatoria por defecto en Render/Vercel;
-- Docker + `render.yaml` para el runtime persistente con FFmpeg, FFprobe, Whisper, TTS y workers;
-- elección de cuántos clips/candidatos generar y reanálisis cuando cambia esa configuración.
+- Docker y plantillas diferenciadas para runtime gratuito efímero o infraestructura persistente, con FFmpeg, FFprobe y workers;
+- elección de cuántos clips/candidatos generar y reanálisis cuando cambia esa configuración;
+- podcasts de audio MP3/M4A/WAV/OGG/FLAC/AAC: recorte M4A real y SRT, sin imágenes inventadas;
+- glosario por proyecto, comparación original/traducción e historial recuperable de subtítulos.
 
-Los informes anteriores corresponden a otros commits y no prueban que esta reparación esté desplegada. El sitio anterior observado conserva `e1045df`; no se modificaron los servicios existentes.
+Los informes anteriores corresponden a otros commits y no prueban que esta reparación esté desplegada. La última versión observada del sitio anterior fue `e1045df`; las consultas del 27 de octubre agotaron el tiempo de espera y no acreditan su versión actual. No se modificaron los servicios existentes.
 
 ## Importante sobre producción
 
 Vercel puede alojar la interfaz y endpoints ligeros; el procesamiento nativo prolongado requiere un runtime multimedia con sus workers y almacenamiento. Por eso `/api/health` en Vercel puede reportar `mediaReady: false`; no es un resultado válido para procesar video pesado allí.
 
-Para usar ClipForge de extremo a extremo en producción, el runtime persistente debe desplegarse con el `Dockerfile`/`render.yaml` incluidos en este repositorio o en infraestructura equivalente con:
+Para usar ClipForge de extremo a extremo en producción, se necesita un runtime multimedia y persistencia comprobada. `render.yaml` propone un ensayo Docker gratuito con disco efímero; `render.production.yaml` propone recursos y disco de pago, sin autorización para aprovisionarlos. El ensayo nativo revisado está en `render.audit-preview.yaml`, con auto-deploy, publicación y LIVE desactivados. La infraestructura equivalente necesita:
 
 - FFmpeg y FFprobe;
 - Whisper CLI;
