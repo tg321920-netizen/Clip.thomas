@@ -34,6 +34,8 @@ export class BestClipsService {
   async renderUnlocked(outputProjectId, input, onStage) {
     let original = await loadProjectFile(input.projectId);
     if (!original) throw new Error("El video original no existe.");
+    const previous = await loadProjectFile(outputProjectId);
+    if (previous && previous.clipsOrigin?.projectId !== original.id) throw new WaitingResourceError('El lote guardado pertenece a otra fuente. Inicia un lote nuevo; no se modificaron sus recortes.');
     if (input.subtitleMode !== undefined && !SUBTITLE_MODES.includes(input.subtitleMode)) throw new Error("Modo de subtítulos inválido.");
     if (input.subtitleMode === "TRANSLATE_ES") {
       try { new LocalTranslationProvider({ env: this.env }).assertConfigured(); }
@@ -53,8 +55,8 @@ export class BestClipsService {
     const provider = this.provider || createContentAnalysisProvider({ env: this.env, providerName: input.analysisProvider });
     const checkpointKey = createHash("sha256").update(JSON.stringify({ input, width: this.width, height: this.height,
       transcript: original.transcript, chatActivityWindows: original.liveObservation?.chatActivityWindows || [], continuityBreaks: original.source.capture?.continuityBreaks || [], provider: provider.name, model: provider.model || null, vision: provider.visionEnabled === true })).digest("hex");
-    const previous = await loadProjectFile(outputProjectId);
     const matching = previous?.clipsOrigin?.checkpointKey === checkpointKey;
+    if (previous && !matching) throw new WaitingResourceError('Los ajustes, la transcripción o el proveedor del lote cambiaron. Se conservó el lote anterior; inicia uno nuevo para analizar con esa configuración.');
     let candidates = matching ? previous.analysis?.candidates : null;
     if (!candidates?.length) {
       const audioEnergyWindows = await measureAudioEnergy(resolveStoragePath(original.source.relativePath));

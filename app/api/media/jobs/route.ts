@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const id = isProjectId(input.id) ? input.id : randomUUID();
     const job = await new JobStore().enqueueMedia(input.type, id, payload);
     return NextResponse.json({ job }, { status: 202 });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo iniciar el trabajo." }, { status: 400 }); }
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo iniciar el trabajo." }, { status: error && typeof error === 'object' && 'code' in error && error.code === 'MEDIA_REQUEST_CHANGED' ? 409 : 400 }); }
 }
 export async function GET() {
   const [{ jobs, issues: mediaIssues }, ingests] = await Promise.all([new JobStore().listMediaWithIssues(),new IngestJobStore().listWithIssues(30)]);

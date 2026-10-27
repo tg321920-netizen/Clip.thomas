@@ -71,3 +71,11 @@ test('an interrupted automatic render retains the cut and subtitles in an editab
   assert.equal(saved.length, 1); assert.equal(saved[0].id, f.clipId); assert.equal(saved[0].status, 'FAILED');
   assert.equal(saved[0].subtitles.cues[0].text, f.track.cues[0].text);
 });
+
+test('an incompatible automatic checkpoint is preserved instead of mixing a new request with older cuts', async t => {
+  const f = await fixture(t);
+  await assert.rejects(new BestClipsService({ provider: f.provider }).render(f.outputId, { ...f.input, targetDuration: 31 }), { code: 'WAITING_RESOURCE' });
+  const saved = (await loadProjectFile(f.outputId)).clips;
+  assert.equal(saved.length, 1); assert.equal(saved[0].id, f.clipId);
+  assert.equal(saved[0].subtitles.cues[0].text, f.track.cues[0].text);
+});

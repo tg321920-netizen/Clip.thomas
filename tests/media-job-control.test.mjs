@@ -73,3 +73,15 @@ test("simultaneous resume requests create a single attempt", () => isolated(asyn
   const results = await Promise.all(Array.from({ length: 5 }, () => store.enqueueMedia(queued.type, queued.projectId, queued.payload)));
   assert.equal(new Set(results.map(job => job.generation)).size, 1);
 }));
+
+test('a media job ID cannot be reused for a different source or render request after failure', () => isolated(async store => {
+  const id = randomUUID(), payload = { projectId: randomUUID(), count: 2, subtitleMode: 'ORIGINAL_EN' };
+  await store.enqueueMedia('MEDIA_CLIPS', id, payload);
+  const claimed = await store.claimNext(['MEDIA_CLIPS']);
+  await store.fail(claimed, new Error('explicit interruption'), { retryable: false });
+  await assert.rejects(store.enqueueMedia('MEDIA_CLIPS', id, { ...payload, projectId: randomUUID() }), { code: 'MEDIA_REQUEST_CHANGED' });
+  await assert.rejects(store.enqueueMedia('MEDIA_CLIPS', id, { ...payload, subtitleMode: 'NONE' }), { code: 'MEDIA_REQUEST_CHANGED' });
+  assert.deepEqual((await store.get(claimed.id)).payload, payload);
+  const retried = await store.enqueueMedia('MEDIA_CLIPS', id, { subtitleMode: 'ORIGINAL_EN', count: 2, projectId: payload.projectId });
+  assert.equal(retried.status, 'QUEUED');
+}));

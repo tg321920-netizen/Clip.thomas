@@ -48,6 +48,9 @@ export class JobStore {
     if (!["MEDIA_STORY", "MEDIA_EDIT", "MEDIA_CLIPS"].includes(type)) throw new Error("Unsupported media job.");
     return this.#withMediaMutation(jobId(type, id), async () => {
     const previous = await this.get(jobId(type, id));
+    if (previous && canonicalPayload(previous.payload) !== canonicalPayload(sanitizePayload(payload))) {
+      throw Object.assign(new Error('Este trabajo pertenece a otra solicitud guardada. Crea un lote nuevo para cambiar la fuente o los ajustes; el anterior se conserva.'), { code: 'MEDIA_REQUEST_CHANGED' });
+    }
     if (previous?.status === "CANCELLED") {
       if (await this.#mediaLockActive(previous.id)) throw Object.assign(new Error("El procesador todavía se está deteniendo. Espera unos segundos para reanudar."), { code: "MEDIA_STOPPING" });
       await this.release(previous.id);
@@ -551,6 +554,11 @@ function safeJobId(value) {
   throw new Error("Invalid job id.");
 }
 function sanitizePayload(payload) { if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}; return JSON.parse(JSON.stringify(payload)); }
+function canonicalPayload(value) {
+  const ordered = entry => Array.isArray(entry) ? entry.map(ordered) : entry && typeof entry === 'object'
+    ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, ordered(entry[key])])) : entry;
+  return JSON.stringify(ordered(value || {}));
+}
 function assertProjectId(projectId) { if (!isProjectId(projectId)) throw new Error("Invalid project id."); }
 function getErrorCode(error) { return error instanceof Error && "code" in error ? error.code : undefined; }
 function sameAttempt(previous, current) {
