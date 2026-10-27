@@ -20,7 +20,7 @@ import { parsePublicSourceUrl } from "../../lib/public-source-url.mjs";
 import { openHlsInput, HlsInputError } from "./HlsInputService.mjs";
 import { isKickSource, resolveKickSource } from "../live/KickPublicSourceService.mjs";
 import { openKickChat } from "../live/KickChatSource.mjs";
-import { LiveObservationStore, alignChatToCapture } from "../live/LiveObservationStore.mjs";
+import { LiveObservationStore, alignChatToCapture, sameLiveSource } from "../live/LiveObservationStore.mjs";
 
 export async function ingestUrlJob(job, options = {}) {
   const projectId = job.projectId || job.id;
@@ -272,6 +272,7 @@ export async function captureSegmentedStream({
   onDiagnostic,
   onCaptureMetadata = async () => {},
   hlsInputFactory = openHlsInput,
+  kickSourceResolver = resolveKickSource,
   isVodSource = false,
   onSourceResolved = async () => {},
   finalize = true,
@@ -375,8 +376,12 @@ export async function captureSegmentedStream({
   await deliverParts(true);
   if (remaining > 0) {
     await onProgress(3, "RESOLVING_MEDIA");
-    const kickInput = isKickSource(url) ? await resolveKickSource(url, { signal }) : null;
-    if (kickInput) { clock.source = kickInput.metadata; await onSourceResolved(kickInput.metadata); }
+    const kickInput = isKickSource(url) ? await kickSourceResolver(url, { signal }) : null;
+    if (kickInput) {
+      if (capturedSeconds > 0 && !clock.source) throw Object.assign(new Error("La captura parcial no conserva la identidad de sesión. Recupera su checkpoint o inicia otro trabajo; los segmentos se conservan."), { code: "LIVE_SOURCE_IDENTITY_UNKNOWN", stage: "SOURCE_IDENTITY" });
+      if (clock.source && !sameLiveSource(clock.source, kickInput.metadata)) throw Object.assign(new Error("Cambió la transmisión de Kick. Inicia otra captura; no se mezclan sus bytes con los segmentos anteriores."), { code: "LIVE_SOURCE_CHANGED", stage: "SOURCE_IDENTITY" });
+      clock.source = kickInput.metadata; await onSourceResolved(kickInput.metadata);
+    }
     const resolvedUrl = kickInput?.url || (path.isAbsolute(url) || inputFormat === "HLS" || isDirectStreamInputUrl(url) ? url : await resolveStreamUrl(url, { signal }));
     const remote = /^https?:\/\//iu.test(resolvedUrl);
     const hls = remote && (inputFormat === "HLS" || kickInput || /\.m3u8(?:[?#]|$)/iu.test(resolvedUrl) || !isDirectStreamInputUrl(url));

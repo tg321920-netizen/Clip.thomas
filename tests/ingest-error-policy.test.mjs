@@ -13,6 +13,10 @@ test("timeouts, server errors and temporary disconnections keep bounded retries"
   assert.equal(isRetryableIngestError(new Error("ECONNRESET")), true);
 });
 
+test('changed or unverified capture session identities require explicit recovery instead of automatic retries',()=>{
+  for(const code of ['LIVE_SOURCE_CHANGED','LIVE_SOURCE_IDENTITY_UNKNOWN'])assert.equal(isRetryableIngestError(Object.assign(new Error('Capture needs its original session.'),{code})),false);
+});
+
 import { isDirectMediaUrl, isDirectStreamInputUrl, formatRemoteImportFailure, providerYtDlpArgs } from "../services/ingest/UrlIngestService.mjs";
 
 test("direct MP4 and HLS links with signed query parameters choose the direct path", () => {

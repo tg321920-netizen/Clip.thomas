@@ -6,6 +6,7 @@ import {mkdir, mkdtemp, readFile, readdir, rm, writeFile, access} from 'node:fs/
 import path from 'node:path';
 import os from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
+import {createHash} from 'node:crypto';
 import {captureSegmentedStream} from '../services/ingest/UrlIngestService.mjs';
 
 async function fixture(action) {
@@ -92,5 +93,54 @@ test('an actual decoder rejection still quarantines the fragment and never deliv
     assert.equal(delivered,0);
     const saved=(await readdir(parts)).filter(name=>name.startsWith('part-000000.ts.invalid-'));assert.equal(saved.length,1);
     assert.deepEqual(await readFile(path.join(parts,saved[0])),source);
+  });
+});
+
+test('resuming a channel must not combine retained bytes with a different broadcast',async()=>{
+  await fixture(async({directory,parts,source,executable})=>{
+    process.env.FFMPEG_PATH=await executable('decoder-ok','process.exit(0);');
+    const url='https://kick.com/westcol',previous={version:1,sourceFingerprint:createHash('sha256').update(url).digest('hex'),
+      source:{platform:'KICK',channelId:'669746',sourceId:'previous-session',sourceKind:'LIVE'},ranges:[],continuityBreaks:[]};
+    const clockFile=path.join(parts,'capture-clock.json'),snapshot=JSON.stringify(previous);await writeFile(clockFile,snapshot);
+    let opened=0,announced=0;
+    await assert.rejects(captureSegmentedStream({url,uploadDir:directory,captureSeconds:10,finalize:false,
+      kickSourceResolver:async()=>({url:'https://fixture.example.invalid/live.m3u8',metadata:{...previous.source,sourceId:'different-session'}}),
+      hlsInputFactory:async()=>{opened++;return {inputUrl:'/fixture-stream.mp4',snapshot:()=>({}),close:async()=>{}};},
+      onSourceResolved:()=>{announced++;}}),{code:'LIVE_SOURCE_CHANGED'});
+    assert.equal(opened,0);assert.equal(announced,0);assert.equal(await readFile(clockFile,'utf8'),snapshot);await assertPreserved(parts,source);
+  });
+});
+
+test('partial channel capture without a saved session identity cannot be appended to a new live source',async()=>{
+  await fixture(async({directory,parts,source,executable})=>{
+    process.env.FFMPEG_PATH=await executable('decoder-ok','process.exit(0);');
+    let opened=0;
+    await assert.rejects(captureSegmentedStream({url:'https://kick.com/westcol',uploadDir:directory,captureSeconds:10,finalize:false,
+      kickSourceResolver:async()=>({url:'https://fixture.example.invalid/live.m3u8',metadata:{platform:'KICK',channelId:'669746',sourceId:'current-session',sourceKind:'LIVE'}}),
+      hlsInputFactory:async()=>{opened++;return {inputUrl:'/fixture-stream.mp4',snapshot:()=>({}),close:async()=>{}};}}),{code:'LIVE_SOURCE_IDENTITY_UNKNOWN'});
+    assert.equal(opened,0);await assertPreserved(parts,source);
+  });
+});
+
+test('retained bytes from the same known broadcast remain resumable',async()=>{
+  await fixture(async({directory,parts,executable})=>{
+    process.env.FFMPEG_PATH=await executable('decoder-ok','process.exit(0);');
+    const url='https://kick.com/westcol',source={platform:'KICK',channelId:'669746',sourceId:'same-session',sourceKind:'LIVE'};
+    await writeFile(path.join(parts,'capture-clock.json'),JSON.stringify({version:1,sourceFingerprint:createHash('sha256').update(url).digest('hex'),source,ranges:[],continuityBreaks:[]}));
+    let opened=0;const result=await captureSegmentedStream({url,uploadDir:directory,captureSeconds:10,finalize:false,
+      kickSourceResolver:async()=>({url:'https://fixture.example.invalid/live.m3u8',metadata:source}),
+      hlsInputFactory:async()=>{opened++;return {inputUrl:'/fixture-stream.mp4',snapshot:()=>({}),close:async()=>{}};}});
+    assert.equal(opened,1);assert.equal(result.capture.source.sourceId,source.sourceId);
+  });
+});
+
+test('a completed capture is recoverable without resolving the currently active broadcast',async()=>{
+  await fixture(async({directory,parts,executable})=>{
+    process.env.FFMPEG_PATH=await executable('decoder-ok','process.exit(0);');
+    const url='https://kick.com/westcol',source={platform:'KICK',channelId:'669746',sourceId:'saved-session',sourceKind:'LIVE'};
+    await writeFile(path.join(parts,'capture-clock.json'),JSON.stringify({version:1,sourceFingerprint:createHash('sha256').update(url).digest('hex'),source,ranges:[],continuityBreaks:[]}));
+    let resolved=0,recovered=false;const result=await captureSegmentedStream({url,uploadDir:directory,captureSeconds:5,finalize:false,
+      kickSourceResolver:async()=>{resolved++;throw new Error('Do not resolve a new stream.');},onSourceResolved:metadata=>{recovered=metadata.recoveredCapture===true;}});
+    assert.equal(resolved,0);assert.equal(recovered,true);assert.equal(result.capture.source.sourceId,source.sourceId);
   });
 });
