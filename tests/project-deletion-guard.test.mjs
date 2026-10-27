@@ -14,3 +14,20 @@ test('deleting an original is blocked while another project or unfinished batch 
   await writeFile(batch,JSON.stringify({projectId:id,status:'COMPLETED'}));await assertProjectDeletionSafe(id,{root});
   await writeFile(shared,'broken metadata');await assert.rejects(assertProjectDeletionSafe(id,{root}),{code:'PROJECT_IN_USE'});
 });
+
+test('an unrelated long transcript within the recovery metadata limit does not block all project deletions', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-long-delete-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'projects'));
+  await writeFile(path.join(root, 'projects', 'other.json'), JSON.stringify({ source: { relativePath: 'uploads/unrelated/source.mp4' }, transcript: { segments: [{ text: 'a'.repeat(2_100_000) }] } }));
+  await assertProjectDeletionSafe(id, { root });
+});
+
+test('an original still being finalized by an ingest worker cannot be deleted', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'clipforge-ingest-delete-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'ingest-jobs'));
+  const job = path.join(root, 'ingest-jobs', `${id}.json`);
+  await writeFile(job, JSON.stringify({ projectId: id, type: 'INGEST_UPLOAD', status: 'PROCESSING' }));
+  await assert.rejects(assertProjectDeletionSafe(id, { root }), { code: 'PROJECT_IN_USE' });
+  await writeFile(job, JSON.stringify({ projectId: id, type: 'INGEST_UPLOAD', status: 'COMPLETED' }));
+  await assertProjectDeletionSafe(id, { root });
+});

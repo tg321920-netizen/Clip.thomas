@@ -6,6 +6,8 @@ import { isProjectId } from "../../lib/project-id.mjs";
 import { getStorageRoot } from "../../lib/storage-paths.mjs";
 import { sanitizeOriginalName, validateUploadDescriptor } from "../../lib/upload-policy.mjs";
 import { writeAll } from "../../lib/write-all.mjs";
+import { leaseOwner, ownerIsAlive } from "../../lib/process-lease.mjs";
+import { writeAtomicJson } from "../../lib/atomic-local-state.mjs";
 
 export const UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
 const TTL_MS = 48 * 60 * 60 * 1000;
@@ -170,25 +172,41 @@ export class ResumableUploadStore {
     return publicSession(completed);
   }
   async save(session) {
-    const target = path.join(this.directory(session.id), "session.json"), temp = `${target}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(session), { flag: "wx", mode: 0o600 }); await rename(temp, target);
+    await writeAtomicJson(path.join(this.directory(session.id), 'session.json'), session);
   }
   async lock(id, operation) {
-    const lock = path.join(this.directory(id), "lock"); let handle;
+    const lock = path.join(this.directory(id), "lock"), owner = { ...leaseOwner(), nonce: randomUUID() }; let handle;
     try { handle = await open(lock, "wx"); }
     catch (error) {
       if (error.code !== "EEXIST") throw error;
       // Never steal a live writer's lock. A dead process is recoverable on this single-host runtime.
-      const owner = Number(await readFile(lock, "utf8").catch(() => "0"));
+      let contents, info;
+      try { info = await stat(lock); contents = await readFile(lock, 'utf8'); }
+      catch (failure) { if (failure.code === 'ENOENT') return this.lock(id, operation); throw failure; }
+      let saved;
+      try { saved = JSON.parse(contents); } catch (failure) { if (!(failure instanceof SyntaxError)) throw failure; }
       let alive = true;
-      if (owner > 0) { try { process.kill(owner, 0); } catch (e) { if (e.code === "ESRCH") alive = false; } }
-      else alive = Date.now() - (await stat(lock)).mtimeMs < 5 * 60 * 1000;
+      if (Number.isSafeInteger(saved?.pid) && saved.pid > 0) alive = ownerIsAlive(saved);
+      else if (/^\d+$/.test(contents) && Number(contents) > 0) {
+        // Prior versions wrote only a PID. Keep live legacy writers protected;
+        // their missing process-start identity cannot be invented retroactively.
+        try { process.kill(Number(contents), 0); } catch (e) { if (e.code === 'ESRCH') alive = false; }
+      } else alive = Date.now() - info.mtimeMs < 5 * 60 * 1000;
       if (alive) throw new UploadError("La subida está ocupada. Reintenta en unos segundos.", "UPLOAD_BUSY", 409);
+      const current = await stat(lock).catch(failure => { if (failure.code === 'ENOENT') return null; throw failure; });
+      if (!current || current.ino !== info.ino || current.dev !== info.dev || current.mtimeMs !== info.mtimeMs || current.size !== info.size) return this.lock(id, operation);
       await rm(lock, { force: true });
       return this.lock(id, operation);
     }
-    try { await handle.writeFile(String(process.pid)); return await operation(); }
-    finally { await handle.close(); await rm(lock, { force: true }); }
+    let ownerWritten = false;
+    try { await handle.writeFile(JSON.stringify(owner)); ownerWritten = true; return await operation(); }
+    finally {
+      await handle.close();
+      let saved;
+      try { saved = JSON.parse(await readFile(lock, 'utf8')); }
+      catch (failure) { if (failure.code !== 'ENOENT' && !(failure instanceof SyntaxError)) throw failure; }
+      if (!ownerWritten || saved?.nonce === owner.nonce) await rm(lock, { force: true });
+    }
   }
   async cleanup() {
     const root = path.join(this.root, "upload-sessions"); await mkdir(root, { recursive: true });
