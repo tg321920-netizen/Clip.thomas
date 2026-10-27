@@ -1,6 +1,8 @@
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { LocalTranslationProvider } from "./LocalTranslationProvider.mjs";
 import { spokenTranscriptText } from "../../lib/transcript-normalizer.mjs";
+import { createHash } from 'node:crypto';
+import { assessTranslation, normalizeGlossary, subtitleReadability, TRANSLATION_PIPELINE_VERSION } from './TranslationQualityService.mjs';
 
 const STYLES = new Set(["CLEAN", "VIRAL", "KARAOKE"]);
 export const SUBTITLE_MODES = ["NONE", "ORIGINAL_ES", "ORIGINAL_EN", "TRANSLATE_ES"];
@@ -11,7 +13,7 @@ export async function requestSubtitleMode(projectId, clipId, mode, style = "CLEA
     const clip = findClip(project, clipId);
     if (!clip) throw new Error("Clip not found.");
     assertSubtitleEditable(clip);
-    clip.edit = { ...clip.edit, subtitleMode: mode, subtitleStyle: normalizeSubtitleStyle(style), subtitlesEnabled: mode !== "NONE" };
+    clip.edit = { ...clip.edit, subtitleMode: mode, subtitleStyle: normalizeSubtitleStyle(style), subtitlesEnabled: mode !== "NONE", subtitleRegenerate: true };
     // Keep previous texts recoverable until the new track has succeeded.
     invalidateClipRender(clip);
     return clip;
@@ -22,7 +24,7 @@ export async function requestSubtitleMode(projectId, clipId, mode, style = "CLEA
 export async function prepareSubtitleTrack(project, clip, { translator = new LocalTranslationProvider() } = {}) {
   const mode = clip.edit?.subtitleMode;
   if (!mode || mode === "NONE") return null;
-  if (clip.subtitles?.mode === mode && clip.subtitles?.sourceTranscriptId === project.transcript?.id) return clip.subtitles;
+  if (!clip.edit.subtitleRegenerate && clip.subtitles?.mode === mode && clip.subtitles?.sourceTranscriptId === project.transcript?.id) return clip.subtitles;
   const expected = mode === "ORIGINAL_ES" ? "es" : "en";
   if (project.transcript?.language !== expected) throw new Error(`El audio detectado no es ${expected === "es" ? "español" : "inglés"}. Revisa la transcripción y el idioma seleccionado.`);
   const source = buildSubtitleTrack({ transcript: project.transcript, clip, style: clip.edit.subtitleStyle });
@@ -36,12 +38,23 @@ export async function prepareSubtitleTrack(project, clip, { translator = new Loc
       previous.text += " " + cue.text; previous.endTime = cue.endTime;
     } else groups.push({ startTime: cue.startTime, endTime: cue.endTime, text: cue.text });
   }
-  const translated = await translator.translate(groups.map(c => c.text));
+  const glossary = normalizeGlossary(project.translationSettings?.glossary);
+  const transcript = project.transcript.segments || [];
+  const contexts = groups.map(group => ({
+    before: transcript.filter(s=>s.endTime <= clip.startTime+group.startTime+.001).slice(-2).map(s=>spokenTranscriptText(s.text)).join(' '),
+    after: transcript.filter(s=>s.startTime >= clip.startTime+group.endTime-.001).slice(0,2).map(s=>spokenTranscriptText(s.text)).join(' '),
+  }));
+  const translated = await translator.translate(groups.map(c => c.text), { contexts, glossary });
   if (translated.texts.length !== groups.length) throw new Error("Cantidad de traducciones inválida.");
   const segments = groups.map((cue, index) => ({ ...cue, text: translated.texts[index] }));
   const track = buildSubtitleTrack({ transcript: { id: project.transcript.id, segments }, clip: { startTime: 0, endTime: clip.duration, duration: clip.duration }, style: clip.edit.subtitleStyle });
-  return { ...track, mode, language: "es", sourceLanguage: "en", sourceCues: source.cues, timingBasis: "SOURCE_SENTENCE_INTERVALS", reviewStatus: "PENDING",
-    translation: { provider: translated.provider, modelSha256: translated.modelSha256, audioReplaced: false, reviewRequired: true } };
+  const units = groups.map((group,index) => ({ ...group, target: translated.texts[index],
+    direct: translated.units?.[index]?.direct, contextUsed: translated.units?.[index]?.contextUsed || false,
+    quality: assessTranslation(group.text, translated.texts[index], { glossary, duration: group.endTime-group.startTime, issues: translated.units?.[index]?.issues }) }));
+  return { ...track, mode, layout: clip.subtitles?.layout, language: "es", sourceLanguage: "en", sourceCues: source.cues, timingBasis: "SOURCE_SENTENCE_INTERVALS", reviewStatus: "REVIEW_REQUIRED",
+    readability: subtitleReadability(track.cues),
+    translation: { provider: translated.provider, modelSha256: translated.modelSha256, pipelineVersion: translated.pipelineVersion || TRANSLATION_PIPELINE_VERSION,
+      glossary, units, audioReplaced: false, reviewRequired: true } };
 }
 
 export async function getSubtitleTrack(projectId, clipId) {
@@ -81,6 +94,7 @@ export async function generateSubtitleTrack(projectId, clipId, options = {}) {
     throw new Error("No transcript content overlaps this clip.");
   }
 
+  rememberSubtitleVersion(clip, 'REGENERATED');
   clip.subtitles = track;
   clip.edit = {
     ...clip.edit,
@@ -103,6 +117,9 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
   if (!clip.subtitles) {
     throw new Error("Subtitle track has not been generated.");
   }
+  if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== clip.subtitles.updatedAt) {
+    throw Object.assign(new Error('Los subtítulos cambiaron en otra sesión. Vuelve a abrir el editor para comparar; no se sobrescribió ninguna versión.'), { code: 'SUBTITLE_STALE' });
+  }
 
   const style = normalizeSubtitleStyle(
     input.style || clip.subtitles.style || clip.edit?.subtitleStyle,
@@ -111,6 +128,7 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
     typeof input.enabled === "boolean"
       ? input.enabled
       : clip.subtitles.enabled !== false;
+  const layout = input.layout === undefined ? clip.subtitles.layout : normalizeSubtitleLayout(input.layout);
 
   const cues = Array.isArray(input.cues)
     ? sanitizeSubtitleCues(input.cues, Number(clip.duration))
@@ -121,20 +139,23 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
   }
   const cueSignature = items => JSON.stringify(items.map(c => ({ id: c.id, startTime: c.startTime, endTime: c.endTime, text: c.text,
     words: c.words?.map(w => ({ startTime: w.startTime, endTime: w.endTime, text: w.text })) })));
-  if (style === clip.subtitles.style && enabled === (clip.subtitles.enabled !== false) && cueSignature(cues) === cueSignature(clip.subtitles.cues)) {
+  if (style === clip.subtitles.style && enabled === (clip.subtitles.enabled !== false) && JSON.stringify(layout) === JSON.stringify(clip.subtitles.layout) && cueSignature(cues) === cueSignature(clip.subtitles.cues)) {
     return clip.subtitles;
   }
 
+  rememberSubtitleVersion(clip, 'MANUAL_EDIT');
   clip.subtitles = {
     ...clip.subtitles,
     ...(clip.subtitles.translation && Array.isArray(input.cues) ? {
       machineCues: clip.subtitles.machineCues || clip.subtitles.cues,
       translation: { ...clip.subtitles.translation, manuallyEdited: true, reviewRequired: true },
-      reviewStatus: "PENDING",
+      reviewStatus: "REVIEW_REQUIRED",
     } : {}),
     enabled,
     style,
+    ...(layout ? { layout } : {}),
     cues,
+    readability: subtitleReadability(cues),
     updatedAt: new Date().toISOString(),
   };
 
@@ -147,6 +168,42 @@ export async function updateSubtitleTrack(projectId, clipId, input = {}) {
   invalidateClipRender(clip);
   return clip.subtitles;
   });
+}
+
+export function rememberSubtitleVersion(clip, reason) {
+  if (!clip.subtitles) return;
+  const track = structuredClone(clip.subtitles);
+  const versionId = createHash('sha256').update(JSON.stringify(track)).digest('hex');
+  clip.subtitleHistory ||= [];
+  if (clip.subtitleHistory.some(version=>version.versionId===versionId)) return;
+  const version = { versionId, savedAt: new Date().toISOString(), reason, track };
+  if (clip.subtitleHistory.length >= 30 || Buffer.byteLength(JSON.stringify([...clip.subtitleHistory,version])) > 180_000) {
+    throw new Error('El historial alcanzó su límite seguro. Exporta sus versiones antes de continuar; no se borró ninguna corrección.');
+  }
+  clip.subtitleHistory.push(version);
+}
+
+export async function restoreSubtitleVersion(projectId, clipId, versionId) {
+  return updateProjectFile(projectId, project => {
+    const clip = findClip(project,clipId); if (!clip) throw new Error('Clip not found.');
+    assertSubtitleEditable(clip);
+    const version = clip.subtitleHistory?.find(v=>v.versionId===versionId);
+    if (!version) throw new Error('Subtitle version not found.');
+    rememberSubtitleVersion(clip,'BEFORE_RESTORE');
+    clip.subtitles = { ...structuredClone(version.track), updatedAt: new Date().toISOString() };
+    clip.edit = { ...clip.edit, subtitleMode: clip.subtitles.mode || clip.edit?.subtitleMode,
+      subtitleStyle: clip.subtitles.style, subtitlesEnabled: clip.subtitles.enabled, subtitleRegenerate: false };
+    invalidateClipRender(clip); return clip.subtitles;
+  });
+}
+
+export function normalizeSubtitleLayout(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Configuración visual de subtítulos inválida.');
+  const fontSize = Number(value.fontSize ?? 54), marginPercent = Number(value.marginPercent ?? 9.4);
+  const position = value.position || 'BOTTOM', color = value.color || '#FFFFFF';
+  if (!Number.isFinite(fontSize) || fontSize < 32 || fontSize > 96 || !Number.isFinite(marginPercent) || marginPercent < 3 || marginPercent > 22 ||
+    !['TOP','BOTTOM'].includes(position) || !/^#[a-f0-9]{6}$/iu.test(color)) throw new Error('Tamaño, posición, margen o color de subtítulos inválidos.');
+  return { fontSize, position, marginPercent, color: color.toUpperCase() };
 }
 
 export function assertSubtitleEditable(clip) {
@@ -273,10 +330,16 @@ export function sanitizeSubtitleCues(cues, clipDuration) {
   return result;
 }
 
-export function buildAssDocument(track) {
+export function buildAssDocument(track, { width = 1080, height = 1920 } = {}) {
   const style = normalizeSubtitleStyle(track?.style);
   const cues = Array.isArray(track?.cues) ? track.cues : [];
-  const styleLine = assStyleLine(style);
+  const base = assStyleLine(style).split(',');
+  const layout = track?.layout ? normalizeSubtitleLayout(track.layout) : null;
+  base[2] = String(Math.max(18,Math.round((layout?.fontSize ?? Number(base[2])) * height / 1920)));
+  if (layout) { const rgb = layout.color.slice(1); base[3] = '&H00'+rgb.slice(4,6)+rgb.slice(2,4)+rgb.slice(0,2); base[18] = layout.position === 'TOP' ? '8' : '2'; }
+  base[19] = String(Math.round(Number(base[19])*width/1080)); base[20] = String(Math.round(Number(base[20])*width/1080));
+  base[21] = String(Math.round(layout ? height*layout.marginPercent/100 : Number(base[21])*height/1920));
+  const styleLine = base.join(',');
 
   const events = cues
     .filter(
@@ -309,8 +372,8 @@ export function buildAssDocument(track) {
   return [
     "[Script Info]",
     "ScriptType: v4.00+",
-    "PlayResX: 1080",
-    "PlayResY: 1920",
+    `PlayResX: ${width}`,
+    `PlayResY: ${height}`,
     "WrapStyle: 0",
     "ScaledBorderAndShadow: yes",
     "",

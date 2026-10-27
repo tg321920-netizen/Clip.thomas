@@ -10,6 +10,7 @@ import type { ClipRecord } from "@/types/clip";
 import type { NewsBrief } from "@/types/news";
 
 export type ProjectRecord = {
+  translationSettings?: { glossary: Array<{source:string;target:string}>; updatedAt?: string };
   id: string;
   createdAt: string;
   source: UploadedVideo & {

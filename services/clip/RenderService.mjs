@@ -99,7 +99,7 @@ export class RenderService {
       clip.subtitles.cues.length > 0
     ) {
       const assPath = path.join(outputDir, "subtitles.ass");
-      await writeFile(assPath, buildAssDocument(clip.subtitles), "utf8");
+      await writeFile(assPath, buildAssDocument(clip.subtitles, { width: this.width, height: this.height }), "utf8");
       postFilters.push(`ass='${escapeFilterPath(assPath)}'`);
       subtitlesBurned = true;
     }

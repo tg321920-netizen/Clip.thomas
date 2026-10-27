@@ -4,7 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { loadProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
 import { RenderService } from "./RenderService.mjs";
 import {manualOutputOptions} from '../../lib/render-options.mjs';
-import { SUBTITLE_MODES, prepareSubtitleTrack } from '../subtitles/SubtitleService.mjs';
+import { SUBTITLE_MODES, prepareSubtitleTrack, rememberSubtitleVersion } from '../subtitles/SubtitleService.mjs';
 import { transcribeProject } from '../transcription/TranscriptionService.mjs';
 import { LocalTranslationProvider } from '../subtitles/LocalTranslationProvider.mjs';
 
@@ -134,9 +134,12 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
       await updateProjectFile(projectId, current => {
         const target = current.clips?.find(c => c.id === clipId);
         if (!target || Number(target.editRevision || 0) !== Number(clip.editRevision || 0)) throw new Error('El recorte cambió mientras se preparaban subtítulos.');
+        if (target.subtitles !== track && JSON.stringify(target.subtitles) !== JSON.stringify(track)) rememberSubtitleVersion(target,'REGENERATED');
         target.subtitles = track;
+        target.edit.subtitleRegenerate = false;
       });
       clip.subtitles = track;
+      clip.edit.subtitleRegenerate = false;
     }
     const render = await renderService.renderClip({
       project,

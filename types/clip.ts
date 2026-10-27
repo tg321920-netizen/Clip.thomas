@@ -18,14 +18,18 @@ export type SubtitleCue = {
 };
 
 export type SubtitleTrack = {
+  layout?: { fontSize: number; position: 'TOP'|'BOTTOM'; marginPercent: number; color: string };
+  readability?: Array<{ cueId: string; issues: string[] }>;
   mode?: SubtitleMode;
   language?: string;
   sourceLanguage?: string;
   sourceCues?: SubtitleCue[];
   machineCues?: SubtitleCue[];
   timingBasis?: string;
-  reviewStatus?: "PENDING";
-  translation?: { provider: string; modelSha256: string; audioReplaced: false; reviewRequired: true; manuallyEdited?: boolean };
+  reviewStatus?: "PENDING" | "REVIEW_REQUIRED";
+  translation?: { provider: string; modelSha256: string; audioReplaced: false; reviewRequired: true; manuallyEdited?: boolean;
+    glossary?: Array<{source:string;target:string}>; pipelineVersion?: string;
+    units?: Array<{text:string;target:string;direct?:string;contextUsed:boolean;quality:{status:string;issues:string[]}}> };
   enabled: boolean;
   style: SubtitleStyle;
   sourceTranscriptId: string;
@@ -81,6 +85,7 @@ export type AutoEditPlan = {
 };
 
 export type ClipRecord = {
+  subtitleHistory?: Array<{versionId:string;savedAt:string;reason:string;track:SubtitleTrack}>;
   id: string;
   projectId: string;
   candidateId: string;
@@ -99,6 +104,7 @@ export type ClipRecord = {
     subtitlesEnabled: boolean;
     subtitleStyle: SubtitleStyle;
     subtitleMode?: SubtitleMode;
+    subtitleRegenerate?: boolean;
     quality: ClipRenderQuality;
     autoReframeEnabled?: boolean;
   };

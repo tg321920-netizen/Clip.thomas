@@ -20,7 +20,7 @@ test('simulated translation keeps sentence intervals, provenance and original au
   let observed;
   const track=await prepareSubtitleTrack(project,clip,{translator:{translate:async texts=>{observed=texts;return{texts:['No gastamos 15 millones de dólares.','¿Por qué la NASA eligió esta misión?'],provider:'MOCK_FOR_UNIT_TEST',modelSha256:'a'.repeat(64)};}}});
   assert.deepEqual(observed,['We did not spend 15 million dollars.','Why did NASA choose this mission?']);
-  assert.equal(track.language,'es');assert.equal(track.sourceLanguage,'en');assert.equal(track.reviewStatus,'PENDING');
+  assert.equal(track.language,'es');assert.equal(track.sourceLanguage,'en');assert.equal(track.reviewStatus,'REVIEW_REQUIRED');
   assert.equal(track.translation.audioReplaced,false);assert.equal(track.translation.provider,'MOCK_FOR_UNIT_TEST');
   assert.equal(track.cues[0].startTime,0);assert.equal(track.cues[0].endTime,4);assert.equal(track.cues[1].startTime,6);
   assert.ok(track.cues.every(c=>!c.words&&c.endTime<=10));assert.equal(track.sourceCues.filter(c=>c.endTime<=4).map(c=>c.text).join(' '),observed[0]);
