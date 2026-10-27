@@ -585,7 +585,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                         </div>
 
                         <ClipSubtitleEditor
-                          key={`${clip.id}:${clip.updatedAt}`}
+                          key={clip.id}
                           projectId={projectId}
                           clip={clip}
                           onRenderNeeded={() => queueClip(candidate.id, clip.id)}

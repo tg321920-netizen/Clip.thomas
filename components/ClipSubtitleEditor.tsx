@@ -39,6 +39,30 @@ export function ClipSubtitleEditor({
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<SubtitleMode>(clip.edit.subtitleMode || (clip.subtitles?.language === 'en' ? 'ORIGINAL_EN' : 'ORIGINAL_ES'));
   const [layout,setLayout] = useState<NonNullable<SubtitleTrack['layout']>>(clip.subtitles?.layout || {fontSize:54,position:'BOTTOM',marginPercent:9.4,color:'#FFFFFF'});
+  const [dirty, setDirty] = useState(false);
+  const [savedChanged, setSavedChanged] = useState(false);
+  const savedRevision = `${clip.subtitles?.updatedAt || ''}:${clip.edit.subtitleMode || ''}:${clip.edit.subtitleStyle}:${clip.edit.subtitlesEnabled}`;
+  const [seenRevision, setSeenRevision] = useState(savedRevision);
+
+  // Polling may update a clip without changing its caption track. Keep local
+  // typing, and accept a newer saved track automatically only while clean.
+  function loadSavedTrack() {
+    setTrack(clip.subtitles);
+    setStyle(clip.subtitles?.style || clip.edit.subtitleStyle || 'CLEAN');
+    setEnabled(clip.subtitles?.enabled ?? clip.edit.subtitlesEnabled ?? false);
+    setMode(clip.edit.subtitleMode || (clip.subtitles?.language === 'en' ? 'ORIGINAL_EN' : 'ORIGINAL_ES'));
+    setLayout(clip.subtitles?.layout || {fontSize:54,position:'BOTTOM',marginPercent:9.4,color:'#FFFFFF'});
+    setDirty(false); setSavedChanged(false); setSeenRevision(savedRevision); setError(null);
+  }
+  if (seenRevision !== savedRevision && busy === null) {
+    setSeenRevision(savedRevision);
+    if (dirty) setSavedChanged(true);
+    else loadSavedTrack();
+  }
+  const draftNotice = dirty && <div className="mt-3 rounded-lg border border-amber-300/40 p-3">
+    <p role="status" className="text-sm text-amber-200">{savedChanged ? 'Hay otra versión guardada. Tus cambios sin guardar se conservan.' : 'Tienes cambios sin guardar. El refresco de progreso no los reemplaza.'}</p>
+    <button type="button" disabled={busy !== null} className="mt-3 min-h-12 rounded-lg border border-white/20 px-3 py-3 text-sm" onClick={loadSavedTrack}>Descartar mis cambios y cargar la versión guardada</button>
+  </div>;
   const modeControls = <label className="mt-3 block text-sm">Idioma de subtítulos<select aria-label="Idioma de subtítulos" className="mt-2 min-h-12 w-full rounded-lg border border-white/20 bg-zinc-950 px-3 text-base" value={mode} disabled={busy !== null} onChange={event=>setMode(event.target.value as SubtitleMode)}><option value="NONE">Sin subtítulos</option><option value="ORIGINAL_ES">Español → español</option><option value="ORIGINAL_EN">Inglés → inglés</option><option value="TRANSLATE_ES">Inglés → español traducido</option></select></label>;
 
   async function generate() {
@@ -69,6 +93,7 @@ export function ClipSubtitleEditor({
         setStyle(payload.subtitles.style);
         setEnabled(payload.subtitles.enabled);
       }
+      setDirty(false); setSavedChanged(false);
       await onRenderNeeded();
     } catch (actionError) {
       setError(
@@ -109,6 +134,7 @@ export function ClipSubtitleEditor({
       }
 
       setTrack(payload.subtitles);
+      setDirty(false); setSavedChanged(false);
       if (payload.renderInvalidated !== false) await onRenderNeeded();
     } catch (actionError) {
       setError(
@@ -126,6 +152,7 @@ export function ClipSubtitleEditor({
     patch: Partial<Pick<SubtitleCue, "text" | "startTime" | "endTime">>,
   ) {
     if (!track) return;
+    setDirty(true);
     setTrack({
       ...track,
       cues: track.cues.map((cue) =>
@@ -145,7 +172,7 @@ export function ClipSubtitleEditor({
     try {
       const response=await fetch(`/api/projects/${projectId}/clips/${clip.id}/subtitles`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({restoreVersion:versionId})});
       const data=await response.json();if(!response.ok)throw new Error(data.error||'No se pudo restaurar.');
-      setTrack(data.subtitles);setStyle(data.subtitles.style);setEnabled(data.subtitles.enabled);if(data.subtitles.layout)setLayout(data.subtitles.layout);
+      setTrack(data.subtitles);setStyle(data.subtitles.style);setEnabled(data.subtitles.enabled);if(data.subtitles.layout)setLayout(data.subtitles.layout);setDirty(false);setSavedChanged(false);
       await onRenderNeeded();
     }catch(error){setError(error instanceof Error?error.message:'No se pudo restaurar.');}finally{setBusy(null);}
   }
@@ -179,7 +206,7 @@ export function ClipSubtitleEditor({
             type="button"
             onClick={() => void generate()}
             disabled={busy !== null}
-            className="mt-3 w-full rounded-lg border border-violet-400/20 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/15 disabled:opacity-40"
+            className="mt-3 min-h-12 w-full rounded-lg border border-violet-400/20 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/15 disabled:opacity-40"
           >
             {busy === "generate"
               ? "Generando…"
@@ -203,6 +230,7 @@ export function ClipSubtitleEditor({
   return (
     <>
       <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+        {draftNotice}
         {modeControls}
         <TranslationGlossary projectId={projectId}/>
         <button type="button" disabled={busy !== null} className="mt-3 min-h-12 w-full rounded-lg border border-violet-400/40 px-3 py-3 text-sm" onClick={()=>void generate()}>Aplicar idioma y renderizar</button>
@@ -224,7 +252,7 @@ export function ClipSubtitleEditor({
               <input
                 type="checkbox"
                 checked={enabled}
-                onChange={(event) => setEnabled(event.target.checked)}
+                onChange={(event) => {setEnabled(event.target.checked);setDirty(true);}}
                 disabled={busy !== null}
               />
               Incrustar en el archivo
@@ -232,7 +260,7 @@ export function ClipSubtitleEditor({
 
             {clip.render?.mediaKind!=='AUDIO'&&<select
               value={style}
-              onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
+              onChange={(event) => {setStyle(event.target.value as SubtitleStyle);setDirty(true);}}
               disabled={busy !== null}
               className="min-h-12 rounded-lg border border-white/10 bg-zinc-950 px-2 py-2 text-sm text-zinc-300"
             >
@@ -244,10 +272,10 @@ export function ClipSubtitleEditor({
         </div>
 
         {clip.render?.mediaKind!=='AUDIO'&&<fieldset className="mt-3 grid grid-cols-2 gap-3 text-sm" disabled={busy!==null}><legend className="mb-2">Apariencia de subtítulos</legend>
-          <label>Tamaño<input aria-label="Tamaño de subtítulos" type="number" min={32} max={96} value={layout.fontSize} onChange={e=>setLayout({...layout,fontSize:Number(e.target.value)})} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
-          <label>Posición<select aria-label="Posición de subtítulos" value={layout.position} onChange={e=>setLayout({...layout,position:e.target.value as 'TOP'|'BOTTOM'})} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"><option value="BOTTOM">Abajo</option><option value="TOP">Arriba</option></select></label>
-          <label>Margen (%)<input aria-label="Margen de subtítulos" type="number" min={3} max={22} step={.5} value={layout.marginPercent} onChange={e=>setLayout({...layout,marginPercent:Number(e.target.value)})} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
-          <label>Color<input aria-label="Color de subtítulos" type="color" value={layout.color} onChange={e=>setLayout({...layout,color:e.target.value})} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
+          <label>Tamaño<input aria-label="Tamaño de subtítulos" type="number" min={32} max={96} value={layout.fontSize} onChange={e=>{setLayout({...layout,fontSize:Number(e.target.value)});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
+          <label>Posición<select aria-label="Posición de subtítulos" value={layout.position} onChange={e=>{setLayout({...layout,position:e.target.value as 'TOP'|'BOTTOM'});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"><option value="BOTTOM">Abajo</option><option value="TOP">Arriba</option></select></label>
+          <label>Margen (%)<input aria-label="Margen de subtítulos" type="number" min={3} max={22} step={.5} value={layout.marginPercent} onChange={e=>{setLayout({...layout,marginPercent:Number(e.target.value)});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
+          <label>Color<input aria-label="Color de subtítulos" type="color" value={layout.color} onChange={e=>{setLayout({...layout,color:e.target.value});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
         </fieldset>}
         {!!clip.subtitleHistory?.length&&<details className="mt-3 rounded-lg border border-white/20 p-3"><summary className="min-h-12 py-3 text-sm">Historial de subtítulos ({clip.subtitleHistory.length})</summary>{clip.subtitleHistory.map(version=><div key={version.versionId} className="mt-2 flex flex-wrap items-center gap-3 text-sm"><span>{new Date(version.savedAt).toLocaleString()}</span><a className="min-h-12 py-3 text-cyan-200" href={`/api/projects/${projectId}/clips/${clip.id}/subtitles?format=srt&version=${version.versionId}`} download>Descargar SRT anterior</a><button className="min-h-12 rounded-lg border border-white/20 px-3" type="button" disabled={busy!==null} onClick={()=>void restore(version.versionId)}>Restaurar esta versión</button></div>)}</details>}
 
@@ -266,6 +294,7 @@ export function ClipSubtitleEditor({
                     max={clip.duration}
                     step={0.05}
                     value={cue.startTime}
+                    disabled={busy !== null}
                     onChange={(event) =>
                       updateCue(cue.id, {
                         startTime: Number(event.target.value),
@@ -283,6 +312,7 @@ export function ClipSubtitleEditor({
                     max={clip.duration}
                     step={0.05}
                     value={cue.endTime}
+                    disabled={busy !== null}
                     onChange={(event) =>
                       updateCue(cue.id, {
                         endTime: Number(event.target.value),
@@ -296,6 +326,7 @@ export function ClipSubtitleEditor({
               <textarea
                 aria-label={`Texto del subtítulo ${cue.id}`}
                 value={cue.text}
+                disabled={busy !== null}
                 onChange={(event) =>
                   updateCue(cue.id, { text: event.target.value })
                 }
