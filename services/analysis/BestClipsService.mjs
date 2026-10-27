@@ -2,7 +2,8 @@ import { boundTranscriptSegments } from "../../lib/transcript-normalizer.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, copyFile } from "node:fs/promises";
 import path from "node:path";
-import { loadProjectFile, replaceProjectFile, updateProjectFile } from "../../lib/project-files.mjs";
+import { loadProjectFile, replaceProjectFile, updateProjectFile, listProjectFiles } from "../../lib/project-files.mjs";
+import { hashFile } from '../ingest/ResumableUploadStore.mjs';
 import { getStorageRoot, resolveStoragePath } from "../../lib/storage-paths.mjs";
 import { transcribeProject } from "../transcription/TranscriptionService.mjs";
 import { createContentAnalysisProvider } from "./createContentAnalysisProvider.mjs";
@@ -68,9 +69,11 @@ export class BestClipsService {
       ownershipStartUtc: original.source.capture?.ownershipStartUtc, ownershipEndUtc: original.source.capture?.ownershipEndUtc,
       sourceRanges: original.source.capture?.sourceRanges || [],
       continuityBreaks: original.source.capture?.continuityBreaks || [], continuityIntervals:original.source.capture?.continuityIntervals || [] });
-    const eventStore=new EditorialEventStore(), eventSource=original.liveObservation?.source, selected=[];
+    const eventStore=new EditorialEventStore(), sourceSha256 = original.liveObservation?.source ? null : await hashFile(resolveStoragePath(original.source.relativePath));
+    const eventSource=original.liveObservation?.source || {channelId:'FILE',sourceId:sourceSha256,sourceKind:'FILE'}, selected=[];
+    if (sourceSha256) await eventStore.recoverFileProjects(eventSource, await listProjectFiles(1000));
     for(const candidate of independent){
-      if(eventSource && selected.length<count){try{candidate.visualFingerprint=await sampleCandidateFingerprint(original,candidate);}catch{candidate.visualFingerprint=null;}}
+      if(eventSource && original.source.mediaKind!=='AUDIO' && selected.length<count){try{candidate.visualFingerprint=await sampleCandidateFingerprint(original,candidate);}catch{candidate.visualFingerprint=null;}}
       if(await eventStore.reserve(eventSource,candidate,outputProjectId))selected.push(candidate);if(selected.length>=count)break;
     }
     if (selected.length === 0) throw new WaitingResourceError("No se encontraron momentos completos y diferentes dentro de esos límites. Ajusta la duración o revisa la transcripción.");
@@ -80,6 +83,7 @@ export class BestClipsService {
     const now = new Date().toISOString();
     const project = { id: outputProjectId, createdAt: previous?.createdAt || now, translationSettings: previous?.translationSettings || original.translationSettings, source: { ...original.source, projectId: outputProjectId, posterUrl: `/api/projects/${outputProjectId}/poster`, sourceUrl: `/api/projects/${outputProjectId}/source` }, transcript: original.transcript, liveObservation:original.liveObservation || null, analysis: { id: randomUUID(), status: "COMPLETED", candidates: selected, provider: provider.name, model: provider.model || null, completedAt: now }, clips: [...reusable], clipsOrigin: { projectId: original.id, method: "TRANSCRIPT_BOUNDARIES", realViewStatistics: false, checkpointKey, requestedCount: count, selectedCount: selected.length, selectionWarning, deliveryComplete: false } };
     // Persist the editorial decision before encoding so a restart does not call the model again.
+    if (sourceSha256) project.clipsOrigin.sourceSha256=sourceSha256;
     if (previous) await updateProjectFile(outputProjectId, current => {
       current.analysis = project.analysis;
       current.clipsOrigin = project.clipsOrigin;

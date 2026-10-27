@@ -28,11 +28,23 @@ export class EditorialEventStore {
         const visualMatch=/^[a-f0-9]{16}$/.test(candidate.visualFingerprint||'')&&/^[a-f0-9]{16}$/.test(r.visualFingerprint||'')&&
           (BigInt('0x'+candidate.visualFingerprint)^BigInt('0x'+r.visualFingerprint)).toString(2).replaceAll('0','').length<=4;
         const sameVisualContext=visualMatch&&hashes.length>=8&&similarity(hashes,r.tokens)>=0.55&&Number.isFinite(peak)&&Number.isFinite(r.peak)&&Math.abs(peak-r.peak)<120000;
-        return close||sameText||sameVisualContext;
+        const overlap=Math.max(0,Math.min(candidate.endTime,r.endTime)-Math.max(candidate.startTime,r.startTime));
+        const sameFileMoment=source.sourceKind==='FILE'&&Number.isFinite(r.startTime)&&Number.isFinite(r.endTime)&&overlap/Math.min(candidate.endTime-candidate.startTime,r.endTime-r.startTime)>=.6;
+        return close||sameText||sameVisualContext||sameFileMoment;
       });
       if(duplicate)return false;
-      rows.push({owner,candidateId:candidate.id,peak:Number.isFinite(peak)?peak:null,tokens:hashes,visualFingerprint:candidate.visualFingerprint||null,status:"RESERVED",lease:leaseOwner(),at:this.now()});return true;
+      rows.push({owner,candidateId:candidate.id,startTime:candidate.startTime,endTime:candidate.endTime,peak:Number.isFinite(peak)?peak:null,tokens:hashes,visualFingerprint:candidate.visualFingerprint||null,status:"RESERVED",lease:leaseOwner(),at:this.now()});return true;
     });
+  }
+  async recoverFileProjects(source,projects) {
+    if(source?.sourceKind!=='FILE')return;
+    for(const project of projects.filter(p=>p.clipsOrigin?.sourceSha256===source.sourceId)) {
+      for(const clip of project.clips || []) {
+        if(clip.status!=='READY'||clip.render?.validation?.valid!==true)continue;
+        const candidate=project.analysis?.candidates?.find(c=>c.id===clip.candidateId&&c.startTime===clip.startTime&&c.endTime===clip.endTime);
+        if(candidate&&await this.reserve(source,candidate,project.id))await this.confirm(source,candidate.id,project.id);
+      }
+    }
   }
   async confirm(source,candidateId,owner) { return this.mutate(source,rows=>{const row=rows.find(r=>r.owner===owner&&r.candidateId===candidateId);if(row)row.status="RENDERED";}); }
   async release(source,owner) { return this.mutate(source,rows=>{for(let i=rows.length-1;i>=0;i--)if(rows[i].owner===owner&&rows[i].status==="RESERVED")rows.splice(i,1);}); }
