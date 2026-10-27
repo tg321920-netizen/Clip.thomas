@@ -319,3 +319,30 @@ El siguiente trabajo no es volver a renderizar NASA: vincular Render, diagnostic
 GET, aprobar el ensayo concreto y comprobar desde fuera login → subida real →
 recorte → worker → R2 → reproducción/descarga. Solo esa aceptación permite
 promover una función a VERIFIED_DEPLOYED.
+
+## 10. Cierre tras recuperar el entorno
+
+La desconexión del entorno interrumpió el primer intento de cierre. Tras volver
+la conexión se comprobaron el árbol, los ocho commits de código, sus evidencias
+y el SHA del MP4, sin volver a renderizar. El informe quedó en el commit
+`3bd011312ed88bb481ec9266c1ad137849094770` y se envió mediante push atómico normal
+a la rama de integración, junto con la rama y etiqueta nuevas fijadas a
+`f103c04a91edcfe2c67de50fb18b2a2dbf187021`. El core remoto, main y las etiquetas
+anteriores mantuvieron sus SHA. El árbol local estaba limpio después del commit.
+
+[ClipForge CI 40500740981](https://github.com/tg321920-netizen/Clip.thomas/actions/runs/40500740981)
+comprobó ese envío en GitHub: `npm ci`, auditoría (cero alertas), verify
+(496 totales / 490 aprobadas / cero fallidas / seis omitidas) y build aprobados.
+Los logs y resumen están en `artifacts/completion-20261027/github-ci-3bd0113.*`.
+Este añadido documental no cambia el código de la candidata ni requiere otro
+render o despliegue. No se ejecutaron los workflows audiovisuales optativos.
+
+Existe además un bundle Git local verificado con toda la historia y el informe
+inicial: `/workspace/clipforge-studio-completion-20261027-3bd0113.bundle`.
+No sustituye los originales R2 ni se borraron los bundles anteriores.
+
+Nueva consulta pública de Westcol a las **12:40 UTC del 27/10: OFFLINE**,
+registrada en `westcol-status-resume.json`. Sin captura, chat ni modelos nuevos;
+se mantiene `LIVE_NOT_TESTED`. `RENDER_API_KEY` continuaba ausente al reanudar.
+El entorno de desarrollo recuperado no equivale a un servidor de ensayo público:
+la acción administrativa pendiente sigue siendo la descrita en la sección 8.
