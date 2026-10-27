@@ -1,0 +1,43 @@
+{
+  "modelId": "Helsinki-NLP/opus-mt-tc-big-en-es",
+  "revision": "8f4d4924189681076e9c642b2fd85278d793fd4d",
+  "files": {
+    "README.md": {
+      "size": 8077,
+      "sha256": "c42997ca3767c6750c346d1da84758a9755422c7f5c5294f12a8f4d92f8a94bc"
+    },
+    "config.json": {
+      "size": 1076,
+      "sha256": "40cf2a78774927cd8374514a73c96a3fc2285748fae1bcdfe197e1dc1cc54692"
+    },
+    "generation_config.json": {
+      "size": 301,
+      "sha256": "8f8c2aeb22e87bcb1ea19cb206f4d9341d178574ab41778ab104ee7cf8db8379"
+    },
+    "model.safetensors": {
+      "size": 465549630,
+      "sha256": "1cc0d454aed713ccd07b4cb7801f08f72c1f885c79c6fd76d2b0d99ea0d3cd2b"
+    },
+    "source.spm": {
+      "size": 804235,
+      "sha256": "b1763341d3a71262ed5aacc3f8287d3c3c2f2ae82295e11d03aea80879c98009"
+    },
+    "special_tokens_map.json": {
+      "size": 65,
+      "sha256": "09059cedc26bc46bc09a52f05b92d4922e11917e87f3b92059bb1a63a59ab2c4"
+    },
+    "target.spm": {
+      "size": 824118,
+      "sha256": "c70086dcac73d9c759cca0b5f195a073033906dcd29433d6c5fe74e66b2cc8da"
+    },
+    "tokenizer_config.json": {
+      "size": 337,
+      "sha256": "87237f0fcc8644b8acf407ddc3fd941748c4392c6083fa6f1d81da0ca66d2f23"
+    },
+    "vocab.json": {
+      "size": 1378022,
+      "sha256": "ee2728c5deb7c2dbe255df52b02b45285fda8a7c4dafc236e6d2af5dbeab5a36"
+    }
+  },
+  "license": "cc-by-4.0"
+}

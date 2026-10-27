@@ -38,6 +38,15 @@ test('NASA risks flag negation, figures, omissions, modality and ambiguous event
   assert.ok(assessTranslation('It may never come again.','Puede volver a empezar.').issues.includes('IDIOM_OR_PHRASAL_VERB_REVIEW'));
 });
 
+test('context cannot override a safer direct translation with a measured change of number or modality',()=>{
+  const modal=prepareTranslationInput('It may never come again.',{before:'Peace is possible.'});
+  const result=recoverTranslation(modal,'Puede que nunca vuelva a ocurrir.',`${modal.begin} Nunca puede volver. ${modal.end}`);
+  assert.equal(result.text,'Puede que nunca vuelva a ocurrir.');assert.equal(result.contextUsed,false);
+  assert.ok(result.issues.includes('CONTEXT_SEMANTIC_RISK_FALLBACK'));
+  const numeric=prepareTranslationInput('We spent fifteen million dollars.',{before:'The budget changed.'});
+  assert.equal(recoverTranslation(numeric,'Gastamos quince millones de dólares.',`${numeric.begin} Gastamos cincuenta millones de dólares. ${numeric.end}`).text,'Gastamos quince millones de dólares.');
+});
+
 test('subtitle readability and horizontal placement use the actual output size',()=>{
   assert.equal(subtitleReadability([{id:'short',text:'Too much text for a fraction of a second.',startTime:0,endTime:.2}])[0].issues.includes('READING_SPEED_HIGH'),true);
   const ass=buildAssDocument({style:'CLEAN',layout:{fontSize:60,position:'TOP',marginPercent:10,color:'#FF2200'},cues:[]},{width:1280,height:720});

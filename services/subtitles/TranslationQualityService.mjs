@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const TRANSLATION_PIPELINE_VERSION = 'local-context-glossary-v1';
+export const TRANSLATION_PIPELINE_VERSION = 'local-context-glossary-v2';
 
 export function normalizeGlossary(value = []) {
   if (!Array.isArray(value) || value.length > 80) throw new Error('El glosario admite hasta 80 términos.');
@@ -71,6 +71,16 @@ export function recoverTranslation(prepared, directRaw, contextualRaw) {
     throw Object.assign(new Error('No se pudieron recuperar términos protegidos. Conserva el original y revisa el glosario.'), { code: 'TRANSLATION_ALIGNMENT_INVALID' });
   }
   const direct = restore(directRaw);
+  if (contextUsed) {
+    const critical = new Set(['NEGATION_REVIEW','NUMBER_REVIEW','MODALITY_REVIEW','GLOSSARY_REVIEW']);
+    const risks = value => assessTranslation(prepared.source,value,{glossary:prepared.protectedTerms}).issues.filter(flag=>critical.has(flag));
+    const contextRisks=risks(text), directRisks=risks(direct);
+    if (contextRisks.some(flag=>!directRisks.includes(flag)) && directRisks.every(flag=>contextRisks.includes(flag))) {
+      // Keep the actually produced direct result. Never repair a number or
+      // rewrite meaning by substitution; flag the rejected context variant.
+      text=direct;contextUsed=false;issues.push('CONTEXT_SEMANTIC_RISK_FALLBACK');
+    }
+  }
   for (const term of prepared.protectedTerms) if (!termPattern(term.target).test(text)) issues.push('PROTECTED_TERM_MISSING');
   if (contextUsed && direct !== text) issues.push('CONTEXT_VARIANT_REVIEW');
   return { text, direct, contextUsed, issues: [...new Set(issues)] };
@@ -83,7 +93,7 @@ export function assessTranslation(source, target, { glossary = [], duration, iss
   const sourceNegative = /\b(?:no|not|never|neither|nobody|nothing|without|cannot|can't|won't|isn't|wasn't|don't|didn't)\b/iu.test(source.replaceAll('’',"'"));
   const targetNegative = /\b(?:no|nunca|jamás|jamas|ni|nadie|nada|sin|tampoco)\b/iu.test(target);
   if (sourceNegative !== targetNegative) flags.push('NEGATION_REVIEW');
-  if (/\b(?:may|might|could)\b/iu.test(source) && /\b(?:no puede|no podrá|no podra|imposible)\b/iu.test(target)) flags.push('MODALITY_REVIEW');
+  if (/\b(?:may|might|could)\b/iu.test(source) && /\b(?:(?:no|nunca|jamás|jamas)\s+(?:puede|podrá|podra)|imposible)\b/iu.test(target)) flags.push('MODALITY_REVIEW');
   if (JSON.stringify(numberClaims(source,'en')) !== JSON.stringify(numberClaims(target,'es'))) flags.push('NUMBER_REVIEW');
   for (const term of normalizeGlossary(glossary)) if (termPattern(term.source).test(source) && !termPattern(term.target).test(target)) flags.push('GLOSSARY_REVIEW');
   if (target.length < source.length * .35 || target.length > source.length * 2.8) flags.push('POSSIBLE_OMISSION_OR_EXPANSION');

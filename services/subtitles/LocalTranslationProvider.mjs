@@ -40,7 +40,14 @@ export class LocalTranslationProvider {
         try {
           const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
           if (!Array.isArray(value.translations) || value.translations.length !== texts.length || value.translations.some(text => typeof text !== "string" || !text.trim() || text.length > 1800) || !/^[a-f0-9]{64}$/.test(value.modelSha256)) throw new Error();
-          resolve({ texts: value.translations, provider: "ctranslate2-cpu-local", modelSha256: value.modelSha256 });
+          const identity = {};
+          for (const key of ['modelId','modelRevision','modelLicense','modelFormat']) {
+            if (value[key] !== undefined && value[key] !== null) {
+              if (typeof value[key] !== 'string' || !/^[a-zA-Z0-9._/-]{1,180}$/.test(value[key])) throw new Error();
+              identity[key] = value[key];
+            }
+          }
+          resolve({ texts: value.translations, provider: "ctranslate2-cpu-local", modelSha256: value.modelSha256, ...identity });
         } catch { reject(Object.assign(new Error("El traductor devolvió una respuesta inválida; no se aceptaron subtítulos inventados."), { code: "TRANSLATION_INVALID" })); }
       });
       child.stdin.end(JSON.stringify({ source: "en", target: "es", texts }));

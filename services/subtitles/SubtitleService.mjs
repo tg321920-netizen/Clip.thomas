@@ -53,7 +53,9 @@ export async function prepareSubtitleTrack(project, clip, { translator = new Loc
     quality: assessTranslation(group.text, translated.texts[index], { glossary, duration: group.endTime-group.startTime, issues: translated.units?.[index]?.issues }) }));
   return { ...track, mode, layout: clip.subtitles?.layout, language: "es", sourceLanguage: "en", sourceCues: source.cues, timingBasis: "SOURCE_SENTENCE_INTERVALS", reviewStatus: "REVIEW_REQUIRED",
     readability: subtitleReadability(track.cues),
-    translation: { provider: translated.provider, modelSha256: translated.modelSha256, pipelineVersion: translated.pipelineVersion || TRANSLATION_PIPELINE_VERSION,
+    translation: { provider: translated.provider, modelSha256: translated.modelSha256,
+      modelId:translated.modelId, modelRevision:translated.modelRevision, modelLicense:translated.modelLicense, modelFormat:translated.modelFormat,
+      pipelineVersion: translated.pipelineVersion || TRANSLATION_PIPELINE_VERSION,
       glossary, units, audioReplaced: false, reviewRequired: true } };
 }
 
