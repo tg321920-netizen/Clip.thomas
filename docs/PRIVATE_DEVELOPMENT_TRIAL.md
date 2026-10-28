@@ -1,3 +1,9 @@
+Actualización del 28 de octubre: la propuesta vigente usa
+`render.audit-preview.yaml` y la nueva referencia congelada
+`preview/clipforge-master-20261028.1`. Consultar
+[MASTER_MISSION_20261028.md](MASTER_MISSION_20261028.md).
+No se creó ni desplegó el servicio. Las referencias anteriores se conservan.
+
 # Ensayo privado preparado, sin crear servicios
 
 Actualización del 27 de octubre: consultar `STUDIO_COMPLETION_20261027.md` y
