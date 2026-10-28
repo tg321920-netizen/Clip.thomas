@@ -76,7 +76,10 @@ export async function POST(
     await markClipQueued(projectId,clip.id);
     const job=await jobs.enqueueRender(projectId,clip.id,{clipId:clip.id},{restartCompleted:true});
     return NextResponse.json({clip:{...clip,status:'QUEUED'},job,reused:true},{status:202});
-    }catch{return NextResponse.json({error:'No se pudo reanudar el recorte. El trabajo se conserva para revisión.'},{status:503});}
+    }catch(error){
+      if(error instanceof Error&&'code' in error&&error.code==='CLIP_BUSY')return NextResponse.json({error:error.message},{status:409});
+      return NextResponse.json({error:'No se pudo reanudar el recorte. El trabajo se conserva para revisión.'},{status:503});
+    }
   }
   const manual = body.startTime !== undefined || body.endTime !== undefined;
   const candidateId =
@@ -103,6 +106,11 @@ export async function POST(
       });
     }
 
+    const current = await jobs.getRenderJob(projectId,result.clip.id);
+    if(current&&['QUEUED','PROCESSING','VALIDATING'].includes(current.status)) {
+      return NextResponse.json({clip:result.clip,job:current,reused:true},{status:202});
+    }
+
     await markClipQueued(projectId, result.clip.id);
 
     const job = await jobs.enqueueRender(
@@ -126,7 +134,7 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "No se pudo preparar el clip.";
-    const status = /not found|no encontrado/i.test(message) ? 404 : 422;
+    const status = error instanceof Error&&'code' in error&&error.code==='CLIP_BUSY' ? 409 : /not found|no encontrado/i.test(message) ? 404 : 422;
     return NextResponse.json({ error: message }, { status });
   }
 }

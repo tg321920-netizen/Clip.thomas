@@ -15,14 +15,7 @@ export async function createManualClip(projectId, input = {}) {
   return updateProjectFile(projectId, async project => {
     if (input.rightsConfirmed !== true) throw new Error('Confirma que tienes autorización para recortar este video.');
     const { startTime, endTime } = input;
-    const sourceEnd = Math.min(project.source.durationSeconds, project.source.audioDurationSeconds || Infinity, project.source.videoDurationSeconds || Infinity);
-    if (!Number.isFinite(sourceEnd) || typeof startTime !== 'number' || typeof endTime !== 'number' || !Number.isFinite(startTime) || !Number.isFinite(endTime) ||
-      startTime < 0 || endTime <= startTime || endTime > sourceEnd + 0.001 || endTime - startTime < 0.5 || endTime - startTime > 180) {
-      throw new Error('Elige un intervalo válido de 0,5 a 180 segundos dentro del original.');
-    }
-    if (project.source.captureValidation?.valid === false) throw new Error('La fuente necesita recuperación antes de renderizar.');
-    if ((project.source.capture?.continuityIntervals || []).some(g => startTime < g.end && endTime > g.start) ||
-      (project.source.capture?.continuityBreaks || []).some(t => startTime < t && endTime > t)) throw new Error('El intervalo atraviesa una interrupción de la fuente.');
+    assertSourceInterval(project,startTime,endTime,endTime-startTime);
     const framingMode = normalizeFraming(input.framingMode), quality = normalizeQuality(input.quality);
     const output=manualOutputOptions(input);
     const subtitleMode = input.subtitleMode || 'NONE';
@@ -56,6 +49,7 @@ export async function createClipFromCandidate(
 
   const candidate = candidates.find((entry) => entry.id === candidateId);
   if (!candidate) throw new Error("Candidate not found.");
+  assertSourceInterval(project,candidate.startTime,candidate.endTime,candidate.duration);
 
   project.clips = Array.isArray(project.clips) ? project.clips : [];
 
@@ -107,6 +101,11 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
   const clips = Array.isArray(project.clips) ? project.clips : [];
   const clip = clips.find((entry) => entry.id === clipId);
   if (!clip) throw new Error("Clip not found.");
+  try { assertSourceInterval(project,clip.startTime,clip.endTime,clip.duration); }
+  catch(cause){
+    clip.status='FAILED';clip.error=cause.message;clip.updatedAt=new Date().toISOString();await saveClipState(projectId,clip);
+    throw Object.assign(new Error(cause.message),{code:'CLIP_SOURCE_INVALID',retryable:false});
+  }
   const width=clip.edit?.output?.width||defaultWidth,height=clip.edit?.output?.height||defaultHeight;
   const renderService=new RenderService({width,height});
 
@@ -183,6 +182,10 @@ export async function markClipQueued(projectId, clipId) {
   const clip = project.clips?.find((entry) => entry.id === clipId);
   if (!clip) throw new Error("Clip not found.");
 
+  if (['PROCESSING','RENDERING'].includes(clip.status)) {
+    throw Object.assign(new Error('Espera a que termine el procesamiento de este recorte. Su estado y sus cambios se conservaron.'), {code:'CLIP_BUSY'});
+  }
+
   clip.status = "QUEUED";
   clip.updatedAt = new Date().toISOString();
   clip.error = null;
@@ -204,12 +207,27 @@ async function saveClipState(projectId, clip) {
 }
 
 function normalizeFraming(value) {
-  if (value === "FIT" || value === "CONVERSATION") return value;
-  return "FILL";
+  if(value===undefined)return 'FILL';
+  if(['FIT','FILL','CONVERSATION'].includes(value))return value;
+  throw new Error('Encuadre inválido. Elige FIT, FILL o CONVERSATION.');
 }
 
 function normalizeQuality(value) {
-  if (value === "FAST" || value === "HIGH" || value === "EFFICIENT") return value;
-  return "BALANCED";
+  if(value===undefined)return 'BALANCED';
+  if(['FAST','HIGH','EFFICIENT','BALANCED'].includes(value))return value;
+  throw new Error('Calidad inválida. Elige un perfil admitido; no se cambió la calidad solicitada.');
+}
+
+function assertSourceInterval(project,startTime,endTime,duration){
+  const source=project.source||{};
+  const sourceEnd=Math.min(source.durationSeconds,source.audioDurationSeconds||Infinity,source.videoDurationSeconds||Infinity);
+  if(!Number.isFinite(sourceEnd)||typeof startTime!=='number'||typeof endTime!=='number'||typeof duration!=='number'||
+    !Number.isFinite(startTime)||!Number.isFinite(endTime)||!Number.isFinite(duration)||startTime<0||endTime<=startTime||
+    endTime>sourceEnd+.001||duration<.5||duration>180||Math.abs(duration-(endTime-startTime))>.05){
+    throw new Error('Elige un intervalo válido de 0,5 a 180 segundos dentro del original, con duración coincidente.');
+  }
+  if(source.captureValidation?.valid===false)throw new Error('La fuente necesita recuperación antes de renderizar.');
+  if((source.capture?.continuityIntervals||[]).some(g=>startTime<g.end&&endTime>g.start)||
+    (source.capture?.continuityBreaks||[]).some(t=>startTime<t&&endTime>t))throw new Error('El intervalo atraviesa una interrupción de la fuente.');
 }
 

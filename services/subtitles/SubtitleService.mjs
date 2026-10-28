@@ -26,7 +26,7 @@ export async function prepareSubtitleTrack(project, clip, { translator = new Loc
   if (!mode || mode === "NONE") return null;
   if (!clip.edit.subtitleRegenerate && clip.subtitles?.mode === mode && clip.subtitles?.sourceTranscriptId === project.transcript?.id) return clip.subtitles;
   const expected = mode === "ORIGINAL_ES" ? "es" : "en";
-  if (project.transcript?.language !== expected) throw new Error(`El audio detectado no es ${expected === "es" ? "español" : "inglés"}. Revisa la transcripción y el idioma seleccionado.`);
+  if (project.transcript?.language !== expected) throw Object.assign(new Error(`El audio detectado no es ${expected === "es" ? "español" : "inglés"}. Revisa la transcripción y el idioma seleccionado.`),{code:'SUBTITLE_LANGUAGE_MISMATCH',retryable:false});
   const source = buildSubtitleTrack({ transcript: project.transcript, clip, style: clip.edit.subtitleStyle });
   if (!source.cues.length) throw new Error("No hay texto transcrito en este intervalo.");
   if (mode !== "TRANSLATE_ES") return { ...source, mode, language: expected, timingBasis: "SOURCE_TRANSCRIPT", reviewStatus: "PENDING" };
