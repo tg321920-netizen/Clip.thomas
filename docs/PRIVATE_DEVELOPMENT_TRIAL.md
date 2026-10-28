@@ -1,3 +1,7 @@
+Revisión adicional del 28 de octubre: usar la candidata nueva `.2` y
+`preview/clipforge-master-20261028.2`, según [RECHECK_20261028.md](RECHECK_20261028.md).
+La candidata `.1` cc16902 se conserva inmutable. No se creó el ensayo.
+
 Actualización del 28 de octubre: la propuesta vigente usa
 `render.audit-preview.yaml` y la nueva referencia congelada
 `preview/clipforge-master-20261028.1`. Consultar
