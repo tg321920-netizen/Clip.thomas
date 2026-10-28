@@ -1,0 +1,204 @@
+{
+  "checkedAt": "2026-10-28T00:14:23.089975+00:00",
+  "runtimeCandidate": "cc16902ec38dd367a1137e318fc2312293859fb7",
+  "codeCi": {
+    "sha": "91c25f7952b3db0d5366330f55cdf68aea0e89d1",
+    "url": "https://github.com/tg321920-netizen/Clip.thomas/actions/runs/40606328171",
+    "status": "success",
+    "nodeMajor": 22
+  },
+  "unitSuite": {
+    "total": 552,
+    "passed": 545,
+    "failed": 0,
+    "skippedOptional": 7
+  },
+  "build": "PASSED",
+  "renderE2e": {
+    "passed": true,
+    "sourceKind": "SYNTHETIC_QA_NOT_DELIVERABLE"
+  },
+  "reframeE2e": {
+    "passed": true,
+    "sourceKind": "SYNTHETIC_QA_NOT_DELIVERABLE"
+  },
+  "automaticAuthenticQa": {
+    "passed": true,
+    "source": "NASA/JFK AUTHENTIC AUTHORIZED FOOTAGE",
+    "sourceSha256": "978c70cb596f2519cb135cd04b7c9d9d9bfed4bf76ef6ba914f973b260ca6c28",
+    "asr": "REUSED_REAL_WHISPER_FOR_IDENTICAL_BYTES",
+    "tabClosedDuringProcessing": true,
+    "processingSeconds": 31.576,
+    "projectId": "fff77b99-1008-4a79-bb84-12e820579b6e",
+    "clipId": "4e8a509f-936e-4e2b-9d33-ae1e47d0009e",
+    "sourceInterval": {
+      "start": 18.08,
+      "end": 44.12
+    },
+    "validation": {
+      "valid": true,
+      "checkedAt": "2026-10-28T00:00:46.731Z",
+      "sizeBytes": 4763943,
+      "duration": 26.04,
+      "width": 1280,
+      "height": 720,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "audioMeanDb": -28.3,
+      "audioPeakDb": -9.6,
+      "pixelFormat": "yuv420p",
+      "frameRate": "30/1",
+      "fullDecode": true,
+      "blackIntervals": [],
+      "warnings": [],
+      "synchronization": "TRACK_DURATIONS_CHECKED",
+      "subtitleValidation": "NOT_REQUESTED"
+    },
+    "outputSha256": "4f1ae98589d5bade73d95d52865462416fa9c8e3386f306440a3f68cf54a40f0",
+    "srtDownload": true,
+    "savedAutomaticCaptionEditor": true,
+    "obsoleteDownloadHidden": true,
+    "r2": {
+      "archiveId": "7b8faff5cbe4059777e1d7fcd109e6876fdbe1f3ac1c0b211a339dc17ab58f96",
+      "renewedPrivateDownload": true,
+      "downloadHashMatched": true,
+      "isolatedRestoreHashMatched": true,
+      "translatedTrackRestored": true,
+      "qaOnly": true
+    }
+  },
+  "automaticRetry": {
+    "passed": true,
+    "newEncodes": 0,
+    "newAsr": 0,
+    "newTranslationCalls": 0,
+    "r2Writes": 0,
+    "keptIdentityGeometryAndCaptions": true,
+    "recoveredWithoutEncoding": true,
+    "draftCaptionEditorVisible": true
+  },
+  "audioOnlyRecovery": {
+    "checkedAt": "2026-10-27T23:35:36.952Z",
+    "realMedia": true,
+    "source": "CACHED_AUTHORIZED_AUDIO_NASA",
+    "newClips": 0,
+    "newEncodes": 0,
+    "newAsr": 0,
+    "newModelCalls": 0,
+    "r2Writes": 0,
+    "projectId": "b158f3dc-b134-4814-8f44-4031671b60b7",
+    "clips": [
+      {
+        "id": "f36655a2-32f8-4ece-83db-74b534fe66bb",
+        "mediaKind": "AUDIO",
+        "sha256": "4808c9bbc457429e117502e1319a4448dbea06fb2318e48365995c697ffe8ea5",
+        "duration": 34.96,
+        "audioCodec": "aac",
+        "fullDecode": true,
+        "srtAvailable": true,
+        "review": "PENDING"
+      },
+      {
+        "id": "1e31c818-3120-450a-8843-7d3f56fc0277",
+        "mediaKind": "AUDIO",
+        "sha256": "1f4764167aee0822e46c16d106e6067bf1723c05019f24abc9b2257dd7be2c76",
+        "duration": 30.68,
+        "audioCodec": "aac",
+        "fullDecode": true,
+        "srtAvailable": true,
+        "review": "REJECTED"
+      }
+    ],
+    "passed": true
+  },
+  "translation": {
+    "realModelsCompared": true,
+    "modelId": "Helsinki-NLP/opus-mt-tc-big-en-es",
+    "revision": "8f4d4924189681076e9c642b2fd85278d793fd4d",
+    "modelSha256": "9332e2dd98f10fba1c3cf762d366c76f5f514122e630b074f2e7b9b1cc2072ea",
+    "license": "cc-by-4.0",
+    "reviewStatus": "REVIEW_REQUIRED",
+    "semanticCertification": false,
+    "nativeTamperTestPassed": true,
+    "resources": {
+      "returnCode": 0,
+      "elapsedSeconds": 3.375,
+      "maxRssKiB": 531416,
+      "userCpuSeconds": 2.917769,
+      "systemCpuSeconds": 0.608501,
+      "hostIsRender": false,
+      "includesWebAndWorkers": false,
+      "model": "opus-mt-tc-big-en-es-int8",
+      "texts": 3
+    }
+  },
+  "preservedWestcolArchive": {
+    "checkedAt": "2026-10-28T00:03:59.807Z",
+    "archiveId": "78d8194bdd363ae41f80216bfed9ea257a255a13e03e7e3565654f1ece068237",
+    "sha256": "d3ed17a9b54d46015e89c0d98ca99148515eb608397c6a64508c1eb95c14fb8f",
+    "bytes": 9853533,
+    "hashMatched": true,
+    "preserved": true,
+    "private": true,
+    "editorialReview": "PENDING",
+    "newClip": false,
+    "physicalAndroid": false
+  },
+  "westcol": {
+    "checkedAt": "2026-10-27T23:50:45.469687+00:00",
+    "channel": "westcol",
+    "method": "PUBLIC_CHANNEL_METADATA",
+    "captureStarted": false,
+    "permanentMonitorEnabled": false,
+    "chatMessagesObserved": 0,
+    "liveAcceptance": "LIVE_NOT_TESTED",
+    "httpStatus": 200,
+    "state": "OFFLINE"
+  },
+  "renderAdministrative": {
+    "checkedAt": "2026-10-28T00:08:56.414Z",
+    "status": "BLOCKED_MISSING_PRIVATE_BINDING",
+    "administrativeRequests": 0,
+    "mutations": 0
+  },
+  "previewSchema": {
+    "checkedAt": "2026-10-28T00:05:29.695084+00:00",
+    "officialSavedSchema": true,
+    "files": [
+      {
+        "file": "render.audit-preview.yaml",
+        "schemaValid": true
+      },
+      {
+        "file": "render.development-preview.yaml",
+        "schemaValid": true
+      },
+      {
+        "file": "render.stable-preview.yaml",
+        "schemaValid": true
+      },
+      {
+        "file": "render.yaml",
+        "schemaValid": true
+      }
+    ],
+    "safetyPolicyChecked": true,
+    "serviceCreated": false,
+    "administrativeReadPerformed": false,
+    "status": "BLOCKED_EXTERNAL_AUTHORIZATION"
+  },
+  "newAuthenticWestcolClips": 0,
+  "newAuthenticQaMp4": 1,
+  "androidPhysical": "ANDROID_PHYSICAL_NOT_TESTED",
+  "publicEditor": "BLOCKED_EXTERNAL_AUTHORIZATION",
+  "publishing": "OFF",
+  "persistentLiveMonitor": "OFF",
+  "productionModified": false,
+  "paidServiceOrModelActivated": false,
+  "operatorCodeCi": {
+    "sha": "bad2f93b4fc49f3adb1c651aae1a08644461925d",
+    "status": "success",
+    "nodeMajor": 22,
+    "url": "https://github.com/tg321920-netizen/Clip.thomas/actions/runs/40607067686"
+  }
+}

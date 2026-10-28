@@ -1,3 +1,11 @@
+Actualización del 28 de octubre: leer primero
+[MASTER_MISSION_20261028.md](MASTER_MISSION_20261028.md). Se preservó y verificó
+el archivo auténtico R2 anterior; no hubo clip nuevo de Westcol ni chat nuevo.
+La comprobación pública encontró OFFLINE; aceptación LIVE_NOT_TESTED y monitor
+OFF. La candidata nueva cc16902 y sus pruebas NASA no acreditan captura LIVE.
+No repetir los renders ya aceptados. Render permanece sin conexión privada
+administrativa activa y sin autorización de creación del ensayo.
+
 # Reanudar ClipForge: clips auténticos de Westcol
 
 **Fiabilidad posterior del 27 de octubre:** leer

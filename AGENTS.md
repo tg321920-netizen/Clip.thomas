@@ -14,6 +14,15 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Continuación maestra del 28 de octubre: leer `docs/MASTER_MISSION_20261028.md`.
+Conservar reanudación de lotes con IDs/textos/revisiones, solicitudes inmutables,
+perfiles automáticos, editor DRAFT y reintentos sin nuevo encode. La candidata
+cc16902 (.1 del 28) está congelada; no moverla. Traducción local v2 y Marian son
+opcionales, REVIEW_REQUIRED y no caben junto al editor en 512 MiB. No regenerar
+su MP4 NASA de QA ni contarlo como Westcol. El diagnóstico Render es GET y
+requiere vinculación privada; crear el ensayo sigue pendiente de aprobación.
+
+
 Continuación de fiabilidad: leer `docs/RELIABILITY_HARDENING_20261027.md`.
 Conserva los seis conjuntos de reparaciones posteriores a 54dcc89: leases y
 reclamaciones por intento, progreso serializado, subidas, guard de originales,
