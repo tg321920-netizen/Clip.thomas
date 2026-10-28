@@ -22,12 +22,15 @@ type SubtitleResponse = {
 export function ClipSubtitleEditor({
   projectId,
   clip,
+  mediaKind,
   onRenderNeeded,
 }: {
   projectId: string;
   clip: ClipRecord;
+  mediaKind?: 'VIDEO'|'AUDIO';
   onRenderNeeded: () => Promise<void>;
 }) {
+  const audioOnly=mediaKind==='AUDIO'||clip.render?.mediaKind==='AUDIO';
   const [track, setTrack] = useState<SubtitleTrack | null>(clip.subtitles);
   const [style, setStyle] = useState<SubtitleStyle>(
     clip.subtitles?.style || clip.edit.subtitleStyle || "CLEAN",
@@ -188,7 +191,7 @@ export function ClipSubtitleEditor({
                 Se generan desde los timestamps reales de Whisper.
               </p>
             </div>
-            {clip.render?.mediaKind!=='AUDIO'&&<select
+            {!audioOnly&&<select
               value={style}
               onChange={(event) => setStyle(event.target.value as SubtitleStyle)}
               disabled={busy !== null}
@@ -218,7 +221,7 @@ export function ClipSubtitleEditor({
           )}
         </div>
 
-        {clip.render?.mediaKind!=='AUDIO'&&<ClipAutoFocusControl
+        {!audioOnly&&<ClipAutoFocusControl
           projectId={projectId}
           clip={clip}
           onChanged={onRenderNeeded}
@@ -248,7 +251,7 @@ export function ClipSubtitleEditor({
           </div>
 
           <div className="flex items-center gap-2">
-            {clip.render?.mediaKind!=='AUDIO'&&<label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            {!audioOnly&&<label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
               <input
                 type="checkbox"
                 checked={enabled}
@@ -258,7 +261,7 @@ export function ClipSubtitleEditor({
               Incrustar en el archivo
             </label>}
 
-            {clip.render?.mediaKind!=='AUDIO'&&<select
+            {!audioOnly&&<select
               value={style}
               onChange={(event) => {setStyle(event.target.value as SubtitleStyle);setDirty(true);}}
               disabled={busy !== null}
@@ -271,7 +274,7 @@ export function ClipSubtitleEditor({
           </div>
         </div>
 
-        {clip.render?.mediaKind!=='AUDIO'&&<fieldset className="mt-3 grid grid-cols-2 gap-3 text-sm" disabled={busy!==null}><legend className="mb-2">Apariencia de subtítulos</legend>
+        {!audioOnly&&<fieldset className="mt-3 grid grid-cols-2 gap-3 text-sm" disabled={busy!==null}><legend className="mb-2">Apariencia de subtítulos</legend>
           <label>Tamaño<input aria-label="Tamaño de subtítulos" type="number" min={32} max={96} value={layout.fontSize} onChange={e=>{setLayout({...layout,fontSize:Number(e.target.value)});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
           <label>Posición<select aria-label="Posición de subtítulos" value={layout.position} onChange={e=>{setLayout({...layout,position:e.target.value as 'TOP'|'BOTTOM'});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"><option value="BOTTOM">Abajo</option><option value="TOP">Arriba</option></select></label>
           <label>Margen (%)<input aria-label="Margen de subtítulos" type="number" min={3} max={22} step={.5} value={layout.marginPercent} onChange={e=>{setLayout({...layout,marginPercent:Number(e.target.value)});setDirty(true);}} className="mt-1 min-h-12 w-full rounded-lg bg-zinc-950 p-2"/></label>
@@ -354,7 +357,7 @@ export function ClipSubtitleEditor({
         )}
       </div>
 
-      {clip.render?.mediaKind!=='AUDIO'&&<ClipAutoFocusControl
+      {!audioOnly&&<ClipAutoFocusControl
         projectId={projectId}
         clip={clip}
         onChanged={onRenderNeeded}

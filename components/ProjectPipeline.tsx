@@ -50,7 +50,7 @@ type AutoEditPayload = {
   error?: string;
 };
 
-export function ProjectPipeline({ projectId }: { projectId: string }) {
+export function ProjectPipeline({ projectId, mediaKind }: { projectId: string; mediaKind?:'VIDEO'|'AUDIO' }) {
   const [transcript, setTranscript] = useState<TranscriptRecord | null>(null);
   const [transcriptionJob, setTranscriptionJob] = useState<JobRecord | null>(
     null,
@@ -143,7 +143,8 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
       autoEditJob?.status === "PROCESSING" ||
       clips.some(
         (clip) =>
-          clip.job?.status === "QUEUED" || clip.job?.status === "PROCESSING",
+          clip.job?.status === "QUEUED" || clip.job?.status === "PROCESSING" ||
+          ['PROCESSING','RENDERING'].includes(clip.status),
       ),
     [analysisJob?.status, autoEditJob?.status, clips, transcriptionJob?.status],
   );
@@ -518,7 +519,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                 const clipBusy =
                   clip?.job?.status === "QUEUED" ||
                   clip?.job?.status === "PROCESSING" ||
-                  ['QUEUED','RENDERING','PROCESSING'].includes(clip?.status||'');
+                  ['RENDERING','PROCESSING'].includes(clip?.status||'');
                 const clipProgress = Math.max(
                   0,
                   Math.min(100, Number(clip?.job?.progress || 0)),
@@ -604,7 +605,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                           type="button"
                           onClick={() => void queueClip(candidate.id)}
                           disabled={loadingAction !== null || clipBusy}
-                          className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="mt-3 min-h-12 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {loadingAction === `clip:${candidate.id}`
                             ? "Encolando render…"
@@ -617,7 +618,7 @@ export function ProjectPipeline({ projectId }: { projectId: string }) {
                       </>
                     )}
                     {clip&&<fieldset disabled={clipBusy} className="min-w-0" aria-busy={clipBusy}>
-                      <ClipSubtitleEditor key={clip.id} projectId={projectId} clip={clip} onRenderNeeded={()=>queueClip(candidate.id,clip.id)}/>
+                      <ClipSubtitleEditor key={clip.id} projectId={projectId} clip={clip} mediaKind={mediaKind} onRenderNeeded={()=>queueClip(candidate.id,clip.id)}/>
                     </fieldset>}
                   </article>
                 );

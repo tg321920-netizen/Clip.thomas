@@ -317,6 +317,7 @@ export function UploadPanel({ onReady, compact = false }: { onReady?: (video: Up
             {!compact && <details className="mt-5"><summary className="cursor-pointer py-3 text-sm text-violet-200">Opciones avanzadas del proyecto</summary><ProjectPipeline
               key={`pipeline:${result.projectId}`}
               projectId={result.projectId}
+              mediaKind={result.mediaKind}
             />
             <div className="mt-4">
               <NewsModePanel
