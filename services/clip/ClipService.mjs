@@ -136,10 +136,10 @@ export async function renderClip(projectId, clipId, onProgress = () => undefined
         if (!target || Number(target.editRevision || 0) !== Number(clip.editRevision || 0)) throw new Error('El recorte cambió mientras se preparaban subtítulos.');
         if (target.subtitles !== track && JSON.stringify(target.subtitles) !== JSON.stringify(track)) rememberSubtitleVersion(target,'REGENERATED');
         target.subtitles = track;
-        target.edit.subtitleRegenerate = false;
+        if(target.edit.subtitleRegenerate===true)target.edit.subtitleRegenerate = false;
       });
       clip.subtitles = track;
-      clip.edit.subtitleRegenerate = false;
+      if(clip.edit.subtitleRegenerate===true)clip.edit.subtitleRegenerate = false;
     }
     const render = await renderService.renderClip({
       project,
