@@ -1,3 +1,7 @@
+Revisión posterior: [RECHECK_20261028.md](RECHECK_20261028.md) documenta los
+fallos adicionales reparados, la suite nativa completa sin omisiones y la
+candidata `.2` e8107f7. La candidata `.1` cc16902 y este informe se conservan.
+
 # ClipForge: entrega técnica y punto de reanudación del 28 de octubre
 
 **La misión de acceso desde Android continúa bloqueada: no existe una URL nueva

@@ -14,6 +14,14 @@ funciones anteriores se conservan, sin ejecutarlas como entregas del streamer.
 
 ## Objetivo actual
 
+Revisión adicional del 28: leer primero `docs/RECHECK_20261028.md`. Conservar
+CLIP_BUSY/409 para renders activos, validación de límites/fuentes/opciones,
+fallo definitivo de idioma sin reintentos inútiles y editor manual de subtítulos
+en FAILED/DRAFT. La candidata `.2` e8107f7 es nueva e inmutable; `.1` cc16902 se
+conserva. Suite nativa completa 558/558, sin omisiones; no acredita Android
+físico ni LIVE. No regenerar el M4A de recuperación ni los MP4 aceptados.
+
+
 Continuación maestra del 28 de octubre: leer `docs/MASTER_MISSION_20261028.md`.
 Conservar reanudación de lotes con IDs/textos/revisiones, solicitudes inmutables,
 perfiles automáticos, editor DRAFT y reintentos sin nuevo encode. La candidata

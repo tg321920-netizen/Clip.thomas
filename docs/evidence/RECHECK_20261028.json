@@ -1,0 +1,124 @@
+{
+  "checkedAt": "2026-10-28T00:40:14.706708+00:00",
+  "candidate": "e8107f7205914a63ac031f196b903854da4c472e",
+  "localSuite": {
+    "total": 558,
+    "passed": 558,
+    "failed": 0,
+    "skipped": 0,
+    "optionalNativeTestsEnabled": true
+  },
+  "lightSuite": {
+    "passed": 551,
+    "failed": 0,
+    "skipped": 7
+  },
+  "build": "PASSED",
+  "codeCi": {
+    "sha": "5920eedf10b68e0b6d82c0d726affdd25dea82cf",
+    "nodeMajor": 22,
+    "status": "success",
+    "url": "https://github.com/tg321920-netizen/Clip.thomas/actions/runs/40609805109"
+  },
+  "renderE2e": "PASSED_SYNTHETIC_QA",
+  "reframeE2e": "PASSED_SYNTHETIC_QA",
+  "manualFailureRecovery": {
+    "checkedAt": "2026-10-28T00:35:10.039Z",
+    "apiMocks": false,
+    "physicalAndroid": false,
+    "publicDeployment": false,
+    "source": "CACHED_AUTHORIZED_NASA_AUDIO_WITH_REAL_WHISPER_TRANSCRIPT",
+    "newClips": 0,
+    "newEncodes": 0,
+    "newAsr": 0,
+    "modelCalls": 0,
+    "r2Writes": 0,
+    "activeOwnerConflict409": true,
+    "failedAudioEditorVisibleWithoutVideoControls": true,
+    "orphanedQueuedClipRetryVisible": true,
+    "savedOriginalSubtitleHistory": true,
+    "validation": {
+      "valid": true,
+      "checkedAt": "2026-10-28T00:35:18.351Z",
+      "sizeBytes": 367949,
+      "mediaKind": "AUDIO",
+      "duration": 18,
+      "width": 0,
+      "height": 0,
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "fullDecode": true,
+      "subtitleValidation": "SRT_SIDECAR_ONLY",
+      "synchronization": "ORIGINAL_AUDIO_ONLY"
+    },
+    "sha256": "f8ebf904d1d40676cd7bfe837b83e98ed2810ac6711b627f04927f64f935ea0e",
+    "clipId": "a4b1937c-119f-45ca-939d-fd1abfbe7096",
+    "actualWorkerRejectedWrongLanguage": true,
+    "correctedThroughTouchUi": true,
+    "recoveredWithoutEncoding": true,
+    "originalAndCorrectedSrtPreserved": true,
+    "passed": true
+  },
+  "renderAdministrative": {
+    "checkedAt": "2026-10-28T00:25:25.753Z",
+    "status": "BLOCKED_MISSING_PRIVATE_BINDING",
+    "administrativeRequests": 0,
+    "mutations": 0
+  },
+  "publicSites": [
+    {
+      "base": "https://clipforge-studio-trial.onrender.com",
+      "checkedAt": "2026-10-28T00:25:25.862Z",
+      "/api/health": {
+        "status": "TIMEOUT_OR_NETWORK_ERROR"
+      },
+      "/login": {
+        "status": "TIMEOUT_OR_NETWORK_ERROR"
+      }
+    },
+    {
+      "base": "https://clipforge-runtime-free.onrender.com",
+      "checkedAt": "2026-10-28T00:25:25.880Z",
+      "/api/health": {
+        "status": "TIMEOUT_OR_NETWORK_ERROR"
+      },
+      "/login": {
+        "status": "TIMEOUT_OR_NETWORK_ERROR"
+      }
+    }
+  ],
+  "westcol": {
+    "checkedAt": "2026-10-28T00:37:54.982Z",
+    "channel": "westcol",
+    "captureStarted": false,
+    "chatMessagesObserved": 0,
+    "monitorEnabled": false,
+    "liveAcceptance": "LIVE_NOT_TESTED",
+    "httpStatus": 200,
+    "state": "OFFLINE"
+  },
+  "r2": {
+    "checkedAt": "2026-10-28T00:36:11.093Z",
+    "archiveId": "78d8194bdd363ae41f80216bfed9ea257a255a13e03e7e3565654f1ece068237",
+    "privateObjectReadable": true,
+    "recordSha256": "d3ed17a9b54d46015e89c0d98ca99148515eb608397c6a64508c1eb95c14fb8f",
+    "rangeBytes": 64,
+    "containerHeader": "ftyp",
+    "newFullFileHash": false,
+    "objectsModified": 0
+  },
+  "previewPolicy": {
+    "checkedAt": "2026-10-28T00:39:32.460813+00:00",
+    "schemaValid": true,
+    "serviceCreated": false,
+    "deploymentAuthorized": false,
+    "branch": "preview/clipforge-master-20261028.2",
+    "publishing": "OFF",
+    "liveMonitor": "OFF"
+  },
+  "androidPhysical": "ANDROID_PHYSICAL_NOT_TESTED",
+  "publicEditor": "BLOCKED_EXTERNAL_AUTHORIZATION",
+  "publishing": "OFF",
+  "monitor": "OFF",
+  "productionModified": false
+}
